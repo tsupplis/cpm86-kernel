@@ -20,7 +20,7 @@ To test, the PCE and cpmtools are needed. PCE can be found at http://www.hampa.c
 
 - CP/M-86 setup 1.2
 <p align="center">
-<img src="./images/cpm86.png" width="80%">
+<img src="./images/setup.png" width="80%">
 </p>
 
 ## Distribution
