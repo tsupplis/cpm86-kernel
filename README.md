@@ -15,17 +15,17 @@ To test, the PCE and cpmtools are needed. PCE can be found at http://www.hampa.c
 
 - Patched CP/M-86 running in the PCE Emulator
 <p align="center">
-<img src="./images/cpm86.png" width="70%">
+<img src="./images/cpm86.png" width="75%">
 </p>
 
 - CP/M-86 BIOS Setup 1.2
 <p align="center">
-<img src="./images/setup.png" width="70%">
+<img src="./images/setup.png" width="75%">
 </p>
 
 - CP/M-86 Disk Maintenance 1.2
 <p align="center">
-<img src="./images/dskmaint.png" width="70%">
+<img src="./images/dskmaint.png" width="75%">
 </p>
 
 ## Distribution
