@@ -1,10 +1,11 @@
 all: cpm86.sys 
 
-cpm86.img: cpm86.sys images/base.img
-	cp images/base.img cpm86.img
-	cp images/base.img cpmwk.img
+cpm86.img: cpm86.sys base.img
+	cp base.img cpm86.img
+	cp base.img cpmwk.img
 	cpmrm -f ibmpc-514ss cpm86.img 0:CPM.SYS
 	cpmcp -f ibmpc-514ss cpm86.img cpm86.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss cpm86.img extra/atinit.cmd 0:ATINIT.CMD
 	cpmls -F -f ibmpc-514ss cpm86.img 0:*.*
 
 cpm86.sys: cpm86.h86

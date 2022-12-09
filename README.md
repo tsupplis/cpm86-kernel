@@ -14,6 +14,13 @@ The compilation requires the (cross-development environment for CP/M-86)(https:/
 To test, the PCE and cpmtools are needed:
 -  PCE (http://www.hampa.ch/pce/)
 
+<p align="center">
+<img src="./diagrams/legacy.png" width="70%">
+</p>
+<p align="center">
+Patched CP/M-86 running in the PCE Emulator
+</p>
+
 
 ## Pedigree
 
