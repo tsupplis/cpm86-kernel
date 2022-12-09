@@ -9,7 +9,7 @@ The goal of this project is to provide an out-of-the-box cp/m-86 1.1 kernel that
 - resilience to bios limits for video display
 
 This is a raw dump right now with a way to compile the kernel starting from dissassembled sources.
-The compilation requires the (cross-development environment for CP/M-86)(https://github.com/tsupplis/cpm86-crossdev)
+The compilation requires the (cross-development environment for CP/M-86)[https://github.com/tsupplis/cpm86-crossdev]
 
 To test, the PCE and cpmtools are needed:
 -  PCE (http://www.hampa.ch/pce/)
@@ -47,7 +47,7 @@ The distribution is provided with the following patched or updated components:
 - submit.cmd (patched following dr recommendation)
 - mform.cmd (patched to avoid interactive question)
 - tod.cmd (complete rewrite at https://github.com/tsupplis/cpm86-hacking)
-- atinit.cmd (sync up RTC clock and bios if clock available cf https://github.com/tsupplis/cpm86-hacking)
+- atinit.cmd (sync up RTC clock and bios if clock available, cf https://github.com/tsupplis/cpm86-hacking)
 
 ## Pedigree
 
