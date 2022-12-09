@@ -11,19 +11,16 @@ The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel that
 This is a raw dump right now with a way to compile the kernel starting from dissassembled sources.
 The compilation requires the (cross-development environment for CP/M-86)[https://github.com/tsupplis/cpm86-crossdev]
 
-To test, the PCE and cpmtools are needed:
--  PCE (http://www.hampa.ch/pce/)
+To test, the PCE and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/.
 
+- Patched CP/M-86 running in the PCE Emulator
 <p align="center">
 <img src="./images/cpm86.png" width="80%">
-Patched CP/M-86 running in the PCE Emulator
-</p>
-<p align="center">
 </p>
 
+- CP/M-86 setup 1.2
 <p align="center">
 <img src="./images/cpm86.png" width="80%">
-CP/M-86 setup 1.2
 </p>
 
 ## Distribution
