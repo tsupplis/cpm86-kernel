@@ -2,7 +2,7 @@
 
 ## Synopsis
 
-The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel that incorporates all existing patches plus the capacity to run on modern hardware and virtualization. A distribution of CP/M-86 is also provided fully patched.
+The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel (BIOS, BDOS and CCP) that incorporates all existing patches plus the capacity to run on modern hardware and virtualization. A distribution of CP/M-86 is also provided fully patched.
 
 - visual y2k support and tod replacement (https://github.com/tsupplis/cpm86-hacking)
 - AT support
