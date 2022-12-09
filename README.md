@@ -15,7 +15,7 @@ To test, the PCE and cpmtools are needed:
 -  PCE (http://www.hampa.ch/pce/)
 
 <p align="center">
-<img src="./diagrams/legacy.png" width="70%">
+<img src="./images/cpm86.png" width="70%">
 </p>
 <p align="center">
 Patched CP/M-86 running in the PCE Emulator
