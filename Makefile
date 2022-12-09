@@ -26,6 +26,8 @@ cpm86-1.img: cpm86.sys base.img
 
 cpm86-2.img: base.img 
 	cp base.img $@
+	cpmcp -f ibmpc-514ss $@ cpm86.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
