@@ -1,0 +1,138 @@
+        CP/M-86 V1.1  SOFTWARE PERFORMANCE REPORT SUMMARY       
+
+                 KNOWN PROBLEMS IN CP/M-86 V1.1 
+
+      CP/M-86 is a registered trademark of DIGITAL RESEARCH 
+
+UTILITY # SYMPTOM\PROBLEM DESCRIPTION                       GN:DW:PC:
+------- - -----------------------------------------------   -- -- --
+ASM-86  1 Does not diagnose unterminated "IF" conditional.   *  *  * 
+V1.1        
+
+        2 The  DW codemacro specifier/modifier  used with    *  *  *
+          a  range-check does  not reject  out of  bounds
+          parameters in some cases.
+
+        3 The  DW  codemacro used with a range check does     *  *  *
+          not accept a negative range boundary.   
+          WORKAROUND: Use "Dsb" (signed byte).
+
+ASSIGN    There are no known problems.                             *
+V1.0
+
+BDOS    1 At the CCP level, typing K:<return>, where K is    *  *  *
+V2.2      a non-existent disk, causes  the  "BDOS SELECT"
+          message to appear, but a control-C then results 
+          in the K> prompt.          
+
+        2 FFFF in  "max"  field of code group  descriptor    *  *  * 
+          causes faulty  allocation;  it  should allocate
+          all of available memory.
+
+        3 During  BIOS SELDSK does not set bit 0 of DL to    *  *  * 
+          0  if  the  first  access  of  the  drive is  a 
+          simple default drive switch.  
+
+        4 Function 59 does not work properly.                      *
+          WORKAROUND: Install CP/M 86 Patch 13
+
+BIOS    1 Redirection does not work properly.                      *
+V1.2
+
+CONFIG    There are no known problems.                             * 
+V1.0
+
+COPYDISK  There are no known problems.                          *
+V1.5
+
+COPYDISK  There are no known  problems.                      *     *
+V2.0
+
+DDT 86  1 After tracing through a PUSHF, a G command will    *  *  
+V1.1      go into trace  mode.
+
+        2 Files are not closed after  an R or E  command,   *  *   
+          even if an error occurs.
+
+        3 IN  AL,0  and  IN  AX,0   are  disassembled  as   *  *    
+          the same command.                                              
+                                                                     
+          Note:  DDT 86  was  updated  to V 1.2 in August             
+          of  1982 however,  the  CP/M  86 (product 1007)            
+          master was not updated.                                    
+
+DDT86     There are no known problems.                             * 
+V1.2
+
+DSKMAINT  There are no known problems.                             *
+V1.2
+                                                                     
+ED      1 Command tail, "MYFILE.TXT B:YOURFILE.TXT"  does    *  *  * 
+V2.0      not create resultant file on B:  as the  manual           
+          says.                                               
+                                                                     
+        2 nJ  string ....  does  not  function   properly,   *  *  * 
+          WORKAROUND: J command works if the "n" parameter           
+          is omitted.                                                
+
+FUNCTION  There are no known problems.                             *
+V1.0
+-
+GENCMD  1 Cannot build 64K segments;                         *  *  *  
+          WORKAROUND: Limit segments to 62K
+
+        2 Certain .H86  records can  cause erroneous .CMD    *  *  *    
+          file to be built.
+
+GENDEF  1 Hangs on certain input files.                      *
+
+HELP      There are no known problems.                       *  *  * 
+V1.1
+
+HDMAINT   There are no known problems.                             *
+V1.0
+
+LMCMD   1 Hangs on certain input files.                      *
+
+PIP     1 Sending  large  file  to  CON: or  LST: creates    *  *  *         
+          temporary $$$ file on disk.
+
+        2 Concatenating  console  input with  an  exiting    *  *  *      
+          disk file does  not  work  at  all,  regardless 
+          of the destination.
+          WORKAROUND: Pip filename1 = con:
+                      then Pip file3 = filename1,file 2
+
+PIP     1 Files which have the archive bit set  are not            *  
+V1.1      copied properly.
+
+PRINT     There are no known problems.                             *
+V1.1                                                                     
+
+SETUP     There are no known problems.                             *
+V1.2
+
+SETUP     There are no known problems.                          *
+V1.4
+
+SID 86  1 String  substitution only  works  if a  quote   
+          (") is the delimiter, not  an apostrophe  (') 
+          as shown in the example.
+
+STAT    1 Erroneously  reports "0K  remaining"  when  1      *  *  * 
+          block is left; Regardless of block size.
+
+        2 Erroneously  reports "space  alloc. conflict"      *  *  *
+          when  block  size = 2K and  disk contains >4M
+          of files.
+
+SUBMIT    There are no known problems.                       *  *  * 
+
+TOD       There are no known problems.                       *     *
+V1.1
+
+
+
+
+Copyright (c) 1984 by DIGITAL RESEARCH, Pacific Grove, CA.
+

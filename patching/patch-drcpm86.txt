@@ -1,0 +1,1563 @@
+                                     CP/M-86  V1.1
+                                Patch 01, BDOS, 3/03/82 (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  CPM.SYS, CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-00900
+
+
+          Change Description:
+
+               The following  patch  procedure  modifies  CPM.SYS  for  proper 
+          execution of the Chain Command Function.  (Function 47)
+
+
+          Patch Procedure:
+
+               Make a back-up copy of CPM.SYS before using  DDT-86    to  make 
+          the following changes:
+
+
+                  A>ddt86
+                  -rcpm.sys
+                    START         END
+                  nnnn:0000        nnnn:397F
+                  -xcs
+                  CS 0000 nnnn+8  ;The effect of the register
+                  DS 0000 nnnn+8  ;change is to set all segment
+                  SS 0040 nnnn+8  ;registers to the beginning of
+                  ES 0000 nnnn+8  ;the program. (above the base page)
+                  IP 0000
+                  -a21e6
+                  nnnn+8 21E6 stosb
+                  nnnn+8 21E7 or al,al
+                  nnnn+8 21E9 jz 21ed
+                  nnnn+8 21EB .
+                  -a21f1
+                  nnnn+8 21F1 pop ds
+                  nnnn+8 21F2 mov [000a],al
+                  nnnn+8 21F5 .
+                  -wcpm.sys
+                  -^c
+                  A>
+
+
+               Or, you can assemble  the  following  code  file  (F47.A86)  to 
+          create  F47.H86.  Then,  concatenate CPM.H86, TBIOS.H86, and F47.H86 
+          using the following PIP command:
+
+                  A>PIP CPMX.H86=CPM.H86,TBIOS.H86,F47.H86
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 01
+
+
+               Next, create a new command  (.CMD)  file  using  the  following 
+          GENCMD command line:
+
+                  A>GENCMD CPMX 8080 code[a40].
+
+               Then, rename the new CPMX.CMD file CPM.SYS using the  following 
+          commands:
+
+                  ERA CPM.SYS
+                  REN CPM.SYS=CPMX.CMD
+
+
+          F47.A86 Code File
+
+
+                  Title   'F47 - Patch for CPM-86 Function'
+
+                  Patch_1 Equ     21E6H           ; Location of first patch
+                  Patch_2 Equ     21F1H           ; Location of second patch
+
+                  F472    Equ 21EDH
+                                  
+                  CCp_buff_len    Equ     Byte ptr .0AH
+
+                          Cseg    $
+                          Org     F472
+                  Func472:
+                          Org     Patch_1
+
+                          Stosb
+                          Or      Al, Al
+                          Jz      Func472
+
+
+                          Org     Patch_2
+
+                          Pop     Ds
+                          Mov     CCp_Buff_len, Al
+
+                          End
+
+
+          Function 47 TEST
+
+               The following program can be used  to  test  the  patch.   DDT-
+          86.CMD and ED.CMD must be on your default drive to run the test.
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+          CP/M-86 V1.1                                             Patch 01
+
+
+          Title   'Function 47 test'
+          Cseg
+          ;
+          ; This routine causes a chain to DDT-86
+
+          Chain   Equ     2FH                           ; Function 47
+          Bdos    Equ     0E0H                          ; Bdos entry
+          Dseg
+                  Org     80H
+          Default_Dma_buffer      Rb 80H
+
+          File_name       Db      'DDT86 Ed', 0H
+
+          Cseg    $
+
+                  Cld
+                  Mov     Si, Offset File_name          ; Mov File name into
+                  Mov     Di, Offset Default_Dma_Buffer ; Default dma buffer
+                  Mov     Cx, Length File_name + 1
+                  Push    ES
+                  Mov     Ax, Ds
+                  Mov     Es, Ax
+
+                  Rep     Movsb
+
+                  Pop     Es
+                  Mov     Cl, Chain                     ; Chain to program
+                  Int     Bdos
+                  End
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          3
+
+
+
+
+
+
+                                    CP/M-86   V1.1 
+                               Patch 02, LDCOPY, 3/08/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+
+
+          Program:  LDCOPY.A86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-00900
+
+
+          Error Description:
+
+               LDCOPY does not write the loader to the destination disk with a 
+          track buffered BIOS.
+
+
+          Patch Procedure:
+
+               Change the distributed assembly file of the load  copy  program 
+          according  to the following procedure.  Instructions are modified in 
+          the Write routine.
+
+
+               1) Locate the label trysec:.
+               2) Locate the instruction just after the label jz tryread.
+               3) Add the following code:
+
+
+                       mov        cl, 00
+                       mov        ax, track
+                       inc        ax
+                       cmp        ax, nlt
+                       jne        normal_write
+
+                       mov        ax, sector
+                       inc        ax
+                       cmp        ax, spt 
+                       jne        normal_write
+                       mov        cl, 01
+                  Normal_Write:
+                          .
+                          .
+                          .
+
+
+               4) Locate the beginning of the code segment, for example, Cseg.  
+               5) Locate the copyright notice: (copyright  (c)  1981,  Digital 
+                  Research).
+               6) Just after the copyright, add:
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 02
+
+
+                  rs      100H                    ;emergency patch area
+                  .
+                  .
+                  .
+
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                    CP/M-86   V1.1 
+                                Patch 03, GENDEF, 4/8/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  GENDEF.CMD
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               This  patch  corrects  the  GENDEF.CMD  program  to  parse  the 
+          parameters in the command tail.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of GENDEF.CMD before using DDT-86   to make 
+          the following changes:
+
+
+                  A>ddt86
+                  DDT86 1.1
+                  -rgendef.cmd
+                    START      END
+                  NNNN:0000 NNNN:25FF
+                  -xcs
+                  CS 0000 nnnn+8     ; The effect of the register
+                  DS 0000 nnnn+8     ; change is to set all segment
+                  SS 0040 nnnn+8     ; registers to the beginning of
+                  ES 0000 nnnn+8     ; the program. ( above the base page)
+                  IP 0000 .
+                  -aede
+                  NNNN+8:0EDE mov bx, 06d
+                  NNNN+8:0EE1 cmp byte [bx], 24
+                  NNNN+8:0EE4 nop
+                  NNNN+8:0EE5 nop
+                  NNNN+8:0EE6 .
+                  -aefb
+                  NNNN+8:0EFB mov bx, 06d
+                  NNNN+8:0EFE mov al, [bx+si]
+                  NNNN+8:0F00 nop
+                  NNNN+8:0F01 nop
+                  NNNN+8:0F02 .
+                  -wgendef.cmd
+                  -^c
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+
+
+
+                                    CP/M-86   V1.1 
+                                 Patch 04, ED, 04/08/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  ED.CMD
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Change Description:
+
+               Usually, you press CTRL-C to  interrupt  ED  commands.   If  ED 
+         g  the  command  before the CTRL-C is pressed, ED 
+          aborts causing termination of the edit session.  The following patch 
+          procedure modifies ED to allow interruption of commands using CTRL-Y 
+          instead of CTRL-C.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of ED.CMD before using DDT-86   to make the 
+          following changes:
+
+
+                  A>ddt86
+                  -red.cmd
+                    START          END
+                  nnnn:0000     nnnn:23ff
+                  -xcs
+                  CS 0000 nnnn+8
+                  DS 0000 nnnn+8
+                  SS 0000 nnnn+8
+                  ES 0000 nnnn+8
+                  -lbd1,bd3
+                  yyyy:0BD1 CMP    AL,03
+                  yyyy:0BD3 JNZ    0BD9
+                  -sbd2
+                  yyyy:0BD2 03 19
+                  yyyy:0BD3 75 .
+                  -s79
+                  yyyy:0079 30 31
+                  yyyy:007A 36 .
+                  -wed.cmd
+                  -^c
+                  A>
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+
+
+                                     CP/M-86   V1.1 
+                                 Patch 05, ED, 04/08/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  ED.CMD
+          Products and Serial Numbers Affected:  CP/M-86    V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Change Description:
+
+               Use the ED command,  0X<filename>,  to  delete  files.   If  the 
+          command  is  used  with  a  filename that does not exist, however, ED 
+          prints the message, BREAK "O" AT ^Z, and interrupts any macro command 
+          being  processed.  The  following patch procedure modifies ED to omit 
+          the interruption of macro commands and the error message display.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of ED.CMD before using DDT-86   to make  the 
+          following changes:
+
+                  A>ddt86
+                  -red.cmd
+                    START          END
+                  nnnn:0000     nnnn:23ff
+                  -xcs
+                  CS 0000 nnnn+8
+                  DS 0000 nnnn+8
+                  SS 0000 nnnn+8
+                  ES 0000 nnnn+8
+                  -l8e9,8f7
+                  yyyy:08E9 CMP    BYTE [0259],FF
+                  yyyy:08EE JNZ    08BA
+                  yyyy:08F0 MOV    BYTE [03C6],4F
+                  yyyy:08F5 JMP    01F7
+                  -a8e9
+                  yyyy:08E9 jmp 8ba
+                  yyyy:08EC .
+                  -f8ec,8f7,90
+                  -s79
+                  yyyy:0079 30 32
+                  yyyy:007A 36 .
+                  -wed.cmd
+                  -^c
+                  A>
+
+               Licensed users are granted the right to include these changes in 
+          CP/M-86 V1.1 software.
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+
+
+
+                                    CP/M-86   V1.1 
+                                Patch 06, BDOS, 4/23/82 (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 ASM-86 and DDT-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.SYS and CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               This patch modifies Functions  17  and  18  (Search  First  and 
+          Search  Next)  to  return  the  directory record in the DMA address.  
+          Usually, the data segment contains the  address  segment  attribute.  
+          However,  in  the  following patch procedure, it is assumed that the 
+          DMA buffer segment set by Function 51 (Set DMA  Base)  contains  the 
+          address segment attribute.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of CPM.H86 and CPM.SYS  before  making  the 
+          following  changes.  Assemble  the  following  program  using ASM-86 
+            .  Concatenate the program to the end of CPM.H86  and  the  TBIOS.  
+          Refer  to the CP/M-86 Microcomputer Control Program System Guide for 
+          concatenation instructions.  Include all previous  patches  in  this 
+          concatenation.
+
+
+                  Title   'Dmapatch 4/23/82'
+
+                  Dmabase         Equ     Word ptr 24A2H
+                  Patch_Area      Equ     1896H
+
+                          Cseg
+                          Org     Patch_Area
+
+                          Mov     Es, .Dmabase
+
+                          End
+
+
+               Or, you can use DDT-86   to patch  the  CPM.SYS  file  directly 
+          with the following commands:
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 06
+
+
+                  A>ddt86
+                  DDT86
+                  -rcpm.sys
+                    START     END
+                  NNNN:0000 NNNN:397F
+                  -s1918
+                  NNNN:1918 9D a2
+                  NNNN:1919 24 .
+                  -wcpm.sys
+                  -^c
+                  A>
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                     CP/M-86   V1.1
+                                Patch 07, BDOS, 4/21/82 (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 ASM-86 and DDT-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.SYS / CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               Register BH contains random data upon return from Function  12.  
+          This patch forces the BDOS to return 0.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of CPM.SYS and CPM.H86  before  making  the 
+          following  changes.  Assemble the following program using ASM-86   .   
+          Concatenate the program to the end of CPM.H86 and the TBIOS.   Refer 
+          to  the  CP/M-86  Microcomputer  Control  Program  System  Guide for 
+          concatenation instructions.  Include all previous  patches  in  this 
+          concatenation.
+
+
+                 Title    'Func12 4/21/82'
+                 ;This patch sets BH to 0 when bdos returns from function 12
+
+                  Cseg
+
+                 Patch_Area       Equ     0B77H
+
+                  Org     Patch_Area
+
+                  Xor     Ax, Ax
+
+                  End
+
+
+               Or, you can use DDT-86   to patch  the  CPM.SYS  file  directly 
+          using the following commands:
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 07
+
+
+                  A>ddt86
+                  DDT86
+                  -rcpm.sys
+                    START     END
+                  NNNN:0000 NNNN:397F
+                  -sbf7
+                  NNNN:0BF7 32 33
+                  NNNN:0BF8 C0 .
+                  -wcpm.sys
+                  -^c
+                  A>
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                    CP/M-86   V1.1  (TS: Incorporated)
+                                Patch 08, BDOS, 5/12/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 DDT-86 and SID-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.SYS and CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               The E command (Program Load)  in  DDT-86    or  SID-86    might 
+          overwrite  part  of  DDT-86,  SID-86  or other memory locations if a 
+          drive specification is part of the filespec used in the  E  command.  
+          This  error  might  also  occur  if you use Function 59 with a drive 
+          specification in the FCB.
+
+
+          Patch Procedure:
+
+               There are two ways to patch  the  system.  The  first  requires 
+          assembly  of  the  program stub titled FUNC59P, which appears below.  
+          Concatenate the assembled FUNC59P to the CPMX.H86 file,  CPMX.H86  = 
+          CPM.H86   +   CBIOS.H86.   The   command   to   concatenate  is  PIP       
+          CPM.H86=CPMX.H86,FUNC59P.H86.  Then, use  GENCMD  with  the  command 
+          GENCMD CPMX 8080 code[a40] and rename the CPMX.CMD to CPM.SYS.
+
+
+               Title      'FUNC59P'
+
+               ;
+               ; This program restores the ES reg after a call to Function 59
+
+                  Cseg
+                  Org     0E23H
+                  Push    Es
+                  Nop
+                  Mov     .22DCH, Dx
+
+                  Org     0F1AH
+                  Jmp     Patch_area
+                  Nop
+
+                  Org     0A20H
+               Patch_area:
+                  Mov     .2496H, Ax
+                  Pop     Es
+                  Ret
+
+                  End
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 08
+
+
+
+               Or, you can apply the following patch using DDT-86.  The  patch 
+          is  applied  below the FUNC59P program stub.  Make a back-up copy of 
+          CPM.SYS before using DDT-86 to make the following changes:
+
+
+                  A>ddt86
+                    rcpm.sys
+                      START      END
+                    NNNN:0000 NNNN:397F
+                   -saa0
+                    NNNN:0AA0 00 a3
+                    NNNN:0AA1 00 96
+                    NNNN:0AA2 00 24
+                    NNNN:0AA3 00 07
+                    NNNN:0AA4 00 c3
+                    NNNN:0AA4 00 .
+                   -sea3
+                    NNNN:0EA3 A1 06
+                    NNNN:03A4 99 90
+                    NNNN:0EA5 24 89
+                    NNNN:0EA6 A3 16
+                    NNNN:0EA7 DC .
+                   -sf9a
+                    NNNN:0F9A A3 e9
+                    NNNN:0F9B 96 03
+                    NNNN:0F9C 24 fb
+                    NNNN:0F9D C3 90
+                    NNNN:0F9E E9 .
+                   -wcpm.sys
+                   -^c
+                  A>
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                    CP/M-86   V1.1 
+                                Patch 09, PIP, 05/14/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  PIP.CMD
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               A problem  occurs  using  PIP  to  ambiguously  copy  archived, 
+          multiextent files.  PIP copies only the last extent.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of PIP.CMD before using  DDT-86    to  make 
+          the following changes:
+
+
+                  A>ddt86
+                  DDT86 1.1
+                  -rpip.cmd
+                    START      END
+                  nnnn:0000 nnnn:1D7F
+                  -xcs
+                  CS 0000 nnnn+8
+                  DS 0000 nnnn+8
+                  SS 0040 nnnn+8
+                  ES 0000 nnnn+8          ; YYYY = nnnn+8
+                  -l132A
+                    YYYY:132A MOV     CL,[02B9]
+                    YYYY:132E NOT     CL
+                    YYYY:1330 PUSH    CX
+                    YYYY:1331 CALL    13B6
+                    YYYY:1334 POP     CX
+                    YYYY:1335 OR      AL,CL
+                    YYYY:1337 RCR     AL,1
+                    YYYY:1339 JNB     1375
+                    YYYY:133B MOV     BYTE [01E4],00
+                  -a132a
+                    YYYY:132a test byte [02b9],01
+                    YYYY:132f jz 1338
+                    YYYY:1331 call 13b6
+                    YYYY:1334 rcr al,1
+                    YYYY:1336 jnb 1375
+                    YYYY:1338 xor al,al
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 09
+
+
+                    YYYY:133a mov [0198],al
+                    YYYY:133d mov [01e4],al
+                    YYYY:1340 .
+                  -wpip.cmd
+                  -^c
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                     CP/M 86   V1.1 (TS: Incorporated)
+                                Patch 10, BDOS, 5/20/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 ASM-86 and DDT-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.SYS and CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               CP/M-86 does not return an error indication code for an invalid 
+          function  code.  This  patch  forces the BDOS to return 0FFFFH in AX 
+          and BX if a function code is out of range.
+
+
+          Patch Procedure:
+
+               To patch the CPM.H86 file, assemble the following program  stub 
+          with  ASM-86    and name it BADFUNC.H86.  Concatenate BADFUNC.H86 to 
+          the end of the CPM.H86 file using the PIP command:
+
+                  A>PIP CPM.H86=CPM.H86,BADFUNC.H86
+
+          The modified CPM.H86 file replaces the original.  You  can  use  the 
+          modified  CPM.H86  file with your CBIOS to build a system.  Refer to 
+          the  CP/M-86  Microcomputer  Control  Program   System   Guide   for 
+          information  on the organization of CPM.SYS.  Make a back-up copy of 
+          CPM.SYS and CPM.H86 before making the following changes:
+
+
+                  Title   'BAD FUNC NUMB 5/20/82'
+
+                  ;
+                  ; This program patches CPM86 V1.1 so it returns an 0FFFFH
+                  ; in BX and AX.
+                  ;
+                          CSeg
+                          Org     0A50H
+                  Label_0:
+                          Jb      OK
+                          Mov     Word ptr .249bH, 0FFFFH
+                          Ret
+                  Ok:
+                          Jmp     Label_1
+
+                          Org     0B94H
+                          Jmp     Label_0
+
+                          Org     0B97H
+                  Label_1:
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 10
+
+
+                          End
+
+
+               Or, you can patch the CPM.SYS file directly  using  DDT-86    .  
+          Make a back-up copy of CPM.SYS before making the following changes:
+
+
+                  A>ddt86
+                  DDT86 1.1
+
+                   -rcpm.sys
+                      START      END
+                    NNNN:0000 NNNN:397f
+                   -s0ad0
+                    NNNN:0AD0 44 72
+                    NNNN:0AD1 65 07
+                    NNNN:0AD2 63 c7
+                    NNNN:0AD3 65 06
+                  NNNN:0AD4 6D 9b
+                    NNNN:0AD5 62 24
+                    NNNN:0AD6 65 ff
+                    NNNN:0AD7 72 ff
+                    NNNN:0AD8 20 c3
+                    NNNN:0AD9 32 e9
+                    NNNN:0ADA 38 3b
+                    NNNN:0ADB 20 01
+                    NNNN:0ADC 38 .
+                   -s0c14
+                    NNNN:0C14 72 e9
+                    NNNN:0C15 01 b9
+                    NNNN:0C16 C3 fe
+                    NNNN:0C17 8A .
+                   -wcpm.sys
+                  -^c
+
+
+               Licensed users are granted the right to include  these  changes 
+          in CP/M-86 V1.1 software.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          2
+
+
+
+
+
+
+                                     CP/M-86   V1.1
+                                Patch 11, BDOS, 5/20/82  (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 ASM-86 and DDT-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.SYS and CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746 
+          through C86-000-01001
+
+
+          Error Description:
+
+               If the system denies an absolute  memory  request,  the  system 
+          does not return an error-indication code.  This patch returns 0FFFFH 
+          in AX if the system denies a memory request.
+
+
+          Patch Procedure:
+
+               To patch the CPM.H86 file, assemble the following program  stub 
+          using   ASM-86     and   name   the  file  PATCH11.A86.  Concatenate     
+          PATCH11.A86 to the end of the CPM.H86 file using the  following  PIP 
+          command:
+
+                  A>PIP CPM.H86=CPM.H86,PATCH11.H86
+
+          The modified CPM.H86 file replaces the original.  Use  CPM.H86  with 
+          your  CBIOS  to  build a system.  Refer to the CP/M-86 Microcomputer 
+          Control Program System Guide for information on the organization  of W 
+          the CPM.SYS file.
+
+
+              Title 'Patch11 5/20/82'
+
+              Loaderr_loc Equ    0F1EH   ;Addr of load error routine
+              Load59_Ret  Equ    0F06H   ;Exit from load error routine
+              Pat_offset  Equ    0A30H   ;Patch area
+
+              User_Parm_Seg       Equ    02323H  ;User's data segment
+              Aret                Equ    0249BH  ;Return value
+              Param_Seg   Equ    0249DH  ;User's data segment at entry
+
+                  Cseg
+
+                  Org     Pat_Offset
+
+              Patch:
+                  Mov     Ax, .User_Parm_Seg
+                  Mov     .Param_seg, Ax
+                  Mov     Word ptr .Aret, 0FFFFH
+                      Jmp     loadret
+
+
+
+          All Information Presented Here is Proprietary to Digital Research
+
+                                          1
+
+
+
+          CP/M-86 V1.1                                             Patch 11
+
+
+                  Org     Load59_ret
+              loadret:
+                  Org     Loaderr_loc
+                  Jmp     Patch
+
+                  End
+
+
+               Or,  you  can  patch  your  CPM.SYS  file  directly  using  the 
+          following  DDT-86   commands.  Make a back-up copy of CPM.SYS before 
+          making the following changes:
+
+
+                  A>ddt86
+                    DDT86 1.1
+                   -rcpm.sys
+                      START      END
+                    NNNN:0000  NNNN:397F
+                   -sab0
+                    NNNN:0AB0 00 a1
+                    NNNN:0AB1 00 23
+                    NNNN:0AB2 00 23
+                    NNNN:0AB3 00 a3
+                    NNNN:0AB4 00 9d
+
+                                     CP/M-86   V1.1
+                               Patch 12, SUBMIT, 5/24/82 (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+
+
+          Program:  SUBMIT.COM
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746      This patch modifies the SUBMIT utility to enable execution fromtch Procedure:
+
+               Make a back-up copy of SUBMIT.COM before using DDT-86   to makees:
+
+
+                  A>ddt86
+                    DDT86 1.1
+                   -rsubmit.cmd
+                       START    END
+                    nnnn:0000 nnnn:0F7F
+                   -aa2
+                    nnnn:00A2 mov dl,ff     ;instruction was mov dx,00h
+                    nnnn:00A4 nop
+                    nnnn:00A5 .
+                   -wsubmit.cmd
+
+
+
+
+
+                                     CP/M-86   V1.1
+                                Patch 13, BDOS, 06/08/82 (TS: Incorporated)
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                 ASM-86 and DDT-86 are trademarks of Digital Research.
+
+
+          Program:  CPM.H86 and CPM.SYS
+          Products and Serial Numbers Affected:   CP/M-86    V1.1  0-000-00000
+
+               An area of memory  can  be  overwritten  when  a  user  programram Load).
+
+
+          Patch Procedure:
+
+               To patch the  CPM.H86  file,  type  the  program  stub  on  the         following  page into a file named PATCH13.A86.  Assemble PATCH13.A86  Concatenate  PATCH13.H86  toIP CPM.H86=CPM.H86,PATCH13.H86
+
+               The newly modified CPM.H86 file replaces the original  and  can used  with  your  CBIOS to build a system.  Refer to the CP/M-86formation  on  they modifications.
+
+
+                  Title   'PATCH13 6/8/82'
+                  ;
+                  ; An area of memory may be overwritten when a
+                  ; user program executes a Function 59 (program load).
+
+                  Patch_Area      Equ     0A00H
+                  Bdos            Equ     00E0H
+
+                          Cseg
+
+                          Org     Patch_Area
+
+                  Start_Patch:
+
+                          Mov     Cs:byte ptr .2498H, 01
+
+                          Push    Ax
+                          Mov     Ah, Cs:.2327H
+                          Mov     Al, Cs:.2313H
+                          Push    Ax
+                          Int     Bdos
+
+                          Pop     Ax
+                          Mov     Cs:.2313H, Al
+                          Mov     Cs:.2327H, Ah
+                          Pop     Ax
+
+                          Ret
+                          Nop
+
+                          Org     0C42H
+
+                          Jmp     Start_Patch
+
+                          Nop
+                          Nop
+                          Nop
+                          Nop
+                          Nop
+                          Nop
+
+                          End
+
+
+               Or, you can patch your CPM.SYS file directly using DDT-86    . ng the following changes:
+
+
+                  A>ddt86
+                    DDT86 1.1
+                   -rcpm.sys
+                     START       END
+                    NNNN:0000   NNNN:397F
+                   -aa80
+                    NNNN:0A80 cs: mov byte [2498], 01
+                    NNNN:0A86 push ax
+                    NNNN:0A87 cs: mov ah, [2327]
+                    NNNN:0A8C cs: mov al, [2313]
+                    NNNN:0A90 push ax
+                    NNNN:0A91 int 0e0
+                    NNNN:0A93 pop ax
+                    NNNN:0A94 cs: mov [2313], al
+                    NNNN:0A98 cs: mov [2327], ah
+                    NNNN:0A9D pop ax
+                    NNNN:0A9E ret
+                    NNNN:0A9F nop
+                    NNNN:0AA0 .
+                   -acc2
+                    NNNN:0CC2 jmp 0A80
+                    NNNN:0CC5 nop
+                    NNNN:0CC6 nop
+                    NNNN:0CC7 nop
+                    NNNN:0CC8 nop
+                    NNNN:0CC9 nop
+                    NNNN:0CCA nop
+                    NNNN:0CCB .
+                   -wcpm.sys
+                   -^c
+
+
+                                     CP/M-86   V1.1
+                              Patch 14, TRACK.A86, 8/1/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       ASM-86 is a trademark of Digital Research.
+                                 Compiled October 1982
+
+
+          Program:  TRACK.A86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-007460
+
+
+          Error Description:
+
+               Assembling TRACK.A86 produces a  syntax  error  because  of  an  improper ASM-86   directive.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of  TRACK.A86.   Install  this  patch  with          : *#a <cr>
+                      1: *214:15t <cr>
+                    214:          dseg
+                    215:
+                    216:  cpm_disk        rb      1
+                    217:  cpm_track       rw      1
+                    218:  cpm_sec         rw      1
+                    219:
+                    220:  dma_longword    rd      1
+                    221:                  org     dma_longword
+                    222:  dma_offset      rw      1
+                    223:  dma_segment     rw      1
+                    224:
+                    225:  cur_disk        rb      1
+                    226:  cur_sec         rw      1
+                    227:  cur_track       rw      1
+                    228:  cur_dma         rw      1
+                    214: *220:2k <cr>
+                    220: *222:i <cr>
+                    222:  dma_longword    equ dword ptr dma_offset
+                    223: ^z <cr>
+                    224: *214:15t <cr>
+                    214:        dseg
+                    215:
+                    216:  cpm_disk        rb      1
+                    217:  cpm_track       rw      1
+                    218:  cpm_sec         rw      1
+                    219:  
+                    220:  dma_offset      rw      1
+                    221:  dma_segment     rw      1
+                    222:  dma_longword    equ dword ptr dma_offset
+                    223:
+                    224:  cur_disk        rb      1
+                    225:  cur_sec         rw      1
+                    226:  cur_track       rw      1
+                    227:  cur_dma         rw      1
+                    228:
+                    214: *e <cr>
+                  A>
+           
+
+
+                                     CP/M-86   V1.1
+                                Patch 15, BDOS, 11/19/82
+
+                          Copyright   1982 by Digital Research
+                 CP/M-86 is a registered trademark of Digital Research.
+                       DDT-86 is a trademark of Digital Research.
+                                 Compiled December 1982
+
+
+          Program:  CPM.SYS, CPM.H86
+          Products and Serial Numbers Affected:  CP/M-86   V1.1  C86-000-00746scription:
+
+               The BDOS does not load a file with  absolute  requirements  forRA or STACK segments.
+
+
+          Patch Procedure:
+
+               Make a back-up copy of CPM.SYS before you use DDT-86   to  makeWm.sys
+                    START      END
+                  nnnn:0000  nnnn:xxxx             (note the value of nnnn)
+                  -hnnnn,8
+                  nnnn+8 nnnn-8                  (note the value of nnnn+8)
+
+                  -xcs
+                  CS 0000 nnnn+8
+                  DS 0000 nnnn+8
+                  SS 0040 nnnn+8
+                  ES 0000 nnnn+8
+                  IP 0000 .
+                  -add4
+                  nnnn+8:0DD4 jmp 24e2
+                  nnnn+8:0DD7 .
+                  -a24e2
+                  nnnn+8:24E2 cmp word 03[si],0000
+                  nnnn+8:24E6 jz 24f2
+                  nnnn+8:24E8 push ax
+                  nnnn+8:24E9 mov ax,03[si]
+                  nnnn+8:24EC mov [22d4],ax
+                  nnnn+8:24EF pop ax
+                  nnnn+8:24FO jmps 24f5
+                  nnnn+8:24F2 mov [22d4],ax
+                  nnnn+8:24F5 jmp 0dd7
+                  nnnn+8:24F8 .
+                  -wcpm.sys
+                  -^C
+                  A>
+
+               Or, you can assemble the following code file  (PATCH15.A86)  tooncatenate PATCH15.H86 to the end of theM.H86=CPM.H86,PATCH15.H86
+
+               The newly modified CPM.H86 file replaces the original  and  can with your CBIOS to build a system.  Refer to Section 7.2 into study  theodifications.
+
+
+                  ;
+                  ;  The BDOS does not properly load a CMD file with absolute
+                  ;  load addresses specified in the header record for EXTRA
+                  ;  and/or STACK segments.
+
+                  Patch_area          equ       24E2h
+                  Jmp_point           equ       0DD4h
+                  Patch_return        equ       0DD7h
+                  Pag0                equ       word ptr .22D4h
+                  Abs                 equ       word ptr 3
+
+                           CSEG
+
+                           org        jmp_point
+                           jmp        patch
+
+                           CSEG
+
+                           org        patch_return
+                  Patch_ret:
+
+                           CSEG
+
+                           org        patch_area
+                  Patch:
+                           cmp        abs[si],0 ! jz from_ax
+                           push       ax
+                           mov        ax,abs[si]
+                           mov        pag0,ax
+                           pop        ax
+                           jmps       end_patch
+                  From_ax:
+                           mov        pag0,ax
+                  End_patch:
+                           jmp        patch_ret
+
+                           end
+
+
+               Licensed users are granted the right to include  these  changesed Here is Proprietary to Digital Research
+

@@ -1,0 +1,25 @@
+HOW TO PATCH "CP/M-86 FOR THE IBM PC AND IBM PC-XT, VERSION 1.1"
+TO PERMANENTLY FIX THE 21st CENTURY DATE PROBLEM.
+[Patch originally developed by Kirk Lawrence - August, 1997]
+
+  1. In the CPM.SYS file, locate the ASCII bytes at absolute offset
+     37ABh ("1") and 37ACh ("9").
+
+  2. Change the "1" to a "2," and the "9" to a "0."
+
+  3. Save the changes to disk.
+
+  4. Boot your machine from this patched version of CPM.SYS.
+
+-> WARNING: Don't make this patch until the year 2000 actually arrives.
+
+NOTE: This patch is =specific= to "CP/M-86 For The IBM PC and IBM PC-XT,
+Version 1.1."  It will NOT work with any other O.E.M. version of CP/M-86.
+"Patching" should always be done to a =copy= of the CPM.SYS file, and
+NOT to the file on the original system disks.
+
+As is always the case with this kind of "free" information, there are NO
+guarantees whatsoever.  If you choose to use this information, you do so
+entirely at your own risk and peril, and YOU assume all responsibility
+for the result.
+

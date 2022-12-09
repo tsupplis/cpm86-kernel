@@ -1,0 +1,30 @@
+HOW TO PATCH "CP/M-86 FOR THE IBM PC AND IBM PC-XT, VERSION 1.1"
+TO RUN ON ANY AT-CLASS MACHINE (286, 386, 486, Pentium, etc.)
+[Patch originally developed by Richard Kanarek - November, 1995]
+
+  1. In the CPM.SYS file, locate the byte at absolute file offset
+     3DAFh.  The byte will be ABh (or ASCII "1/2").
+
+  2. Change the byte to 47h (or ASCII "G").
+
+  3. Now locate the byte at absolute file offset 3DB9h.  The byte
+     will, again, be ABh (or ASCII "1/2").
+
+  4. Change the byte to 47h (or ASCII "G").
+
+  5. Save these changes to disk.
+
+  6. Boot your AT-class machine from this patched version of CPM.SYS.
+     (This "patched" version will also run fine on PC- and XT-class
+     IBM-compatible machines.)
+
+NOTE: This patch is =specific= to "CP/M-86 For The IBM PC and IBM PC-XT,
+Version 1.1."  It will NOT work with any other O.E.M. version of CP/M-86.
+"Patching" should always be done to a =copy= of the CPM.SYS file, and
+NOT to the file on the original system disks.
+
+As is always the case with this kind of "free" information, there are NO
+guarantees whatsoever.  If you choose to use this information, you do so
+entirely at your own risk and peril, and YOU assume all responsibility
+for the result.
+
