@@ -16,9 +16,14 @@ To test, the PCE and cpmtools are needed:
 
 <p align="center">
 <img src="./images/cpm86.png" width="80%">
+Patched CP/M-86 running in the PCE Emulator
 </p>
 <p align="center">
-Patched CP/M-86 running in the PCE Emulator
+</p>
+
+<p align="center">
+<img src="./images/cpm86.png" width="80%">
+CP/M-86 setup 1.2
 </p>
 
 ## Distribution
