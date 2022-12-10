@@ -1,11 +1,11 @@
-all: cpm86.sys 
+all: cpm.sys 
 
 cpmwk.img: base.img
 	cp base.img $@
 
-cpm86-1.img: cpm86.sys base.img 
+cpm86-1.img: cpm.sys base.img 
 	cp base.img $@
-	cpmcp -f ibmpc-514ss $@ cpm86.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
@@ -26,7 +26,7 @@ cpm86-1.img: cpm86.sys base.img
 
 cpm86-2.img: base.img 
 	cp base.img $@
-	cpmcp -f ibmpc-514ss $@ cpm86.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
@@ -37,7 +37,7 @@ cpm86-2.img: base.img
 	cpmcp -f ibmpc-514ss $@ base/gendef.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-3.img: cpm86.sys base.img 
+cpm86-3.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ dev/rasm86.cmd 0:
 	cpmcp -f ibmpc-514ss $@ dev/link86.cmd 0:
@@ -46,7 +46,7 @@ cpm86-3.img: cpm86.sys base.img
 	cpmcp -f ibmpc-514ss $@ dev/sid86.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-4.img: cpm86.sys base.img 
+cpm86-4.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ dev/pbasic.cmd 0:
 	cpmcp -f ibmpc-514ss $@ dev/cbas86.cmd 0:
@@ -54,9 +54,9 @@ cpm86-4.img: cpm86.sys base.img
 	cpmcp -f ibmpc-514ss $@ dev/mbasic86.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86.sys: cpm86.h86
+cpm.sys: cpm86.h86
 	cpm_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
-	mv cpm86.cmd cpm86.sys
+	mv cpm86.cmd cpm.sys
 
 cpm86.h86: cpm.h86 pcbios.h86
 	doscat cpm.h86 > cpm86.h86
@@ -69,13 +69,13 @@ cpm.h86: ccp.h86 bdos.h86
 %.h86: %.a86
 	cpm_asm86 $<
 
-cpmnew: cpm86.sys
+cpmnew: cpm.sys
 	cpmrm -f ibmpc-514ss cpm86-1.img 0:cpm.sys
-	cpmcp -f ibmpc-514ss cpm86-1.img cpm86.sys 0:cpm.sys
+	cpmcp -f ibmpc-514ss cpm86-1.img cpm.sys 0:cpm.sys
 
 clean:
 	rm -rf *.h86 *.lst *.sym *.log
-	rm -rf cpm86.cmd cpm86.sys 
+	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
 	rm -rf *.xxd
 
