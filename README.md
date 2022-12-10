@@ -41,7 +41,7 @@ A full 160K single phase distribution is provided on 4 disks. The compiled cpm.s
 - cpm86-3.img: digital research dev tools
 - cpm86-4.img: basic development (microsoft basic, personal basic, cbasic)
 
-The following commands are in the original distribution:
+The CP/M-86 OS contains the following commands are in the original distribution:
 - asm86.cmd
 - assign.cmd
 - config.cmd
@@ -52,7 +52,7 @@ The following commands are in the original distribution:
 - gencmd.cmd
 - stat.cmd
 
-The distribution is provided with the following patched or updated components:
+The CP/M-86 OS is enhanced with the following patched or updated components:
 - help.hlp (more complete content)
 - dskmaint.cmd (updated from 1.0 to version 1.2)
 - setup.cmd (updated from 1.0 to version 1.2)
