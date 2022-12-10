@@ -32,7 +32,12 @@ To test, the PCE emulator and cpmtools are needed. PCE can be found at http://ww
 
 ## Distribution
 
-A full 160K single phase distribution is provided on 2 disks. The compiled cpm.sys file is also provided standalone.
+A full 160K single phase distribution is provided on 4 disks. The compiled cpm.sys file is also provided standalone.
+
+- cpm86-1.img: bootable core CP/M-86
+- cpm86-2.img: bootable assembler CP/M-86 tools
+- cpm86-3.img: digital research dev tools
+- cpm86-4.img: basic development (microsoft basic, personal basic, cbasic)
 
 The following commands are in the original distribution:
 - asm86.cmd
