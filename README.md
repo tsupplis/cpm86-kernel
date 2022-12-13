@@ -15,7 +15,7 @@ The compilation requires the (cross-development environment for CP/M-86)[https:/
 
 ## Playing with CP/M-86
 
-To test, the PCE emulator and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/.
+To test, the PCE emulator and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/. the images relased also work with qemu.
 
 - Patched CP/M-86 running in the PCE Emulator
 <p align="center">
@@ -64,6 +64,8 @@ The CP/M-86 OS is enhanced with the following patched or updated components:
 - mform.cmd (patched to avoid interactive question)
 - tod.cmd (complete rewrite at https://github.com/tsupplis/cpm86-hacking)
 - atinit.cmd (sync up RTC clock and bios if clock available, cf https://github.com/tsupplis/cpm86-hacking)
+
+also the images produced from the blank image have a boot loader terminating with 55AA allowing emulators like qemu to load CP/M-86 properly. Beware, if the image is formatted using dskmaint.cmd, the signature will not be added. A small boot fix will be added later.
 
 ## Pedigree
 
