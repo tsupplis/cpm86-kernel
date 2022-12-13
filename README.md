@@ -15,7 +15,7 @@ The compilation requires the (cross-development environment for CP/M-86)[https:/
 
 ## Playing with CP/M-86
 
-To test, the PCE emulator and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/. the images relased also work with qemu.
+To test, the PCE emulator and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/. the floppy images released also work with qemu.
 
 - Patched CP/M-86 running in the PCE Emulator
 <p align="center">
