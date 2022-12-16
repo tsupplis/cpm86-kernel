@@ -37,7 +37,8 @@ To test, the PCE emulator and cpmtools are needed. PCE can be found at http://ww
 A full 160K single phase distribution is provided on 4 disks. The compiled cpm.sys file is also provided standalone.
 
 - cpm86-1.img: bootable core CP/M-86
-- cpm86-2.img: bootable assembler CP/M-86 tools
+- cpm86-at-1.img: bootable core CP/M-86 with AT-compatible clock
+- cpm86-2.img: assembler CP/M-86 tools
 - cpm86-3.img: digital research dev tools
 - cpm86-4.img: basic development (microsoft basic, personal basic, cbasic)
 
