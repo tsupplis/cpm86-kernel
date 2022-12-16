@@ -3,8 +3,8 @@ all: cpm.sys
 cpmwk.img: base.img
 	cp base.img $@
 
-cpm86-1.img: cpm.sys base.img 
-	cp base.img $@
+cpm86-at-1.img: cpm.sys base.img 
+	cp base-at.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
@@ -24,10 +24,28 @@ cpm86-1.img: cpm.sys base.img
 	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-2.img: base.img 
+cpm86-1.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
-	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/setup.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/dskmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/hdmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/function.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/config.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/assign.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/data.pfk 0:
+	cpmcp -f ibmpc-514ss $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/tod.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/help.* 0:
+	cpmcp -f ibmpc-514ss $@ base/print.* 0:
+	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
+	cpmls -F -f ibmpc-514ss $@ 0:*.*
+
+cpm86-2.img: base.img 
+	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/ed.cmd 0:
@@ -76,10 +94,10 @@ cpmnew: cpm.sys
 clean:
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
-	rm -rf cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
+	rm -rf cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
 	rm -rf *.xxd
 
-dist: cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
+dist: cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
 
 test: dist
 	./cpm86
