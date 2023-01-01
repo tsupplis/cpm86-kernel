@@ -1,0 +1,1884 @@
+; ********************************************************************************
+;
+; V20-MBC (HW ref. A250220) CP/M-86 Custom BIOS - S220520 
+;
+; Required: IOS S260320-R230520 (or following revisions until otherwise stated)
+;
+; Compile with: ASM86.COM (CP/M-80) or ASM86.CMD (CP/M-86)
+;
+;
+;
+; CHANGELOG:
+;
+; S220520           First release
+; S110321           SAH - CP/M-86/80 BIOS
+;
+; ********************************************************************************
+
+; --------------------------------------------------------------------------------
+;
+; V20-MBC IOS equates
+;
+; --------------------------------------------------------------------------------
+
+EXC_WR_OPCD  EQU    000H      ; Address of the EXECUTE WRITE OPCODE write port
+EXC_RD_OPCD  EQU    000H      ; Address of the EXECUTE READ OPCODE read port
+STO_OPCD     EQU    001H      ; Address of the STORE OPCODE write port
+SERIAL_RX    EQU    001H      ; Address of the SERIAL RX read port
+SYSFLAGS     EQU    002H      ; Address of the SYSFLAGS read port
+SERTX_OPC    EQU    001H      ; SERIAL TX opcode
+SELDISK_OPC  EQU    009H      ; SELDISK opcode
+SELTRCK_OPC  EQU    00AH      ; SELTRACK opcode
+SELSECT_OPC  EQU    00BH      ; SELSECT opcode
+WRTSECT_OPC  EQU    00CH      ; WRITESECT opcode
+DATETIM_OPC  EQU    084H      ; DATETIME opcode
+ERRDSK_OPC   EQU    085H      ; ERRDISK opcode
+RDSECT_OPC   EQU    086H      ; READSECT opcode
+SDMOUNT_OPC  EQU    087H      ; SDMOUNT opcode
+;
+; CCP Equates for the AUTOEXEC.SUB execution
+;
+CCPLEN       EQU    0AH       ; Address of current number of chars into the CCP input buffer
+CCPFIRST     EQU    0BH       ; Address of the first charater of the CCP input buffer
+
+; -------------------------------------
+
+true        equ -1
+false       equ not true
+cr      equ 0dh ;carriage return
+lf      equ 0ah ;line feed
+
+;*********************************************
+;*                                           *
+;* Loader_bios is true if assembling the     *
+;* LOADER BIOS, otherwise BIOS is for the    *
+;* CPM.SYS file.                             *
+;*                                           *
+;*********************************************
+
+loader_bios equ false
+bdos_int    equ 224 ;reserved BDOS interrupt
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code   equ 2500h
+ccp_offset  equ 0000h
+bdos_ofst   equ 0B06h ;BDOS entry point
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code   equ 1200h ;start of LDBIOS
+ccp_offset  equ 0003h ;base of CPMLOADER
+bdos_ofst   equ 0406h ;stripped BDOS entry
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    cseg
+
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+CodeMacro	AAD10		; modified AAD instruction
+	db	0d5h
+	db	010h
+EndM
+;
+CodeMacro	BRKEM	interrupt:db ; branch to emulation interrupt
+	db	0fh
+	db	0ffh
+	db	interrupt
+EndM
+;
+; bdos functions used by 8080 emulation
+C_RAWIO		equ	6	; Perform Direct I/O
+C_STAT		equ	11	; Get Console Status
+F_CLOSE		equ	16	; Close File
+DRV_SET 	equ	14	; Set Default Drive 
+F_DELETE	equ	19	; Delete File
+F_READ		equ	20	; Read Sequential 
+F_WRITE 	equ	21	; Write Sequential
+F_MAKE		equ	22	; Create File
+F_DMAOFF	equ	26	; Set DMA Buffer Offset
+DRV_ALLOCVEC	equ	27	; Get Allocation Vector Address
+DRV_DPB		equ	31	; Get DPB Address
+S_BIOS		equ	50	; Call BIOS Routine 
+F_DMASEG	equ	51	; Set DMA Segment
+MC_ALLOC	equ	55	; Allocate Memory
+MC_FREE 	equ	57	; Free Memory
+;
+; bios functions used by 8080 emulation
+BIOS_SELDSK	equ	9	; Select Disk Drive
+;
+; emulation entry interrupts and calculated base page offsets
+intemul		equ	080h	; enter (8080) emulation interrupt
+intbdos		equ	081h	; interrupt native (8086) bdos
+intbios		equ	082h	; interrupt native (8086) bios
+intemul_offset	equ	(intemul * 4)
+intbdos_offset	equ	(intbdos * 4)
+intbios_offset	equ	(intbios * 4)
+;
+; equates/locations in cpm86 ccp to be patched/used at run time
+ccp_file	equ	.0827h	; drive+filename to be loaded
+ccp_file_type	equ	.0830h	; filetype of ^
+ccp_file_rec	equ	.0847h	; record count of ^
+ccp_file_ext	equ	.0833h	; extent number of ^
+ccp_cur_drv	equ	.0939h	; current drive
+
+com_patch       equ     .0727h  ; address in ccp to be patched to force
+                                ; jump to bios routine to check for .com
+                                ; file if not .cmd file.
+com_desc        equ     .000ah  ; location of command line descriptor
+com_line        equ     .000bh  ; location of command line cpm86, as input
+
+ccp_parse_patch equ     .07a0h  ; place temp ret here to end ccp parse routine
+;
+		org	00a6h
+ccp_crlf:			; routine to display cr + lf
+
+		org	00edh
+ccp_open:			; routine to open a file
+;
+		org	046ch
+ccp_cleanup:			; reset default disk drive
+;
+		org	03deh
+ccp_exit:			; back to cpm86 command level
+;
+		org	0732h
+ccp_cmd:			; back to load .CMD file
+;
+		org	0738h
+ccp_parse:			; parse command line to fcb1,2 and dma buffer
+;
+		org	072ch
+ccp_error:			; cpm86 command error routine
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+
+    org ccpoffset
+ccp:
+    org bios_code
+
+;*********************************************
+;*                                           *
+;* BIOS Jump Vector for Individual Routines  *
+;*                                           *
+;*********************************************
+
+ jmp INIT       ;Enter from BOOT ROM or LOADER
+ jmp WBOOT      ;Arrive here from BDOS call 0  
+ jmp CONST      ;return console keyboard status
+ jmp CONIN      ;return console keyboard char
+ jmp CONOUT     ;write char to console device
+ jmp LISTOUT    ;write character to list device
+ jmp PUNCH      ;write character to punch device
+ jmp READER     ;return char from reader device 
+ jmp HOME       ;move to trk 00 on cur sel drive
+ jmp SELDSK     ;select disk for next rd/write
+ jmp SETTRK     ;set track for next rd/write
+ jmp SETSEC     ;set sector for next rd/write
+ jmp SETDMA     ;set offset for user buff (DMA)
+ jmp READ       ;read a 128 byte sector
+ jmp WRITE      ;write a 128 byte sector
+ jmp LISTST     ;return list status 
+ jmp SECTRAN    ;xlate logical->physical sector 
+ jmp SETDMAB    ;set seg base for buff (DMA)
+ jmp GETSEGT    ;return offset of Mem Desc Table
+ jmp GETIOBF    ;return I/O map byte (IOBYTE)
+ jmp SETIOBF    ;set I/O map byte (IOBYTE) 
+
+;*********************************************
+;*                                           *
+;* INIT Entry Point, Differs for LDBIOS and  *
+;* BIOS, according to "Loader_Bios" value    *
+;*                                           *
+;*********************************************
+
+INIT:   ;print signon message and initialize hardware
+    mov ax,cs   ;we entered with a JMPF so use
+    mov ss,ax   ;CS: as the initial value of SS:,
+    mov ds,ax   ;DS:,
+    mov es,ax   ;and ES:
+    ;use local stack during initialization
+    mov sp,offset stkbase
+    cld         ;set forward direction
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+    ; This is a BIOS for the CPM.SYS file.
+    ; Setup all interrupt vectors in low
+    ; memory to address trap
+
+    push ds     ;save the DS register
+    mov IOBYTE,0    ;clear IOBYTE
+    mov ax,0
+    mov ds,ax
+    mov es,ax   ;set ES and DS to zero
+    ;setup interrupt 0 to address trap routine
+    mov int0_offset,offset int_trap
+    mov int0_segment,CS
+    mov di,4
+    mov si,0    ;then propagate
+    mov cx,510  ;trap vector to
+    rep movs ax,ax  ;all 256 interrupts
+    ;BDOS offset to proper interrupt
+    mov bdos_offset,bdos_ofst
+    pop ds      ;restore the DS register
+    ;
+    ; ---------------------------------------------------
+    ; Set up the execution of AUTOEXEC.SUB if required.
+    ; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+    ; I left the original Z80 code in the comments.
+    ; ---------------------------------------------------
+    ;
+                                ;ld      a, SYSFLAG_OPC  ; A = SYSFLAG opcode
+                                ;out     (STO_OPCD), a   ; Write the opcode
+    in      al, SYSFLAGS        ;in      a, (EXC_RD_OPCD); Check if AUTOEXEC execution is requierd
+    and     al, 01              ;and     $01             ; Isolate AUTOEXEC flag
+    jz      init2               ;jr      z, GOCPM        ; Jump if flag = 0 (nothing to set up)
+    mov     si, offset CCPAuto  ;ld      bc, CCPAuto     ; Flag = 1, BC = address of AUTOEXEC command string
+    mov     di, CCPFIRST        ;ld      hl, CCPFIRS     ; HL = address of the first char of CCP input string
+bufCopy:    ; Copy the AUTOEXEC command string into the CCP input buffer
+    mov     al, [si]            ;ld      a, (bc)         ; A = current command string char
+    cmp     al, 0               ;cp      eos             ; End of string reached?
+    jz      bufCopyEnd          ;jr      z, bufCopyEnd   ; Yes, jump
+    mov     [di], al            ;ld      (hl), a         ; No, load it the CCP input buffer
+    inc     si                  ;inc     bc              ; Increment command string (to inject) character pointer
+    inc     di                  ;inc     hl              ; Increment CCP input buffer character pointer
+    jmp     bufCopy             ;jr      bufCopy         ; Copy  next character
+bufCopyEnd: ; Calculate command string lenght and store it to CCP input buffer 
+            ; lenght variable
+    mov     si, CCPFIRST        ;ld      bc, CCPFIRS     ; BC = address of the first char of CCP input string
+                                ;xor     a               ; Carry = 0
+                                ;sbc     hl, bc          ; L = command string lenght (H = 0 always)
+    sub     di, si              ; Calculate lenght of the injected string (always < 255)
+    mov     ax, di              ;ld      a, l            ; A = command string lenght
+    mov     bx, CCPLEN   
+    mov     [bx], al            ;ld      (CCPLEN), a     ; Store it into CCP buffer lenght variable
+                                ;jr      GOCPM
+init2:
+
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+    ;This is a BIOS for the LOADER
+    push ds     ;save data segment
+    mov ax,0
+    mov ds,ax   ;point to segment zero
+    ;BDOS interrupt offset
+    mov bdos_offset,bdos_ofst
+    mov bdos_segment,CS ;bdos interrupt segment
+;   (additional LOADER initialization)
+    pop ds      ;restore data segment
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    IF  not loader_bios
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+; Patch ccp to test for .com files if V20 processor
+;
+; only if v20 processor
+	mov	ax,0f0fh
+	AAD10			; 8088 will merge 0F0Fh to 00FFh
+	cmp	al,0ffh		; 8088 processor?
+	jz	init4		; yes, don't patch ccp
+;
+; and the ccp patch address starts with a call instruction
+	cmp	byte ptr com_patch,0e8h		; call instruction?
+	jnz	init4				; no, dont patch ccp
+
+	mov	byte ptr com_patch,0e9h		; patch jump instruction
+	mov	word ptr com_patch +1,offset check_cmd - (offset com_patch +3)
+
+	mov	byte ptr v20_cpu,true	; flag v20 cpu
+init4:
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+    ENDIF   ;not loader_bios
+
+    mov bx,offset signon
+    call pmsg   ;print signon message
+
+    IF  not loader_bios
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+	cmp	byte ptr v20_cpu,true	; v20 cpu?
+	jnz	init61
+	mov	bx,offset sign80
+	call	pmsg			; yes, print 816 message
+    jmp     init6
+init61:
+	mov	bx,offset sign86
+	call	pmsg			; yes, print 86 message
+init6:
+	mov	bx,offset signver
+	call	pmsg			; print bios version
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+    ENDIF   ;not loader_bios
+
+    call RAMset ; Check how much RAM is installed, set the TPA and print it
+    mov cl,0    ;default to dr A: on coldstart
+    jmp ccp     ;jump to cold start entry of CCP
+
+WBOOT:  
+    jmp ccp+6   ;direct entry to CCP at command level
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+int_trap:
+    cli         ;block interrupts
+    mov ax,cs
+    mov ds,ax   ;get our data segment
+    mov bx,offset int_trp
+    call pmsg
+    hlt         ;hardstop
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+;*********************************************
+;*                                           *
+;*   CP/M Character I/O Interface Routines   *
+;*                                           *
+;*********************************************  
+
+; -------------------------------------
+
+CONST:      ;console status
+    in      al, SYSFLAGS
+    and     al, 4           ; isolate the Rx ready flag
+    jnz     Rx_ready
+    ret                     ; return not ready flag 00H
+    
+Rx_ready:
+    or      al, 0FFH        ; return ready flag 0FFH
+    ret
+
+; -------------------------------------
+
+CONIN:          ;console input
+    call CONST
+    jz CONIN                ; wait for Rx ready
+    in      al, SERIAL_RX   ; read a char
+    ret
+
+; -------------------------------------
+
+CONOUT:     ;console output
+    mov     al, SERTX_OPC   ; AL = Serial Tx Opcode
+    out     STO_OPCD,   al  ; send it to IOS
+    mov     al, cl
+    out     EXC_WR_OPCD, al ; send the char
+    ret
+
+; -------------------------------------
+ 
+LISTOUT:        ;list device output - not implemented
+    ret
+
+; -------------------------------------
+
+LISTST:         ;poll list status - not implemented
+    xor     al, al
+    ret
+
+; -------------------------------------
+
+PUNCH:      ;write punch device - not implemented
+    ret
+
+; -------------------------------------
+
+READER:     ; not implemented
+    mov     al, 1ah
+    ret                     ; return EOF for now
+
+; -------------------------------------
+
+GETIOBF:
+    mov al,IOBYTE
+    ret
+
+; -------------------------------------
+
+SETIOBF:
+    mov IOBYTE,cl   ;set iobyte
+    ret                     ; iobyte not implemented
+    
+;------------------------------------------------------------------------------------------------  
+; V20-MBC RAM sizing and setting routine.
+; Size the installed RAM (128KB/512KB/1024KB) and set the correct parameter for CP/M-86
+; TPA allocation. The amount of installed RAM is printed in the signon message.
+;
+; NOTE: the RAM sizing algorithm uses the "address mirroring" of the V20-MBC address decoding
+;       schema. When the RAM is not fully installed (128KB or 512KB configuration) the installed
+;       RAM is mirrored in all the remaining "empty" addresses.
+;------------------------------------------------------------------------------------------------
+
+FLAGCHK1    EQU         55h         ; Ram check test pattern 1
+FLAGCHK2    EQU         0AAh        ; Ram check test pattern 2
+MASK128K    EQU         2000h       ; Segment increment/mask to address next 128KB block
+MASK512K    EQU         8000h       ; Segment increment/mask to address next 512KB block
+RAMchkvar   RS          1           ; Used to check the installed RAM
+
+RAMset:
+    push    es                      ; Save current ES
+    mov     ax, ds
+    or      ax, MASK512K            ; Check for 1024KB RAM config
+    call    RAMchk
+    or      al, al
+    jnz     RAM1024                 ; Jump if 1024KB found
+    mov     ax, ds
+    or      ax, MASK128K            ; Check for 512KB RAM config
+    call    RAMchk
+    or      al, al
+    jnz     RAM512                  ; Jump if 512KB found
+    ;
+    ; 128KB RAM found. Just print it (TPA already set for 128KB as default)
+    ;
+    mov     bx, offset msg128
+    call    pmsg                    ; Print the 128KB message
+RAMend:
+    mov     bx, offset signon2      ; Complete the RAM message
+    call    pmsg
+    pop     es                      ; Restore ES
+    ret
+
+RAM1024:
+    ;
+    ; 1024KB RAM found
+    ;
+    mov     RAMlen, tpa_len2        ; Set TPA for 1024KB
+    mov     bx, offset msg1024
+    call    pmsg                    ; Print the 1024KB message
+    jmps    RAMend 
+    
+RAM512:
+    ;
+    ; 512KB RAM found
+    ;
+    mov     RAMlen, tpa_len1        ; Set TPA for 512KB
+    mov     bx, offset msg512
+    call    pmsg                    ; Print the 512KB message
+    jmps    RAMend
+
+RAMchk:     
+    ; Check if RAM is installed.
+    ; On calling AX = segment to be used (MASK128K for 512K check, MASK512K for 1024KB check)
+    ; Return with result in AL: AL = 0 RAM not found, AL = 1 RAM found.
+    mov     es, ax          ; ES = check segment
+    ;
+    ; First RAM check
+    ;
+    mov     RAMchkvar, FLAGCHK1
+    mov     ah, es:RAMchkvar
+    cmp     ah, FLAGCHK1    ; First check passed?
+    jnz     RAMfound        ; Yes, jump if RAM found
+    ;
+    ; Second RAM check
+    ;
+    mov     RAMchkvar, FLAGCHK2
+    mov     ah, es:RAMchkvar
+    cmp     ah, FLAGCHK2    ; Second check passed?
+    jnz     RAMfound        ; Yes, jump if RAM found
+    xor     al, al          ; AL = RAM not found flag
+    ret
+    ;
+RAMfound:
+    mov     al, 1           ; AL = RAM found flag
+    ret
+
+; -------------------------------------
+
+pmsg:
+    mov al,[BX]     ;get next char from message
+    test al,al
+    jz return       ;if zero return
+    mov CL,AL
+    call CONOUT     ;print it
+    inc BX
+    jmps pmsg       ;next character and loop
+
+
+;*********************************************
+;*                                           *
+;*          Disk Input/Output Routines       *
+;*                                           *
+;*********************************************
+
+;*****************************************************
+;*                                                   *
+;*         CP/M to host disk constants               *
+;*                                                   *
+;*  This is setup for CP/M block size of 4K          *
+;* with a host sector size of 512 bytes, and 32 sec- *
+;* tors per track.                                   *
+;*****************************************************
+
+una equ byte ptr [BX]   ;name for byte at BX
+
+blksiz  equ 4096        ;CP/M allocation size
+hstsiz  equ 512         ;host disk sector size
+hstspt  equ 32          ;host disk sectors/trk
+hstblk  equ hstsiz/128  ;CP/M sects/host buff
+;
+;*****************************************************
+;*                                                   *
+;* secshf is log2(hstblk), and is listed below for   *
+;* values of hstsiz up to 2048.                      *
+;*                                                   *
+;*           hstsiz    hstblk    secshf              *
+;*              256         2         1              *
+;*              512         4         2              *
+;*             1024         8         3              *
+;*             2048        16         4              *
+;*                                                   *
+;*****************************************************
+secshf  equ 2               ;log2(hstblk)
+cpmspt  equ hstblk * hstspt ;CP/M sectors/track
+secmsk  equ hstblk-1        ;sector mask
+;
+;*****************************************************
+;*                                                   *
+;*        BDOS constants on entry to write           *
+;*                                                   *
+;*****************************************************
+wrall   equ 0       ;write to allocated
+wrdir   equ 1       ;write to directory
+wrual   equ 2       ;write to unallocated
+;
+;*****************************************************
+;*                                                   *
+;*  The BIOS entry points given below show the       *
+;*      code which is relevant to deblocking only.   *
+;*                                                   *
+;*****************************************************
+
+SELDSK:             ; select disk given by register CL
+
+ndisks  equ 16      ; number of disks (up to 16). Set to 16 for the V20-MBC
+
+    mov disk,cl     ; save disk number
+    mov bx,0000h    ; ready for error return
+    cmp cl,ndisks   ; n beyond max disks?
+    jnb return      ; return if so
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;select disk
+    ;is this the first activation of the drive?
+    test DL,1       ;lsb = 0?
+    jnz selset
+    ;this is the first activation, clear host buff
+    mov hstact,0
+    mov unacnt,0
+selset:
+    mov al,cl ! cbw     ;put in AX
+    mov sekdsk,al       ;seek disk number
+    mov cl,4 ! shl al,cl    ;times 16
+    add ax,offset dpbase
+    mov bx,ax
+return:
+    ret
+    
+; -------------------------------------
+
+HOME:   ;move selected disk to home position (Track 0)
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;home the selected disk
+    mov al,hstwrt       ;check for pending write
+    test al,al
+    jnz homed
+    mov hstact,0        ;clear host active flag
+homed:
+    ;mov cx,0           ;now, set track zero
+    ret
+;
+
+; -------------------------------------
+
+SETTRK: ;set track address given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set track given by registers CX
+    mov sektrk,CX       ;track to seek
+    ret
+
+; -------------------------------------
+
+;
+SETSEC: ;set sector number given by cl (<255)
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set sector given by register cl
+    mov seksec,cl       ;sector to seek
+    ret
+;
+
+; -------------------------------------
+
+SETDMA: ;set DMA offset given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set dma address given by CX
+    mov dma_off,CX
+    ret
+    
+; -------------------------------------
+
+SETDMAB: ;set DMA segment given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set segment address given by CX
+    mov dma_seg,CX
+    ret
+    
+; -------------------------------------
+
+SECTRAN: ;translate sector CX using table at [DX]
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;translate sector number CX with table at [DX]
+    test DX,DX  ;test for hard skewed
+    jz notran   ;(blocked must be hard skewed)
+    mov BX,CX
+    add BX,DX
+    mov BL,[BX]
+    ret
+no_tran:
+    ;hard skewed disk, physical = logical sector
+    mov BX,CX
+    ret
+
+; -------------------------------------
+
+READ:
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;read the selected CP/M sector
+    mov unacnt,0        ;clear unallocated counter
+    mov readop,1        ;read operation
+    mov rsflag,1        ;must read data
+    mov wrtype,wrual    ;treat as unalloc
+    jmp rwoper          ;to perform the read
+    
+; -------------------------------------
+
+WRITE:
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;write the selected CP/M sector
+    mov readop,0        ;write operation
+    mov wrtype,cl
+    cmp cl,wrual        ;write unallocated?
+    jnz chkuna          ;check for unalloc
+;
+;   write to unallocated, set parameters
+;
+    mov unacnt,(blksiz/128) ;next unalloc recs
+    mov al,sekdsk       ;disk to seek
+    mov unadsk,al       ;unadsk = sekdsk
+    mov ax,sektrk
+    mov unatrk,ax       ;unatrk = sektrk
+    mov al,seksec
+    mov unasec,al       ;unasec = seksec
+
+; ..........................................
+;     Blocking / Deblocking subroutines
+; ..........................................
+
+chkuna:
+    ;check for write to unallocated sector
+;
+    mov bx,offset unacnt    ;point "UNA" at UNACNT
+    mov al,una ! test al,al ;any unalloc remain?
+    jz alloc        ;skip if not
+;
+;   more unallocated records remain
+    dec al          ;unacnt = unacnt-1
+    mov una,al
+    mov al,sekdsk       ;same disk?
+    mov BX,offset unadsk
+    cmp al,una      ;sekdsk = unadsk?
+    jnz alloc       ;skip if not
+;
+;   disks are the same
+    mov AX, unatrk
+    cmp AX, sektrk
+    jnz alloc       ;skip if not
+;
+;   tracks are the same
+    mov al,seksec       ;same sector?
+;
+    mov BX,offset unasec    ;point una at unasec
+;
+    cmp al,una      ;seksec = unasec?
+    jnz alloc       ;skip if not
+;
+;   match, move to next sector for future ref
+    inc una         ;unasec = unasec+1
+    mov al,una      ;end of track?
+    cmp al,cpmspt       ;count CP/M sectors
+    jb noovf        ;skip if below
+;
+;   overflow to next track
+    mov una,0       ;unasec = 0
+    inc unatrk      ;unatrk=unatrk+1
+;
+noovf:
+    ;match found, mark as unnecessary read
+    mov rsflag,0        ;rsflag = 0
+    jmps rwoper     ;to perform the write
+;
+alloc:
+    ;not an unallocated record, requires pre-read
+    mov unacnt,0        ;unacnt = 0
+    mov rsflag,1        ;rsflag = 1
+                ;drop through to rwoper
+;
+;*****************************************************
+;*                                                   *
+;*  Common code for READ and WRITE follows           *
+;*                                                   *
+;*****************************************************
+rwoper:
+    ;enter here to perform the read/write
+    mov erflag,0        ;no errors (yet)
+    mov al, seksec      ;compute host sector
+    mov cl, secshf
+    shr al,cl
+    mov sekhst,al       ;host sector to seek
+;
+;   active host sector?
+    mov al,1
+    xchg al,hstact      ;always becomes 1
+    test al,al      ;was it already?
+    jz filhst       ;fill host if not
+;
+;   host buffer active, same as seek buffer?
+    mov al,sekdsk
+    cmp al,hstdsk       ;sekdsk = hstdsk?
+    jnz nomatch
+;
+;   same disk, same track?
+    mov ax,hsttrk
+    cmp ax,sektrk       ;host track same as seek track
+    jnz nomatch
+;
+;   same disk, same track, same buffer?
+    mov al,sekhst
+    cmp al,hstsec       ;sekhst = hstsec?
+    jz match        ;skip if match
+nomatch:
+    ;proper disk, but not correct sector
+    mov al, hstwrt
+    test al,al      ;"dirty" buffer ?
+    jz filhst       ;no, don't need to write
+    call writehst       ;yes, clear host buff
+;   (check errors here)
+;
+filhst:
+    ;may have to fill the host buffer
+    mov al,sekdsk ! mov hstdsk,al
+    mov ax,sektrk ! mov hsttrk,ax
+    mov al,sekhst ! mov hstsec,al
+    mov al,rsflag
+    test al,al      ;need to read?
+    jz filhst1
+;
+    call readhst        ;yes, if 1
+;   (check errors here)
+;
+filhst1:
+    mov hstwrt,0        ;no pending write
+;
+match:
+    ;copy data to or from buffer depending on "readop"
+    mov al,seksec       ;mask buffer number
+    and ax,secmsk       ;least signif bits are masked
+    mov cl, 7 ! shl ax,cl   ;shift left 7 (* 128 = 2**7)
+;
+;   ax has relative host buffer offset
+;
+    add ax,offset hstbuf    ;ax has buffer address
+    mov si,ax       ;put in source index register
+    mov di,dma_off      ;user buffer is dest if readop
+;
+    push DS ! push ES   ;save segment registers
+;
+    mov ES,dma_seg      ;set destseg to the users seg
+                ;SI/DI and DS/ES is swapped
+                ;if write op
+    mov cx,128/2        ;length of move in words
+    mov al,readop
+    test al,al      ;which way?
+    jnz rwmove      ;skip if read
+;
+;   write operation, mark and switch direction
+    mov hstwrt,1        ;hstwrt = 1 (dirty buffer now)
+    xchg si,di      ;source/dest index swap
+    mov ax,DS
+    mov ES,ax
+    mov DS,dma_seg      ;setup DS,ES for write
+;
+rwmove:
+    cld ! rep movs AX,AX    ;move as 16 bit words
+    pop ES ! pop DS     ;restore segment registers
+;
+;   data has been moved to/from host buffer
+    cmp wrtype,wrdir    ;write type to directory?
+    mov al,erflag       ;in case of errors
+    jnz return_rw       ;no further processing
+;
+;   clear host buffer for directory write
+    test al,al      ;errors?
+    jnz return_rw       ;skip if so
+    mov hstwrt,0        ;buffer written
+    call writehst
+    mov al,erflag
+return_rw:
+    ret
+    
+;------------------------------------------------------------------------------------------------
+; Read physical sector from host.
+; Parameters: hstdsk, hsttrk, hstsec, dma_seg, dma_off
+;
+; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+
+readhst:
+    push     cx                 ;push    bc
+    push     bx                 ;push    hl
+    call    setDTS              ; Select disk, track, sector
+    ;
+    ; Read current host sector (512 byte) to hstbuf
+                                ;ld      c, EXC_RD_OPCD  ; Set the EXECUTE READ OPCODE port into C
+    mov     bx, offset hstbuf   ;ld      hl, hstbuf      ; HL points to buffer hstbuf
+    mov     al, RDSECT_OPC      ;ld      a, RDSECT_OPC   ; Select READSECT opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+                                ;    ld      b, 0            ; Byte counter = 256
+                                ;    inir                    ; Read 256 byte to hstbuf
+                                ;    inir                    ; Read 256 byte to hstbuf    
+    mov     cx, 512             ; Bytes to read counter = 512
+rdhst:    
+    in      al, EXC_RD_OPCD     ; Read a byte...
+    mov     [bx], al            ; ..and put it into hstbuf
+    inc     bx                  ; Update the pointer to  hstbuf
+    loop    rdhst
+    ;
+    ; Check for errors
+    mov     al, ERRDSK_OPC      ;    ld      a, ERRDSK _OPC  ; Select ERRDISK opcode (IOS)
+    out     STO_OPCD, al        ;    out     (STO_OPCD), a
+    in      al, EXC_RD_OPCD     ;    in      a, (EXC_RD_OPCD); Read error code into A...
+    mov     erflag, al          ;    ld     (erflag), a      ; ... and store it into erflag
+    pop     bx                  ;    pop     hl
+    pop     cx                  ;    pop     bc
+    ret                         ; Return with the success/error code in AL
+
+;------------------------------------------------------------------------------------------------
+; Write physical sector to host
+; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+
+writehst:
+    push    cx                  ;push    bc
+    push    bx                  ;push    hl
+    call    setDTS              ;call    setDTS          ; Select disk, track, sector
+    ;
+    ; Write current host sector (512 byte) to hstbuf
+                                ;ld      c, EXC_WR_OPCD  ; Set the EXECUTE WRITE OPCODE port into C
+    mov     bx, offset hstbuf   ;ld      hl, hstbuf      ; HL points to buffer hstbuf
+    mov     al, WRTSECT_OPC     ;ld      a, WRTSECT_OPC  ; Select WRITESECT opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+                                ;ld      b, 0            ; Byte counter = 256
+                                ;otir                    ; Write 256 byte to hstbuf
+                                ;otir                    ; Write 256 byte to hstbuf
+    mov     cx, 512             ; Bytes to read counter = 512
+wrhst:
+    mov     al, [bx]            ; Read a byte from buffer...
+    out     EXC_WR_OPCD, al     ; ...and write it to IOS
+    inc     bx                  ; Update the pointer to  hstbuf
+    loop    wrhst    
+    ; Check for errors
+    mov     al, ERRDSK_OPC      ;ld      a, ERRDSK _OPC  ; Select ERRDISK opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+    in      al, EXC_RD_OPCD     ;in      a, (EXC_RD_OPCD); Read error code into A...
+    mov     erflag, al          ;ld  (erflag),a          ; ... and store it into erflag
+    pop     bx                  ;pop     hl
+    pop     cx                  ;pop     bc
+    ret                         ; Return with the success/error code in AL
+    
+;------------------------------------------------------------------------------------------------
+; Set disk, track and sector routine for a read or write operation on the V20-MBC.
+; Converted from the Z80-MBC2 BIOS (S030818-R140319). 
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+setDTS:
+    ; Select hstdsk host disk (AL = A, AH = B)
+    mov     al, lastDsk     ;ld      a, (lastDsk)
+    mov     ah, al          ;ld      b, a            ; B = last disk number
+    mov     al, hstdsk      ;ld      a, (hstdsk)     ; A = new disk number
+    cmp     al, ah          ;cp      b               ; previous disk = new disk?
+    jz      setTrack        ;jr      z, setTrack     ; Yes, jump ahead
+    mov     al, SELDISK_OPC ;ld      a, SELDISK_OPC  ; No, Select SELDISK opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     al, hstdsk      ;ld      a, (hstdsk)     ; Select the disk number (hstdsk)
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    mov     lastDsk, al     ;ld      (lastDsk), a    ; Update last disk number
+    ; Select hsttrk host track
+setTrack:
+    mov     al, SELTRCK_OPC ;ld      a, SELTRCK_OPC  ; Select SELTRACK opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     ax, hsttrk      ;ld      a, (hsttrk)     ; Select the track number (hsttrk) LSB
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    mov     al, ah          ;ld      a, (hsttrk+1)   ; Select the track number (hsttrk) MSB
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    ; Select hstsec host sector
+    mov     al, SELSECT_OPC ;ld      a, SELSECT_OPC  ; Select SELSECT opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     al, hstsec      ;ld      a, (hstsec)     ; Select the sector number (hstsec)
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    ret
+    
+lastDsk     db   0FFh       ; Last disk number (= 0FFh after cold boot)
+
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+    IF  not loader_bios
+; Enter here when CCP is about to look for .CMD file
+;
+; open and execute .CMD file, if found
+;
+check_cmd:
+	call	ccp_open		; open .CMD file
+	jz	check_save
+	mov	byte ptr mcb_alloc,false ; 	flag 8080 bank not available
+	jmp	ccp_cmd			; success, back to ccp to load and execute
+
+; execute SAVE command, if specified and 8080 bank still available
+;
+check_save:
+	mov	si,offset ccp_file +1
+	mov	di,offset save_cmd
+	mov	cx,5
+	cld
+	rep	cmpsb			; SAVE command?
+	jnz	check_com		; no, check for .COM file
+
+	cmp	byte ptr mcb_alloc,true	; 8080 bank available?
+	jnz	check_error		; no, back to ccp as error
+
+	call	save_pages		; yes, save pages from 8080 bank
+        jmp     ccp_exit                ; back to ccp
+
+; open and execute .COM file, if found
+;
+check_com:
+	call	open_com		; open .COM file
+	jz	check_error
+	call	cpm80_session		; run CP/M-80 session
+	jmp	ccp_exit		; back to ccp
+
+check_error:
+	jmp     ccp_error               ; back to ccp as error
+
+;---------------------------------------------
+; SAVE command - save pages from last used 8080 bank
+;---------------------------------------------
+save_pages:
+	call	ccp_crlf		; new line
+
+	call	parse_tail		; parse command tail to 8080 bank fcbs
+	mov	ds,word ptr mcb_segment
+	mov	si,offset fcb80_1 +1	; fcb1 - holds number of pages to save
+	cld
+	xor	ah,ah			; zero previous value
+
+save_calc_pages:
+	lodsb				; get ascii digit
+	sub	al,'0'
+	jb	save_error		; digit below 0 - error
+	cmp	al,9
+	ja	save_error		; digit above 9 - error
+	add	al,ah			; add in previous value
+
+	cmp	byte ptr [si],' '	; reached end of number?
+	jz	save_store_pages	; yes, store result
+
+	mov	cl,10			; multiply current value by 10
+	mul	cl
+	mov	ah,al
+	jmps	save_calc_pages		; loop for next digit
+
+save_store_pages:
+	mov	cs:byte ptr save_count,al
+
+; create save file
+;
+	cmp	byte ptr fcb80_2 +1,' '	; blank filename?
+	jz	save_error		; yes, error
+
+        mov     dx,offset fcb80_2	; fcb2 - holds save file name
+        push    dx
+        mov     cl,F_DELETE
+	int	bdos_int		; delete save file, if present
+        pop     dx
+	push	dx
+        mov     cl,F_MAKE
+	int	bdos_int		; create new save file
+	pop	bx
+	inc	al			; create failed?
+        jz      save_error		; yes
+
+        mov     byte ptr 12[bx],0       ; zero extent number
+        mov     byte ptr 32[bx],0       ; and current record
+        mov     dx,ds
+        mov     cl,F_DMASEG
+	int	bdos_int		; set DMA segment to 8080 bank
+
+	mov	cl,cs:byte ptr save_count
+	xor	ch,ch
+	add	cx,cx			; convert pages to number of 128 byte records
+	jz	save_rec_close		; close if zero records
+
+	mov	dx,offset tpa80		; initial DMA offset = start of 8080 TPA
+
+save_rec_loop:
+        push    cx
+        push    dx
+        mov     cl,F_DMAOFF
+	int	bdos_int		; set DMA buffer offset
+        mov     dx,offset fcb80_2
+        mov     cl,F_WRITE
+	int	bdos_int		; write sequential
+        pop     dx
+        pop     cx
+        or	al,al			; write error?
+        jnz	save_rec_close		; yes
+
+        add     dx,080h			; advance dma offset
+        loop    save_rec_loop		; loop until all written
+
+save_rec_close:
+	push	ax			; save last write status
+        mov     dx,offset fcb80_2
+        mov     cl,F_CLOSE
+	int	bdos_int		; close file
+	pop	ax
+
+        mov     bx,offset msg_save_ok	; assume 'save successful'
+	or	al,al			; write ok?
+	jz	save_complete		; yes
+
+save_error:
+        mov     bx,offset msg_save_err	; 'save failed'
+
+save_complete:
+	mov	ax,cs			; correct segment registers
+	mov	ds,ax
+	mov	es,ax
+	jmp	pmsg			; display save message and return
+
+;---------------------------------------------
+; parse command line tail to 8080 bank using CCP code
+;---------------------------------------------
+parse_tail:
+	mov	al,byte ptr ccp_parse_patch
+	push	ax
+	mov	byte ptr ccp_parse_patch,0c3h ; patch ccp parse routine with a ret
+
+	mov	bx,word ptr mcb_segment	; destination 8080 bank
+	call	ccp_parse 		; parse command line to fcb1 and fcb2
+
+	pop	ax
+	mov	byte ptr ccp_parse_patch,al ; remove patched byte
+	mov	byte ptr com_desc,0	; reset command line descriptor
+	ret
+
+;---------------------------------------------
+; open .COM file
+;---------------------------------------------
+open_com:
+	mov	word ptr ccp_file_type +1,'MO' ; change CMD filetype to COM
+	mov	dx,offset ccp_file
+	jmp	ccp_open		; open .COM file and return
+
+;---------------------------------------------
+; run cp/m-80 session
+;---------------------------------------------
+cpm80_session:
+	call	ccp_crlf		; new line
+
+; allocate 64k bank
+;
+cpm80_alloc_bank:
+	mov	dx,offset mcb_segment
+	mov	cl,MC_ALLOC
+	int	bdos_int		; allocate memory
+	or	al,al
+	jz	cpm80_clear_bank
+
+	mov	byte ptr mcb_alloc,false ; flag 8080 bank not available
+
+        mov     bx,offset msg_bank_err
+        call    pmsg			; allocation failed
+
+	jmp	cpm80_cleanup		; end session
+
+; zero fill 64k bank
+;
+cpm80_clear_bank:
+	mov	es,word ptr mcb_segment
+	xor	di,di
+	xor	ax,ax
+	mov	cx,0ffffh /2
+	cld
+	rep	stosw			; zero fill 8080 bank
+	mov	byte ptr mcb_alloc,true	; flag 8080 bank allocated
+
+; load COM file into 8080 bank
+;
+cpm80_load_com:
+	mov	byte ptr ccp_file_ext,0	; zero ccp file extent
+	mov	byte ptr ccp_file_rec,0	; and current record
+
+	mov	dx,word ptr mcb_segment
+	mov	cl,F_DMASEG
+	int	bdos_int		; set DMA segment to 8080 bank
+	mov	dx,offset tpa80		; and initial offset to 8080 TPA
+
+cpm80_load_loop:
+        push    dx
+        mov     cl,F_DMAOFF
+	int	bdos_int		; set DMA buffer offset
+
+        mov     dx,offset ccp_file
+        mov     cl,F_READ
+	int	bdos_int		; read sequential
+        pop     dx
+
+        or	al,al			; eof or read error?
+        jnz	cpm80_load_end		; yes
+	add	dx,080h			; advance dma offset
+	cmp	dx,offset tpa80top	; (read up to top of tpa)
+	jb	cpm80_load_loop		; loop if program not too big
+
+	mov	bx,offset msg_2big_err	; program too big
+	jmps	cpm80_size_error
+
+cpm80_load_end:
+	cmp	dx,offset tpa80		; was anything loaded?
+	ja	cpm80_init
+
+	mov	bx,offset msg_2small_err ; program too small
+
+cpm80_size_error:
+	push	bx
+	mov	bx,offset msg_size_err
+	call	pmsg
+	pop	bx
+	call	pmsg			; display size error
+
+	jmp	cpm80_cleanup		; end session
+
+; init 8080 bank, fcbs, io byte, default drive, 8080 bdos+bios, etc
+;
+cpm80_init:
+	call	parse_tail		; parse command tail to 8080 bank fcbs
+
+	mov	al,byte ptr IOBYTE
+	mov	es,word ptr mcb_segment
+	mov	es:byte ptr iobyte80,al	; set default cpm80 i/o byte
+
+	mov	al,byte ptr ccp_cur_drv
+	mov	es:byte ptr defdrv80,al	; set default cpm80 drive
+	mov	byte ptr org_cur_drv,al	; and save for exit
+
+	mov	dx,offset dmabuf80
+	mov	cl,F_DMAOFF
+	int	bdos_int		; set default cpm80 dma offset
+
+	mov	es,word ptr mcb_segment
+	mov	si,offset code80	; ds:si
+	mov	di,offset bdos80	; es:di
+	mov	cx,code80_size
+	rep	movsb			; copy 8080 code to 8080 segment
+
+; setup emulation interrupts
+;
+cpm80_set_interrupts:
+	xor	ax,ax
+	mov	ds,ax			; ds = 0
+
+	mov	.intemul_offset,offset init80
+	mov	ax,es
+	mov	.intemul_offset +2,ax	; setup int 80h (emulation entry)
+
+	mov	.intbdos_offset,offset bdostrap
+	mov	ax,cs
+	mov	.intbdos_offset +2,ax	; setup int 81h (bdos routine)
+
+	mov	.intbios_offset,offset biostrap
+	mov	.intbios_offset +2,ax	; setup int 82h (bios routine)
+
+; execute 8080 emulation mode
+;
+cpm80_exec_emulation:
+	mov	ax,es
+	mov	ds,ax			; ds must = 8080 code segment
+	sti				; interrupts must be on!
+	BRKEM	intemul			; emulation interrupt
+
+; reset emulation interrupts back to address trap
+;   just to keep things tidy
+;
+cpm80_reset_interrupts:
+	xor	ax,ax
+	mov	ds,ax
+	mov	ax,cs
+
+	mov	.intemul_offset,offset int_trap	; int 80h
+	mov	.intemul_offset +2,ax
+
+	mov	.intbdos_offset,offset int_trap	; int 81h
+	mov	.intbdos_offset +2,ax
+
+	mov	.intbios_offset,offset int_trap	; int 82h
+	mov	.intbios_offset +2,ax
+
+; cleanup environment
+;
+cpm80_cleanup:
+	mov	ax,cs			; fixup segment registers
+	mov	ds,ax
+	mov	es,ax
+
+        mov     dx,offset ccp_file
+        mov     cl,F_CLOSE
+	int	bdos_int		; close .COM file
+
+	mov	dx,offset mcb_segment
+	mov	byte ptr mcb_ext,0	; allocated
+	mov	cl,MC_FREE
+	int	bdos_int		; release allocated memory
+
+	mov	dl,byte ptr org_cur_drv
+	mov	cl,DRV_SET
+	int	bdos_int		; set original current drive
+
+	jmp	ccp_cleanup		; reset default disk drive and return
+
+;---------------------------------------------
+; bdos trap
+;---------------------------------------------
+bdostrap:
+	sti				; re-enable interrupts
+	push	bp
+	push	es
+	push	ds
+	cmp	cl,C_RAWIO		; direct console i/o?
+	jz	bdostrap_rawio
+	cmp	cl,C_STAT		; get console status?
+	jz	bdostrap_constat
+	cmp	cl,DRV_ALLOCVEC		; get allocation vector address?
+	jz	bdostrap_allocvec
+	cmp	cl,DRV_DPB		; get disk parm block address?
+	jz	bdostrap_dpb
+
+bdos_8086:
+	int	bdos_int		; perform bdos interrupt
+
+bdosret:
+	pop	ds
+	pop	es
+	pop	bp
+	iret
+
+bdostrap_rawio:
+	cmp	dl,0fdh			; wait for key press?
+	jnz	bdos_8086		; no, perform raw io
+
+bdostrap_rawio_wait:			; MPM-II style!
+	mov	cl,C_RAWIO
+	mov	dl,0ffh			; console input
+	int	bdos_int
+	or	al,al			; anything entered?
+	jz	bdostrap_rawio_wait	; no - try again
+	jmps	bdosret
+
+bdostrap_constat:
+	int	bdos_int		; get console status
+	or	al,al
+	jz	bdosret			; 0 = no chr ready
+	mov	al,0ffh			; cpm-86 returns 01 for ready
+					; change to 0ffh for cpm-80
+	jmps	bdosret
+
+bdostrap_allocvec:			; get allocation vector address
+	mov	di,offset alloc_tbl	; allocation table
+	mov	ax,0100h		; max length 200h bytes
+	jmps	bdostrap_copy_table
+
+bdostrap_dpb:				; get disk parm block address
+	mov	di,offset param_tbl	; parameter table
+	mov	ax,08h			; max length 10h bytes
+
+bdostrap_copy_table:
+	push	di			; save destination offset
+	push	ax			; save count
+	push	es			; save destination segment
+	int	bdos_int
+	mov	ax,es
+	mov	ds,ax			; ds = table source seg
+	pop	es			; es = table dest seg
+	pop	cx			; cx = table length
+	pop	di			; di = dest offset
+	mov	si,bx			; si = source offset
+	mov	bx,di			; bx = dest offset (hl register return value)
+	rep	movsw
+	xor	al,al			; al = 0 (for return)
+	jmps	bdosret
+
+;---------------------------------------------
+; bios trap
+;---------------------------------------------
+biostrap:
+	sti				; re-enable interrupts
+	mov	byte ptr biosfunc,al
+	mov	word ptr bioscx,cx
+	mov	word ptr biosdx,dx
+	mov	dx,offset bios_pb
+	mov	cl,S_BIOS
+
+	cmp	al,BIOS_SELDSK		; disk select?
+	jz	biostrap_seldsk
+
+biostrap_int:
+	push	bp
+	push	es
+	int	bdos_int
+	pop	es
+	pop	bp
+
+biostrap_iret:
+	iret				; ret far from interrupt
+
+biostrap_seldsk:
+	push	ds
+	push	bp
+	push	es
+	int	bdos_int
+	or	bx,bx			; invalid disk select?
+	jnz	biostrap_seldsk1
+
+	pop	es
+	pop	bp
+	pop	ds
+	jmps	biostrap_iret		; yes, return
+
+biostrap_seldsk1:
+	mov	ax,es
+	mov	ds,ax			; ds = dph + dpb source seg
+	pop	es			; es = dph + dpb dest seg
+
+	mov	si,bx			; si = dph source offset
+	mov	di,offset disk_parm_head ; di = dph dest offset
+	mov	cx,08h
+	rep	movsw			; copy dph to 8080 dph
+
+	mov	si,0ah[bx]		; si = dpb source offset
+	mov	di,offset disk_parm_block ; di = dpb dest offset
+	mov	cx,0fh
+	rep	movsb			; copy dpb to 8080 dpb
+
+	mov	bx,offset disk_parm_head ; bx = dph offset for return (in hl)
+
+	pop	bp			; restore 8080 stack pointer
+	pop	ds
+
+	mov	0ah[bx],offset disk_parm_block	; amend dph to point to 8080 dpb
+
+	jmps	biostrap_iret		; return
+
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+    ENDIF   ;not loader_bios
+
+;*****************************************************
+;*                                                   *
+;* Uninitialized RAM areas follow, including the     *
+;* areas created by the GENDEF utility listed above. *
+;*                                                   *
+;*****************************************************
+
+sekdsk  rb  1       ;seek disk number
+sektrk  rw  1       ;seek track number
+seksec  rb  1       ;seek sector number
+;
+hstdsk  rb  1       ;host disk number
+hsttrk  rw  1       ;host track number
+hstsec  rb  1       ;host sector number
+;
+sekhst  rb  1       ;seek shr secshf
+hstact  rb  1       ;host active flag
+hstwrt  rb  1       ;host written flag
+;
+unacnt  rb  1       ;unalloc rec cnt
+unadsk  rb  1       ;last unalloc disk
+unatrk  rw  1       ;last unalloc track
+unasec  rb  1       ;last unalloc sector
+;
+erflag  rb  1       ;error reporting
+rsflag  rb  1       ;read sector flag
+readop  rb  1       ;1 if read operation
+wrtype  rb  1       ;write operation type
+dma_seg rw  1       ;last dma segment
+dma_off rw  1       ;last dma offset
+hstbuf  rb  hstsiz  ;host buffer
+
+; -------------------------------------
+
+GETSEGT:  ;return address of physical memory table
+    mov bx,offset seg_table
+    ret
+
+;*********************************************
+;*                                           *
+;*               Data Areas                  *
+;*                                           *
+;*********************************************
+
+data_offset equ offset $
+
+    dseg
+    org data_offset ;contiguous with code segment
+IOBYTE      db  0
+disk        db  0   ;disk number
+
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+signon  db  cr,lf,cr,lf
+    db  'CP/M-86 Version 1.1',cr,lf,0
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+signon  db  cr,lf,cr,lf
+        db  'V20-MBC CP/M',0
+sign86  db  '-86',0
+sign80  db  '-816',0
+signver db  ' BIOS - S110321'
+        db  cr,lf
+        db  'CP/M-86 Version 1.1.0821 - ', 0
+msg128  db  '128', 0
+msg512  db  '512', 0
+msg1024 db  '1024', 0
+signon2 db  'KB RAM'
+        db  cr,lf,0
+
+;--vv---------------- SAH ----------------vv--
+save_cmd	db	'SAVE '
+msg_save_ok	db	'SAVE complete',0
+msg_save_err	db	'SAVE command error or disc full',0
+msg_bank_err	db	'Unable to allocate CP/M-80 memory',cr,lf,0
+
+msg_size_err	db	'COM file too ',0
+msg_2big_err	db	'large',cr,0
+msg_2small_err	db	'small',cr,0
+
+;--^^---------------- SAH ----------------^^--
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+    
+CCPAuto     DB     'SUBMIT AUTOEXEC', 0
+
+int_trp db  cr,lf
+    db  'Interrupt Trap Halt'
+    db  cr,lf
+
+; -------------------------------------
+
+;   System Memory Segment Table
+
+seg_table   db 1                    ; only 1 RAM segment
+            dw      tpa_seg         ; seg starts after BIOS...
+RAMlen      dw      tpa_len         ; ...and extends to the end of RAM
+    
+    IF  not loader_bios
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+v20_cpu		db	false	; assume not v20 processor
+save_count	db	0	; number of pages to SAVE
+org_cur_drv	rb	1	;
+
+; memory control block for 8080 segment
+mcb_segment	dw	0	; segment filled in later
+mcb_length	dw	1000h	; length 64k
+mcb_ext		db	0
+;
+mcb_alloc	db	false	; mcb allocated and available flag
+
+;---------------------------------------------------------------------
+;	V20BIOS 1.3 for CP/M 2.2 8080 emulation
+;
+;	Copyright (C) 08-AUG-88 Stephen Hunt
+;---------------------------------------------------------------------
+code80:
+code80_start		equ	offset $
+;---------------------------------------------------------------------
+;	8080 bdos trap routine
+;---------------------------------------------------------------------
+
+;org	0fbe6h			; so that BIOS starts at 0fc00h
+;bdos80:
+db	0C3h,0EDh,0FBh	;jmp	callbdos
+db	00h		;nop
+db	00h		;nop
+db	00h		;nop
+db	00h		;nop
+
+;callbdos:
+db	079h		;mov	a,c
+db	0B7h		;ora	a
+db	0CAh,03h,0FCh	;jz	wboote	; terminate if bdos function 0
+db	0EDh,0EDh,081h	;calln	intbdos	; call native 8086 bdos
+
+;teststat:
+db	0F5h		;push	psw	; save register a and flags
+db	03Ah,0FFh,0FBh	;lda	statcode ; get 8086 return code in register a
+db	0B7h		;ora	a	; return code 0?
+db	0C2h,03h,0FCh	;jnz	wboote	; no - terminate emulation
+db	0F1h		;pop	psw	; restore register a and flags
+
+db	0C9h		;ret
+
+;statcode				; return status code (at FBFF)
+db	0				; zero     = ok
+					; non zero = terminate emulation
+;---------------------------------------------------------------------
+;	8080 bios jump vector for individual subroutines
+;---------------------------------------------------------------------
+db	0C3h,033h,0FCh 	;jmp	boot80	; 00 cold start
+;wboote80:
+db	0C3h,033h,0FCh 	;jmp	wboot80	; 01 warm start
+db	0C3h,035h,0FCh 	;jmp	const80	; 02 console status
+db	0C3h,03Ah,0FCh 	;jmp	conin80	; 03 console character in
+db	0C3h,03Fh,0FCh 	;jmp	conout80; 04 console character out
+db	0C3h,044h,0FCh 	;jmp	llist80	; 05 list character out
+db	0C3h,049h,0FCh 	;jmp	punch80	; 06 punch character out
+db	0C3h,04Eh,0FCh 	;jmp	reader80; 07 reader character out
+db	0C3h,053h,0FCh 	;jmp	home80	; 08 move head to home position
+db	0C3h,058h,0FCh 	;jmp	seldsk80; 09 select disk
+db	0C3h,05Dh,0FCh 	;jmp	settrk80; 0a set track number
+db	0C3h,062h,0FCh 	;jmp	setsec80; 0b set sector number
+db	0C3h,067h,0FCh 	;jmp	setdma80; 0c set dma address
+db	0C3h,06Ch,0FCh 	;jmp	read80	; 0d read disk
+db	0C3h,071h,0FCh 	;jmp	write80	; 0e write disk
+db	0C3h,076h,0FCh 	;jmp	listst80; 0f return list status
+db	0C3h,07Bh,0FCh 	;jmp	sectran80; 10 sector translate
+
+;---------------------------------------------------------------------
+;	individual subroutines to perform each bios function
+;---------------------------------------------------------------------
+boot80:	; boot80 & wboot80 both perform the same function
+;
+;wboot80:
+db	0EDh,0FDh	;retem
+
+;const80: ; console status, return 0ffh if character ready, 00h if not
+db	03Eh,02h      	;mvi	a,02h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;conin80: ; console character into register a
+db	03Eh,03h      	;mvi	a,03h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;conout80: ; console character output from register c
+db	03Eh,04h      	;mvi	a,04h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;llist80: ; list character from register c
+db	03Eh,05h      	;mvi	a,05h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;punch80: ; punch character from register c
+db	03Eh,06h      	;mvi	a,06h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;reader80: ; read character into register a from reader device
+db	03Eh,07h      	;mvi	a,07h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;home80:	; move to the track 00 position of current drive
+db	03Eh,08h      	;mvi	a,08h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;seldsk80: ; select disk given by register C
+db	03Eh,09h      	;mvi	a,09h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;settrk80: ; set track given by register c
+db	03Eh,0Ah      	;mvi	a,0ah
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;setsec80: ; set sector given by register c
+db	03Eh,0Bh      	;mvi	a,0bh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;setdma80: ; set dma address given by registers b and c
+db	03Eh,0Ch      	;mvi	a,0ch
+db	0C3h,07Dh,0FCh	;jmp	callbios
+
+;read80:	; perform read operation
+db	03Eh,0Dh      	;mvi	a,0dh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;write80: ; perform a write operation
+db	03Eh,0Eh      	;mvi	a,0eh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;listst80: ; return list status (0 if not ready, 1 if ready)
+db	03Eh,0Fh      	;mvi	a,0fh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;sectran80:
+	; translate the sector given by BC using the
+	; translate table given by DE
+;
+db	03Eh,010h      	;mvi	a,010h
+;			;jmp	callbios
+
+;callbios:
+; execute 8086 bios routines
+;
+db	0EDh,0EDh,082h	;calln	intbios
+db	0C3h,0F5h,0FBh	;jmp	teststat	; test return status and
+						; return if ok
+
+;---------------------------------------------------------------------
+;	8080 bios initialisation routine
+;---------------------------------------------------------------------
+;	initialisation cpm80 and jump to start of tpa
+;	run once-only code later overwritten by bios data + tables
+;init80:
+db	03Eh,0C3h	;mvi	a,0c3h		; c3 is a jmp instruction
+db	032h,00h,00h	;sta	0		; for jmp to wboot80
+db	021h,03h,0FCh	;lxi	h,wboote80	; wboot80 entry point
+db	022h,01h,00h	;shld	1		; set address field for jmp at 0
+
+db	032h,05h,00h	;sta	5		; for jmp to bdos
+db	021h,0E6h,0FBh	;lxi	h,bdos80	; bdos entry point
+db	022h,06h,00h	;shld	6		; address field of jump at 5 to bdos
+
+db	031h,0FFh,0FFh	;lxi	sp,0ffffh	; set stack to top of 64k
+
+db	021h,03h,0FCh	;lxi	h,wboote80	; hl points to wboote80 offset
+db	0E5h		;push	h		; push return address onto stack
+
+db	0C3h,00h,01h	;jmp	0100h		; go to 0100h
+
+code80_size		equ	offset $ - code80_start
+;---------------------------------------------------------------------
+;	end of NEC-V20 CP/M 2.2 8080 emulation bios
+;---------------------------------------------------------------------
+
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+    ENDIF   ;not loader_bios
+
+; --------------------------------------------------------------------------- ;
+;                                                                             ;
+; Disk parameter headers for disk 0 to 15                                     ;
+; I've simply copied those used for the CP/M 2.2. (8080 mode)
+;                                                                             ;
+; --------------------------------------------------------------------------- ;
+
+dpbase:
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb0,0000h,alv00
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv01
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv02
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv03
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv04
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv05
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv06
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv07
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv08
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv09
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv10
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv11
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv12
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv13
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv14
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv15
+
+; First drive has one reserved track for CP/M
+dpb0:
+        DW 128 ;SPT - 128 bytes sectors per track (= 32 sectors of 512 bytes)
+        DB 5   ;BSH - block shift factor
+        DB 31  ;BLM - block mask
+        DB 1   ;EXM - Extent mask
+        DW 2043 ; (2047-4) DSM - Storage size (blocks - 1)
+        DW 511 ;DRM - Number of directory entries - 1
+        DB 240 ;AL0 - 1 bit set per directory block
+        DB 0   ;AL1 -            "
+        DW 0   ;CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        DW 1   ;OFF - Reserved tracks
+
+dpb:
+        DW 128 ;SPT - 128 bytes sectors per track (= 32 sectors of 512 bytes)
+        DB 5   ;BSH - block shift factor
+        DB 31  ;BLM - block mask
+        DB 1   ;EXM - Extent mask
+        DW 2047 ;DSM - Storage size (blocks - 1)
+        DW 511 ;DRM - Number of directory entries - 1
+        DB 240 ;AL0 - 1 bit set per directory block
+        DB 0   ;AL1 -            "
+        DW 0   ;CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        DW 0   ;OFF - Reserved tracks
+
+dirbuf     rs 128         ; scratch directory area
+alv00      rs 257         ; allocation vector 0
+alv01      rs 257         ; allocation vector 1
+alv02      rs 257         ; allocation vector 2
+alv03      rs 257         ; allocation vector 3
+alv04      rs 257         ; allocation vector 4
+alv05      rs 257         ; allocation vector 5
+alv06      rs 257         ; allocation vector 6
+alv07      rs 257         ; allocation vector 7
+alv08      rs 257         ; allocation vector 8
+alv09      rs 257         ; allocation vector 9
+alv10      rs 257         ; allocation vector 10
+alv11      rs 257         ; allocation vector 11
+alv12      rs 257         ; allocation vector 12
+alv13      rs 257         ; allocation vector 13
+alv14      rs 257         ; allocation vector 14
+alv15      rs 257         ; allocation vector 15
+
+    db  0       ;Marks End of Module    
+    
+; --------------------------------------------
+
+loc_stk rw  32  ;local stack for initialization
+stkbase equ offset $
+
+lastoff equ offset $
+tpa_seg equ (lastoff+0400h+15) / 16
+
+tpa_len     equ 2000h - tpa_seg     ; 128KB RAM configuration (default)
+tpa_len1    equ 8000h - tpa_seg     ; 512KB RAM configuration
+tpa_len2    equ 0FFFFh - tpa_seg    ; 1024KB RAM configuration
+
+    db 0    ;fill last address for GENCMD
+
+;*********************************************
+;*                                           *
+;*          Dummy Data Section               *
+;*                                           *
+;*********************************************
+    dseg    0   ;absolute low memory
+    org     0   ;(interrupt vectors)
+int0_offset rw  1
+int0_segment    rw  1
+;   pad to system call vector
+    rw  2*(bdos_int-1)
+
+bdos_offset rw  1
+bdos_segment    rw  1
+
+    IF  not loader_bios
+;--vv---------------- SAH ----------------vv--
+;|                                           |
+; Skeletal cpm80 map of 8080 bank
+
+	org	0
+bios_jmp	rs	3		; jmp to bios
+iobyte80	rs	1		; i/o byte
+defdrv80	rs	1		; default drive
+bdos_jmp	rs	3		; jmp to bdos
+
+	org	05ch
+fcb80_1		rs	36		; fcb1
+
+	org	06ch
+fcb80_2		rs	36		; fcb2
+
+	org	080h
+dmabuf80	rs	80h		; default dma buffer
+
+	org	0100h
+tpa80		equ	$		; transient program area
+
+	org	0fb80h
+tpa80top	equ	$		; top of tpa
+
+	org	0fbe6h
+bdos80		equ	$		; cpm80 bdos entry point
+
+	org	0fc00h
+bios80		equ	$		; cpm80 bios
+
+	org	0fc83h
+init80:					; init cpm80 program
+					; (used once, resides in work area buffers)
+
+	org	0fc83h
+bios_pb		equ	$		; bios parameter block
+biosfunc	rs	1		; bios function
+bioscx		rs	2		; cx (bc) value
+biosdx		rs	2		; dx (de) value
+
+	org	0fc88h
+alloc_tbl	rs	0200h		; copy of disk allocation vector table
+
+	org	0fe88h
+param_tbl	rs	010h		; copy of disk parameter block table
+
+	org	0fe98h
+disk_parm_head	rs	010h		; copy of disk parameter header
+
+	org	0fea8h
+disk_parm_block	rs	010h		; copy of disk parameter block
+
+
+	org     0fbffh
+statcode	rs	1		; reserved, 8080 early termination code
+
+	org     0ffffh
+cpu80tos	equ	$		; initial 8080 top of stack
+
+;|                                           |
+;--^^---------------- SAH ----------------^^--
+        ENDIF   ; not loader bios
+
+    END

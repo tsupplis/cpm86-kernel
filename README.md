@@ -13,9 +13,18 @@ The distribution also packages digital research assembler tools and various basi
 This is a raw dump right now with a way to compile the kernel starting from dissassembled sources.
 The compilation requires the (cross-development environment for CP/M-86)[https://github.com/tsupplis/cpm86-crossdev]
 
+The CP/M-86 kernels (8088 and V20 Mixed 8080/8088 with CP/M-80 compatibility) for the V20 MBC are also produced. The sources of the bioses used are available at:
+- https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer
+
+The 3 kernels use the same BDOS and CCP components.
+
 ## Playing with CP/M-86
 
 To test, the PCE emulator and cpmtools are needed. PCE can be found at http://www.hampa.ch/pce/. the floppy images released also work with qemu.
+
+Alternatively, you can use the excellent V20 MBC available at:
+- https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer
+- https://shop.mcjohn.it/en/diy-kit
 
 - Patched CP/M-86 running in the PCE Emulator
 <p align="center">
@@ -52,6 +61,11 @@ The CP/M-86 OS contains the following commands are in the original distribution:
 - function.cmd
 - gencmd.cmd
 - stat.cmd
+
+The kernels built arE:
+- cpm86.sys/cpm.sys (ibm pc xt)
+- cpmv20.sys (MBC V20, 8088 mode)
+- cpm816.sys (MBC V20, mixed 8080/8088 mode with CP/M-80 compatibility)
 
 The CP/M-86 OS is enhanced with the following patched or updated components:
 - help.hlp (more complete content)

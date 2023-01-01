@@ -1,0 +1,1037 @@
+; ********************************************************************************
+;
+; V20-MBC (HW ref. A250220) CP/M-86 Custom BIOS - S220520 
+;
+; Required: IOS S260320-R230520 (or following revisions until otherwise stated)
+;
+; Compile with: ASM86.COM (CP/M-80) or ASM86.CMD (CP/M-86)
+;
+;
+;
+; CHANGELOG:
+;
+; S220520           First release
+;
+; ********************************************************************************
+
+; --------------------------------------------------------------------------------
+;
+; V20-MBC IOS equates
+;
+; --------------------------------------------------------------------------------
+
+EXC_WR_OPCD  EQU    000H      ; Address of the EXECUTE WRITE OPCODE write port
+EXC_RD_OPCD  EQU    000H      ; Address of the EXECUTE READ OPCODE read port
+STO_OPCD     EQU    001H      ; Address of the STORE OPCODE write port
+SERIAL_RX    EQU    001H      ; Address of the SERIAL RX read port
+SYSFLAGS     EQU    002H      ; Address of the SYSFLAGS read port
+SERTX_OPC    EQU    001H      ; SERIAL TX opcode
+SELDISK_OPC  EQU    009H      ; SELDISK opcode
+SELTRCK_OPC  EQU    00AH      ; SELTRACK opcode
+SELSECT_OPC  EQU    00BH      ; SELSECT opcode
+WRTSECT_OPC  EQU    00CH      ; WRITESECT opcode
+DATETIM_OPC  EQU    084H      ; DATETIME opcode
+ERRDSK_OPC   EQU    085H      ; ERRDISK opcode
+RDSECT_OPC   EQU    086H      ; READSECT opcode
+SDMOUNT_OPC  EQU    087H      ; SDMOUNT opcode
+;
+; CCP Equates for the AUTOEXEC.SUB execution
+;
+CCPLEN       EQU    0AH       ; Address of current number of chars into the CCP input buffer
+CCPFIRST     EQU    0BH       ; Address of the first charater of the CCP input buffer
+
+; -------------------------------------
+
+true        equ -1
+false       equ not true
+cr      equ 0dh ;carriage return
+lf      equ 0ah ;line feed
+
+;*********************************************
+;*                                           *
+;* Loader_bios is true if assembling the     *
+;* LOADER BIOS, otherwise BIOS is for the    *
+;* CPM.SYS file.                             *
+;*                                           *
+;*********************************************
+
+loader_bios equ false
+bdos_int    equ 224 ;reserved BDOS interrupt
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code   equ 2500h
+ccp_offset  equ 0000h
+bdos_ofst   equ 0B06h ;BDOS entry point
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code   equ 1200h ;start of LDBIOS
+ccp_offset  equ 0003h ;base of CPMLOADER
+bdos_ofst   equ 0406h ;stripped BDOS entry
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    cseg
+    org ccpoffset
+ccp:
+    org bios_code
+
+;*********************************************
+;*                                           *
+;* BIOS Jump Vector for Individual Routines  *
+;*                                           *
+;*********************************************
+
+ jmp INIT       ;Enter from BOOT ROM or LOADER
+ jmp WBOOT      ;Arrive here from BDOS call 0  
+ jmp CONST      ;return console keyboard status
+ jmp CONIN      ;return console keyboard char
+ jmp CONOUT     ;write char to console device
+ jmp LISTOUT    ;write character to list device
+ jmp PUNCH      ;write character to punch device
+ jmp READER     ;return char from reader device 
+ jmp HOME       ;move to trk 00 on cur sel drive
+ jmp SELDSK     ;select disk for next rd/write
+ jmp SETTRK     ;set track for next rd/write
+ jmp SETSEC     ;set sector for next rd/write
+ jmp SETDMA     ;set offset for user buff (DMA)
+ jmp READ       ;read a 128 byte sector
+ jmp WRITE      ;write a 128 byte sector
+ jmp LISTST     ;return list status 
+ jmp SECTRAN    ;xlate logical->physical sector 
+ jmp SETDMAB    ;set seg base for buff (DMA)
+ jmp GETSEGT    ;return offset of Mem Desc Table
+ jmp GETIOBF    ;return I/O map byte (IOBYTE)
+ jmp SETIOBF    ;set I/O map byte (IOBYTE) 
+
+;*********************************************
+;*                                           *
+;* INIT Entry Point, Differs for LDBIOS and  *
+;* BIOS, according to "Loader_Bios" value    *
+;*                                           *
+;*********************************************
+
+INIT:   ;print signon message and initialize hardware
+    mov ax,cs   ;we entered with a JMPF so use
+    mov ss,ax   ;CS: as the initial value of SS:,
+    mov ds,ax   ;DS:,
+    mov es,ax   ;and ES:
+    ;use local stack during initialization
+    mov sp,offset stkbase
+    cld         ;set forward direction
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+    ; This is a BIOS for the CPM.SYS file.
+    ; Setup all interrupt vectors in low
+    ; memory to address trap
+
+    push ds     ;save the DS register
+    mov IOBYTE,0    ;clear IOBYTE
+    mov ax,0
+    mov ds,ax
+    mov es,ax   ;set ES and DS to zero
+    ;setup interrupt 0 to address trap routine
+    mov int0_offset,offset int_trap
+    mov int0_segment,CS
+    mov di,4
+    mov si,0    ;then propagate
+    mov cx,510  ;trap vector to
+    rep movs ax,ax  ;all 256 interrupts
+    ;BDOS offset to proper interrupt
+    mov bdos_offset,bdos_ofst
+    pop ds      ;restore the DS register
+    ;
+    ; ---------------------------------------------------
+    ; Set up the execution of AUTOEXEC.SUB if required.
+    ; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+    ; I left the original Z80 code in the comments.
+    ; ---------------------------------------------------
+    ;
+                                ;ld      a, SYSFLAG_OPC  ; A = SYSFLAG opcode
+                                ;out     (STO_OPCD), a   ; Write the opcode
+    in      al, SYSFLAGS        ;in      a, (EXC_RD_OPCD); Check if AUTOEXEC execution is requierd
+    and     al, 01              ;and     $01             ; Isolate AUTOEXEC flag
+    jz      init2               ;jr      z, GOCPM        ; Jump if flag = 0 (nothing to set up)
+    mov     si, offset CCPAuto  ;ld      bc, CCPAuto     ; Flag = 1, BC = address of AUTOEXEC command string
+    mov     di, CCPFIRST        ;ld      hl, CCPFIRS     ; HL = address of the first char of CCP input string
+bufCopy:    ; Copy the AUTOEXEC command string into the CCP input buffer
+    mov     al, [si]            ;ld      a, (bc)         ; A = current command string char
+    cmp     al, 0               ;cp      eos             ; End of string reached?
+    jz      bufCopyEnd          ;jr      z, bufCopyEnd   ; Yes, jump
+    mov     [di], al            ;ld      (hl), a         ; No, load it the CCP input buffer
+    inc     si                  ;inc     bc              ; Increment command string (to inject) character pointer
+    inc     di                  ;inc     hl              ; Increment CCP input buffer character pointer
+    jmp     bufCopy             ;jr      bufCopy         ; Copy  next character
+bufCopyEnd: ; Calculate command string lenght and store it to CCP input buffer 
+            ; lenght variable
+    mov     si, CCPFIRST        ;ld      bc, CCPFIRS     ; BC = address of the first char of CCP input string
+                                ;xor     a               ; Carry = 0
+                                ;sbc     hl, bc          ; L = command string lenght (H = 0 always)
+    sub     di, si              ; Calculate lenght of the injected string (always < 255)
+    mov     ax, di              ;ld      a, l            ; A = command string lenght
+    mov     bx, CCPLEN   
+    mov     [bx], al            ;ld      (CCPLEN), a     ; Store it into CCP buffer lenght variable
+                                ;jr      GOCPM
+init2:
+
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+    ;This is a BIOS for the LOADER
+    push ds     ;save data segment
+    mov ax,0
+    mov ds,ax   ;point to segment zero
+    ;BDOS interrupt offset
+    mov bdos_offset,bdos_ofst
+    mov bdos_segment,CS ;bdos interrupt segment
+;   (additional LOADER initialization)
+    pop ds      ;restore data segment
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    mov bx,offset signon
+    call pmsg   ;print signon message
+    call RAMset ; Check how much RAM is installed, set the TPA and print it
+    mov cl,0    ;default to dr A: on coldstart
+    jmp ccp     ;jump to cold start entry of CCP
+
+WBOOT:  
+    jmp ccp+6   ;direct entry to CCP at command level
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+int_trap:
+    cli         ;block interrupts
+    mov ax,cs
+    mov ds,ax   ;get our data segment
+    mov bx,offset int_trp
+    call pmsg
+    hlt         ;hardstop
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+
+;*********************************************
+;*                                           *
+;*   CP/M Character I/O Interface Routines   *
+;*                                           *
+;*********************************************  
+
+; -------------------------------------
+
+CONST:      ;console status
+    in      al, SYSFLAGS
+    and     al, 4           ; isolate the Rx ready flag
+    jnz     Rx_ready
+    ret                     ; return not ready flag 00H
+    
+Rx_ready:
+    or      al, 0FFH        ; return ready flag 0FFH
+    ret
+
+; -------------------------------------
+
+CONIN:          ;console input
+    call CONST
+    jz CONIN                ; wait for Rx ready
+    in      al, SERIAL_RX   ; read a char
+    ret
+
+; -------------------------------------
+
+CONOUT:     ;console output
+    mov     al, SERTX_OPC   ; AL = Serial Tx Opcode
+    out     STO_OPCD,   al  ; send it to IOS
+    mov     al, cl
+    out     EXC_WR_OPCD, al ; send the char
+    ret
+
+; -------------------------------------
+ 
+LISTOUT:        ;list device output - not implemented
+    ret
+
+; -------------------------------------
+
+LISTST:         ;poll list status - not implemented
+    xor     al, al
+    ret
+
+; -------------------------------------
+
+PUNCH:      ;write punch device - not implemented
+    ret
+
+; -------------------------------------
+
+READER:     ; not implemented
+    mov     al, 1ah
+    ret                     ; return EOF for now
+
+; -------------------------------------
+
+GETIOBF:
+    mov al,IOBYTE
+    ret
+
+; -------------------------------------
+
+SETIOBF:
+    mov IOBYTE,cl   ;set iobyte
+    ret                     ; iobyte not implemented
+    
+;------------------------------------------------------------------------------------------------  
+; V20-MBC RAM sizing and setting routine.
+; Size the installed RAM (128KB/512KB/1024KB) and set the correct parameter for CP/M-86
+; TPA allocation. The amount of installed RAM is printed in the signon message.
+;
+; NOTE: the RAM sizing algorithm uses the "address mirroring" of the V20-MBC address decoding
+;       schema. When the RAM is not fully installed (128KB or 512KB configuration) the installed
+;       RAM is mirrored in all the remaining "empty" addresses.
+;------------------------------------------------------------------------------------------------
+
+FLAGCHK1    EQU         55h         ; Ram check test pattern 1
+FLAGCHK2    EQU         0AAh        ; Ram check test pattern 2
+MASK128K    EQU         2000h       ; Segment increment/mask to address next 128KB block
+MASK512K    EQU         8000h       ; Segment increment/mask to address next 512KB block
+RAMchkvar   RS          1           ; Used to check the installed RAM
+
+RAMset:
+    push    es                      ; Save current ES
+    mov     ax, ds
+    or      ax, MASK512K            ; Check for 1024KB RAM config
+    call    RAMchk
+    or      al, al
+    jnz     RAM1024                 ; Jump if 1024KB found
+    mov     ax, ds
+    or      ax, MASK128K            ; Check for 512KB RAM config
+    call    RAMchk
+    or      al, al
+    jnz     RAM512                  ; Jump if 512KB found
+    ;
+    ; 128KB RAM found. Just print it (TPA already set for 128KB as default)
+    ;
+    mov     bx, offset msg128
+    call    pmsg                    ; Print the 128KB message
+RAMend:
+    mov     bx, offset signon2      ; Complete the RAM message
+    call    pmsg
+    pop     es                      ; Restore ES
+    ret
+
+RAM1024:
+    ;
+    ; 1024KB RAM found
+    ;
+    mov     RAMlen, tpa_len2        ; Set TPA for 1024KB
+    mov     bx, offset msg1024
+    call    pmsg                    ; Print the 1024KB message
+    jmps    RAMend 
+    
+RAM512:
+    ;
+    ; 512KB RAM found
+    ;
+    mov     RAMlen, tpa_len1        ; Set TPA for 512KB
+    mov     bx, offset msg512
+    call    pmsg                    ; Print the 512KB message
+    jmps    RAMend
+
+RAMchk:     
+    ; Check if RAM is installed.
+    ; On calling AX = segment to be used (MASK128K for 512K check, MASK512K for 1024KB check)
+    ; Return with result in AL: AL = 0 RAM not found, AL = 1 RAM found.
+    mov     es, ax          ; ES = check segment
+    ;
+    ; First RAM check
+    ;
+    mov     RAMchkvar, FLAGCHK1
+    mov     ah, es:RAMchkvar
+    cmp     ah, FLAGCHK1    ; First check passed?
+    jnz     RAMfound        ; Yes, jump if RAM found
+    ;
+    ; Second RAM check
+    ;
+    mov     RAMchkvar, FLAGCHK2
+    mov     ah, es:RAMchkvar
+    cmp     ah, FLAGCHK2    ; Second check passed?
+    jnz     RAMfound        ; Yes, jump if RAM found
+    xor     al, al          ; AL = RAM not found flag
+    ret
+    ;
+RAMfound:
+    mov     al, 1           ; AL = RAM found flag
+    ret
+
+; -------------------------------------
+
+pmsg:
+    mov al,[BX]     ;get next char from message
+    test al,al
+    jz return       ;if zero return
+    mov CL,AL
+    call CONOUT     ;print it
+    inc BX
+    jmps pmsg       ;next character and loop
+
+
+;*********************************************
+;*                                           *
+;*          Disk Input/Output Routines       *
+;*                                           *
+;*********************************************
+
+;*****************************************************
+;*                                                   *
+;*         CP/M to host disk constants               *
+;*                                                   *
+;*  This is setup for CP/M block size of 4K          *
+;* with a host sector size of 512 bytes, and 32 sec- *
+;* tors per track.                                   *
+;*****************************************************
+
+una equ byte ptr [BX]   ;name for byte at BX
+
+blksiz  equ 4096        ;CP/M allocation size
+hstsiz  equ 512         ;host disk sector size
+hstspt  equ 32          ;host disk sectors/trk
+hstblk  equ hstsiz/128  ;CP/M sects/host buff
+;
+;*****************************************************
+;*                                                   *
+;* secshf is log2(hstblk), and is listed below for   *
+;* values of hstsiz up to 2048.                      *
+;*                                                   *
+;*           hstsiz    hstblk    secshf              *
+;*              256         2         1              *
+;*              512         4         2              *
+;*             1024         8         3              *
+;*             2048        16         4              *
+;*                                                   *
+;*****************************************************
+secshf  equ 2               ;log2(hstblk)
+cpmspt  equ hstblk * hstspt ;CP/M sectors/track
+secmsk  equ hstblk-1        ;sector mask
+;
+;*****************************************************
+;*                                                   *
+;*        BDOS constants on entry to write           *
+;*                                                   *
+;*****************************************************
+wrall   equ 0       ;write to allocated
+wrdir   equ 1       ;write to directory
+wrual   equ 2       ;write to unallocated
+;
+;*****************************************************
+;*                                                   *
+;*  The BIOS entry points given below show the       *
+;*      code which is relevant to deblocking only.   *
+;*                                                   *
+;*****************************************************
+
+SELDSK:             ; select disk given by register CL
+
+ndisks  equ 16      ; number of disks (up to 16). Set to 16 for the V20-MBC
+
+    mov disk,cl     ; save disk number
+    mov bx,0000h    ; ready for error return
+    cmp cl,ndisks   ; n beyond max disks?
+    jnb return      ; return if so
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;select disk
+    ;is this the first activation of the drive?
+    test DL,1       ;lsb = 0?
+    jnz selset
+    ;this is the first activation, clear host buff
+    mov hstact,0
+    mov unacnt,0
+selset:
+    mov al,cl ! cbw     ;put in AX
+    mov sekdsk,al       ;seek disk number
+    mov cl,4 ! shl al,cl    ;times 16
+    add ax,offset dpbase
+    mov bx,ax
+return:
+    ret
+    
+; -------------------------------------
+
+HOME:   ;move selected disk to home position (Track 0)
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;home the selected disk
+    mov al,hstwrt       ;check for pending write
+    test al,al
+    jnz homed
+    mov hstact,0        ;clear host active flag
+homed:
+    ;mov cx,0           ;now, set track zero
+    ret
+;
+
+; -------------------------------------
+
+SETTRK: ;set track address given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set track given by registers CX
+    mov sektrk,CX       ;track to seek
+    ret
+
+; -------------------------------------
+
+;
+SETSEC: ;set sector number given by cl (<255)
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set sector given by register cl
+    mov seksec,cl       ;sector to seek
+    ret
+;
+
+; -------------------------------------
+
+SETDMA: ;set DMA offset given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set dma address given by CX
+    mov dma_off,CX
+    ret
+    
+; -------------------------------------
+
+SETDMAB: ;set DMA segment given by CX
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;set segment address given by CX
+    mov dma_seg,CX
+    ret
+    
+; -------------------------------------
+
+SECTRAN: ;translate sector CX using table at [DX]
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;translate sector number CX with table at [DX]
+    test DX,DX  ;test for hard skewed
+    jz notran   ;(blocked must be hard skewed)
+    mov BX,CX
+    add BX,DX
+    mov BL,[BX]
+    ret
+no_tran:
+    ;hard skewed disk, physical = logical sector
+    mov BX,CX
+    ret
+
+; -------------------------------------
+
+READ:
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;read the selected CP/M sector
+    mov unacnt,0        ;clear unallocated counter
+    mov readop,1        ;read operation
+    mov rsflag,1        ;must read data
+    mov wrtype,wrual    ;treat as unalloc
+    jmp rwoper          ;to perform the read
+    
+; -------------------------------------
+
+WRITE:
+    ;
+    ; Blocking/Deblocking routines (CP/M-86 Systen Guide, Appendix A - DEBLOCK.LIB)
+    ;
+    ;write the selected CP/M sector
+    mov readop,0        ;write operation
+    mov wrtype,cl
+    cmp cl,wrual        ;write unallocated?
+    jnz chkuna          ;check for unalloc
+;
+;   write to unallocated, set parameters
+;
+    mov unacnt,(blksiz/128) ;next unalloc recs
+    mov al,sekdsk       ;disk to seek
+    mov unadsk,al       ;unadsk = sekdsk
+    mov ax,sektrk
+    mov unatrk,ax       ;unatrk = sektrk
+    mov al,seksec
+    mov unasec,al       ;unasec = seksec
+
+; ..........................................
+;     Blocking / Deblocking subroutines
+; ..........................................
+
+chkuna:
+    ;check for write to unallocated sector
+;
+    mov bx,offset unacnt    ;point "UNA" at UNACNT
+    mov al,una ! test al,al ;any unalloc remain?
+    jz alloc        ;skip if not
+;
+;   more unallocated records remain
+    dec al          ;unacnt = unacnt-1
+    mov una,al
+    mov al,sekdsk       ;same disk?
+    mov BX,offset unadsk
+    cmp al,una      ;sekdsk = unadsk?
+    jnz alloc       ;skip if not
+;
+;   disks are the same
+    mov AX, unatrk
+    cmp AX, sektrk
+    jnz alloc       ;skip if not
+;
+;   tracks are the same
+    mov al,seksec       ;same sector?
+;
+    mov BX,offset unasec    ;point una at unasec
+;
+    cmp al,una      ;seksec = unasec?
+    jnz alloc       ;skip if not
+;
+;   match, move to next sector for future ref
+    inc una         ;unasec = unasec+1
+    mov al,una      ;end of track?
+    cmp al,cpmspt       ;count CP/M sectors
+    jb noovf        ;skip if below
+;
+;   overflow to next track
+    mov una,0       ;unasec = 0
+    inc unatrk      ;unatrk=unatrk+1
+;
+noovf:
+    ;match found, mark as unnecessary read
+    mov rsflag,0        ;rsflag = 0
+    jmps rwoper     ;to perform the write
+;
+alloc:
+    ;not an unallocated record, requires pre-read
+    mov unacnt,0        ;unacnt = 0
+    mov rsflag,1        ;rsflag = 1
+                ;drop through to rwoper
+;
+;*****************************************************
+;*                                                   *
+;*  Common code for READ and WRITE follows           *
+;*                                                   *
+;*****************************************************
+rwoper:
+    ;enter here to perform the read/write
+    mov erflag,0        ;no errors (yet)
+    mov al, seksec      ;compute host sector
+    mov cl, secshf
+    shr al,cl
+    mov sekhst,al       ;host sector to seek
+;
+;   active host sector?
+    mov al,1
+    xchg al,hstact      ;always becomes 1
+    test al,al      ;was it already?
+    jz filhst       ;fill host if not
+;
+;   host buffer active, same as seek buffer?
+    mov al,sekdsk
+    cmp al,hstdsk       ;sekdsk = hstdsk?
+    jnz nomatch
+;
+;   same disk, same track?
+    mov ax,hsttrk
+    cmp ax,sektrk       ;host track same as seek track
+    jnz nomatch
+;
+;   same disk, same track, same buffer?
+    mov al,sekhst
+    cmp al,hstsec       ;sekhst = hstsec?
+    jz match        ;skip if match
+nomatch:
+    ;proper disk, but not correct sector
+    mov al, hstwrt
+    test al,al      ;"dirty" buffer ?
+    jz filhst       ;no, don't need to write
+    call writehst       ;yes, clear host buff
+;   (check errors here)
+;
+filhst:
+    ;may have to fill the host buffer
+    mov al,sekdsk ! mov hstdsk,al
+    mov ax,sektrk ! mov hsttrk,ax
+    mov al,sekhst ! mov hstsec,al
+    mov al,rsflag
+    test al,al      ;need to read?
+    jz filhst1
+;
+    call readhst        ;yes, if 1
+;   (check errors here)
+;
+filhst1:
+    mov hstwrt,0        ;no pending write
+;
+match:
+    ;copy data to or from buffer depending on "readop"
+    mov al,seksec       ;mask buffer number
+    and ax,secmsk       ;least signif bits are masked
+    mov cl, 7 ! shl ax,cl   ;shift left 7 (* 128 = 2**7)
+;
+;   ax has relative host buffer offset
+;
+    add ax,offset hstbuf    ;ax has buffer address
+    mov si,ax       ;put in source index register
+    mov di,dma_off      ;user buffer is dest if readop
+;
+    push DS ! push ES   ;save segment registers
+;
+    mov ES,dma_seg      ;set destseg to the users seg
+                ;SI/DI and DS/ES is swapped
+                ;if write op
+    mov cx,128/2        ;length of move in words
+    mov al,readop
+    test al,al      ;which way?
+    jnz rwmove      ;skip if read
+;
+;   write operation, mark and switch direction
+    mov hstwrt,1        ;hstwrt = 1 (dirty buffer now)
+    xchg si,di      ;source/dest index swap
+    mov ax,DS
+    mov ES,ax
+    mov DS,dma_seg      ;setup DS,ES for write
+;
+rwmove:
+    cld ! rep movs AX,AX    ;move as 16 bit words
+    pop ES ! pop DS     ;restore segment registers
+;
+;   data has been moved to/from host buffer
+    cmp wrtype,wrdir    ;write type to directory?
+    mov al,erflag       ;in case of errors
+    jnz return_rw       ;no further processing
+;
+;   clear host buffer for directory write
+    test al,al      ;errors?
+    jnz return_rw       ;skip if so
+    mov hstwrt,0        ;buffer written
+    call writehst
+    mov al,erflag
+return_rw:
+    ret
+    
+;------------------------------------------------------------------------------------------------
+; Read physical sector from host.
+; Parameters: hstdsk, hsttrk, hstsec, dma_seg, dma_off
+;
+; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+
+readhst:
+    push     cx                 ;push    bc
+    push     bx                 ;push    hl
+    call    setDTS              ; Select disk, track, sector
+    ;
+    ; Read current host sector (512 byte) to hstbuf
+                                ;ld      c, EXC_RD_OPCD  ; Set the EXECUTE READ OPCODE port into C
+    mov     bx, offset hstbuf   ;ld      hl, hstbuf      ; HL points to buffer hstbuf
+    mov     al, RDSECT_OPC      ;ld      a, RDSECT_OPC   ; Select READSECT opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+                                ;    ld      b, 0            ; Byte counter = 256
+                                ;    inir                    ; Read 256 byte to hstbuf
+                                ;    inir                    ; Read 256 byte to hstbuf    
+    mov     cx, 512             ; Bytes to read counter = 512
+rdhst:    
+    in      al, EXC_RD_OPCD     ; Read a byte...
+    mov     [bx], al            ; ..and put it into hstbuf
+    inc     bx                  ; Update the pointer to  hstbuf
+    loop    rdhst
+    ;
+    ; Check for errors
+    mov     al, ERRDSK_OPC      ;    ld      a, ERRDSK _OPC  ; Select ERRDISK opcode (IOS)
+    out     STO_OPCD, al        ;    out     (STO_OPCD), a
+    in      al, EXC_RD_OPCD     ;    in      a, (EXC_RD_OPCD); Read error code into A...
+    mov     erflag, al          ;    ld     (erflag), a      ; ... and store it into erflag
+    pop     bx                  ;    pop     hl
+    pop     cx                  ;    pop     bc
+    ret                         ; Return with the success/error code in AL
+
+;------------------------------------------------------------------------------------------------
+; Write physical sector to host
+; Converted from the Z80-MBC2 BIOS (S030818-R140319)
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+
+writehst:
+    push    cx                  ;push    bc
+    push    bx                  ;push    hl
+    call    setDTS              ;call    setDTS          ; Select disk, track, sector
+    ;
+    ; Write current host sector (512 byte) to hstbuf
+                                ;ld      c, EXC_WR_OPCD  ; Set the EXECUTE WRITE OPCODE port into C
+    mov     bx, offset hstbuf   ;ld      hl, hstbuf      ; HL points to buffer hstbuf
+    mov     al, WRTSECT_OPC     ;ld      a, WRTSECT_OPC  ; Select WRITESECT opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+                                ;ld      b, 0            ; Byte counter = 256
+                                ;otir                    ; Write 256 byte to hstbuf
+                                ;otir                    ; Write 256 byte to hstbuf
+    mov     cx, 512             ; Bytes to read counter = 512
+wrhst:
+    mov     al, [bx]            ; Read a byte from buffer...
+    out     EXC_WR_OPCD, al     ; ...and write it to IOS
+    inc     bx                  ; Update the pointer to  hstbuf
+    loop    wrhst    
+    ; Check for errors
+    mov     al, ERRDSK_OPC      ;ld      a, ERRDSK _OPC  ; Select ERRDISK opcode (IOS)
+    out     STO_OPCD, al        ;out     (STO_OPCD), a
+    in      al, EXC_RD_OPCD     ;in      a, (EXC_RD_OPCD); Read error code into A...
+    mov     erflag, al          ;ld  (erflag),a          ; ... and store it into erflag
+    pop     bx                  ;pop     hl
+    pop     cx                  ;pop     bc
+    ret                         ; Return with the success/error code in AL
+    
+;------------------------------------------------------------------------------------------------
+; Set disk, track and sector routine for a read or write operation on the V20-MBC.
+; Converted from the Z80-MBC2 BIOS (S030818-R140319). 
+; I left the original Z80 code in the comments.
+;------------------------------------------------------------------------------------------------
+setDTS:
+    ; Select hstdsk host disk (AL = A, AH = B)
+    mov     al, lastDsk     ;ld      a, (lastDsk)
+    mov     ah, al          ;ld      b, a            ; B = last disk number
+    mov     al, hstdsk      ;ld      a, (hstdsk)     ; A = new disk number
+    cmp     al, ah          ;cp      b               ; previous disk = new disk?
+    jz      setTrack        ;jr      z, setTrack     ; Yes, jump ahead
+    mov     al, SELDISK_OPC ;ld      a, SELDISK_OPC  ; No, Select SELDISK opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     al, hstdsk      ;ld      a, (hstdsk)     ; Select the disk number (hstdsk)
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    mov     lastDsk, al     ;ld      (lastDsk), a    ; Update last disk number
+    ; Select hsttrk host track
+setTrack:
+    mov     al, SELTRCK_OPC ;ld      a, SELTRCK_OPC  ; Select SELTRACK opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     ax, hsttrk      ;ld      a, (hsttrk)     ; Select the track number (hsttrk) LSB
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    mov     al, ah          ;ld      a, (hsttrk+1)   ; Select the track number (hsttrk) MSB
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    ; Select hstsec host sector
+    mov     al, SELSECT_OPC ;ld      a, SELSECT_OPC  ; Select SELSECT opcode (IOS)
+    out     STO_OPCD, al    ;out     (STO_OPCD), a
+    mov     al, hstsec      ;ld      a, (hstsec)     ; Select the sector number (hstsec)
+    out     EXC_WR_OPCD, al ;out     (EXC_WR_OPCD), a
+    ret
+    
+lastDsk     db   0FFh       ; Last disk number (= 0FFh after cold boot)
+    
+;*****************************************************
+;*                                                   *
+;* Uninitialized RAM areas follow, including the     *
+;* areas created by the GENDEF utility listed above. *
+;*                                                   *
+;*****************************************************
+
+sekdsk  rb  1       ;seek disk number
+sektrk  rw  1       ;seek track number
+seksec  rb  1       ;seek sector number
+;
+hstdsk  rb  1       ;host disk number
+hsttrk  rw  1       ;host track number
+hstsec  rb  1       ;host sector number
+;
+sekhst  rb  1       ;seek shr secshf
+hstact  rb  1       ;host active flag
+hstwrt  rb  1       ;host written flag
+;
+unacnt  rb  1       ;unalloc rec cnt
+unadsk  rb  1       ;last unalloc disk
+unatrk  rw  1       ;last unalloc track
+unasec  rb  1       ;last unalloc sector
+;
+erflag  rb  1       ;error reporting
+rsflag  rb  1       ;read sector flag
+readop  rb  1       ;1 if read operation
+wrtype  rb  1       ;write operation type
+dma_seg rw  1       ;last dma segment
+dma_off rw  1       ;last dma offset
+hstbuf  rb  hstsiz  ;host buffer
+
+; -------------------------------------
+
+GETSEGT:  ;return address of physical memory table
+    mov bx,offset seg_table
+    ret
+
+;*********************************************
+;*                                           *
+;*               Data Areas                  *
+;*                                           *
+;*********************************************
+
+data_offset equ offset $
+
+    dseg
+    org data_offset ;contiguous with code segment
+IOBYTE      db  0
+disk        db  0   ;disk number
+
+
+    IF  loader_bios
+;---------------------------------------------
+;|                                           |
+signon  db  cr,lf,cr,lf
+    db  'CP/M-86 Version 1.0',cr,lf,0
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;loader_bios
+
+    IF  not loader_bios
+;---------------------------------------------
+;|                                           |
+signon  db  cr,lf,cr,lf
+        db  'V20-MBC CP/M-86 BIOS - S220520'
+        db  cr,lf
+        db  'CP/M-86 Version 1.1 - ', 0
+msg128  db  '128', 0
+msg512  db  '512', 0
+msg1024 db  '1024', 0
+signon2 db  'KB RAM'
+        db  cr,lf,0
+;|                                           |
+;---------------------------------------------
+    ENDIF   ;not loader_bios
+    
+CCPAuto     DB     'SUBMIT AUTOEXEC', 0
+
+int_trp db  cr,lf
+    db  'Interrupt Trap Halt'
+    db  cr,lf
+
+; -------------------------------------
+
+;   System Memory Segment Table
+
+seg_table   db 1                    ; only 1 RAM segment
+            dw      tpa_seg         ; seg starts after BIOS...
+RAMlen      dw      tpa_len         ; ...and extends to the end of RAM
+    
+   
+; --------------------------------------------------------------------------- ;
+;                                                                             ;
+; Disk parameter headers for disk 0 to 15                                     ;
+; I've simply copied those used for the CP/M 2.2. (8080 mode)
+;                                                                             ;
+; --------------------------------------------------------------------------- ;
+
+dpbase:
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb0,0000h,alv00
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv01
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv02
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv03
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv04
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv05
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv06
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv07
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv08
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv09
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv10
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv11
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv12
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv13
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv14
+        DW 0000h,0000h,0000h,0000h,dirbuf,dpb,0000h,alv15
+
+; First drive has one reserved track for CP/M
+dpb0:
+        DW 128 ;SPT - 128 bytes sectors per track (= 32 sectors of 512 bytes)
+        DB 5   ;BSH - block shift factor
+        DB 31  ;BLM - block mask
+        DB 1   ;EXM - Extent mask
+        DW 2043 ; (2047-4) DSM - Storage size (blocks - 1)
+        DW 511 ;DRM - Number of directory entries - 1
+        DB 240 ;AL0 - 1 bit set per directory block
+        DB 0   ;AL1 -            "
+        DW 0   ;CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        DW 1   ;OFF - Reserved tracks
+
+dpb:
+        DW 128 ;SPT - 128 bytes sectors per track (= 32 sectors of 512 bytes)
+        DB 5   ;BSH - block shift factor
+        DB 31  ;BLM - block mask
+        DB 1   ;EXM - Extent mask
+        DW 2047 ;DSM - Storage size (blocks - 1)
+        DW 511 ;DRM - Number of directory entries - 1
+        DB 240 ;AL0 - 1 bit set per directory block
+        DB 0   ;AL1 -            "
+        DW 0   ;CKS - DIR check vector size (DRM+1)/4 (0=fixed disk)
+        DW 0   ;OFF - Reserved tracks
+
+dirbuf     rs 128         ; scratch directory area
+alv00      rs 257         ; allocation vector 0
+alv01      rs 257         ; allocation vector 1
+alv02      rs 257         ; allocation vector 2
+alv03      rs 257         ; allocation vector 3
+alv04      rs 257         ; allocation vector 4
+alv05      rs 257         ; allocation vector 5
+alv06      rs 257         ; allocation vector 6
+alv07      rs 257         ; allocation vector 7
+alv08      rs 257         ; allocation vector 8
+alv09      rs 257         ; allocation vector 9
+alv10      rs 257         ; allocation vector 10
+alv11      rs 257         ; allocation vector 11
+alv12      rs 257         ; allocation vector 12
+alv13      rs 257         ; allocation vector 13
+alv14      rs 257         ; allocation vector 14
+alv15      rs 257         ; allocation vector 15
+
+    db  0       ;Marks End of Module    
+    
+; --------------------------------------------
+
+loc_stk rw  32  ;local stack for initialization
+stkbase equ offset $
+
+lastoff equ offset $
+tpa_seg equ (lastoff+0400h+15) / 16
+
+tpa_len     equ 2000h - tpa_seg     ; 128KB RAM configuration (default)
+tpa_len1    equ 8000h - tpa_seg     ; 512KB RAM configuration
+tpa_len2    equ 0FFFFh - tpa_seg    ; 1024KB RAM configuration
+
+    db 0    ;fill last address for GENCMD
+
+;*********************************************
+;*                                           *
+;*          Dummy Data Section               *
+;*                                           *
+;*********************************************
+    dseg    0   ;absolute low memory
+    org     0   ;(interrupt vectors)
+int0_offset rw  1
+int0_segment    rw  1
+;   pad to system call vector
+    rw  2*(bdos_int-1)
+
+bdos_offset rw  1
+bdos_segment    rw  1
+    END
+
