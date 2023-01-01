@@ -26,6 +26,10 @@ Alternatively, you can use the excellent V20 MBC available at:
 - https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer
 - https://shop.mcjohn.it/en/diy-kit
 
+<p align="center">
+<img src="./images/v20mbc.png" width="75%">
+</p>
+
 - Patched CP/M-86 running in the PCE Emulator
 <p align="center">
 <img src="./images/cpm86.png" width="75%">
@@ -51,6 +55,11 @@ A full 160K single phase distribution is provided on 4 disks. The compiled cpm.s
 - cpm86-3.img: digital research dev tools
 - cpm86-4.img: basic development (microsoft basic, personal basic, cbasic)
 
+The kernels built and delivered standalone as part of the release are:
+- cpm86.sys (ibm pc xt)
+- cpmv20.sys (MBC V20, 8088 mode)
+- cpm816.sys (MBC V20, mixed 8080/8088 mode with CP/M-80 compatibility)
+
 The CP/M-86 OS contains the following commands are in the original distribution:
 - asm86.cmd
 - assign.cmd
@@ -61,11 +70,6 @@ The CP/M-86 OS contains the following commands are in the original distribution:
 - function.cmd
 - gencmd.cmd
 - stat.cmd
-
-The kernels built arE:
-- cpm86.sys/cpm.sys (ibm pc xt)
-- cpmv20.sys (MBC V20, 8088 mode)
-- cpm816.sys (MBC V20, mixed 8080/8088 mode with CP/M-80 compatibility)
 
 The CP/M-86 OS is enhanced with the following patched or updated components:
 - help.hlp (more complete content)
