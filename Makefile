@@ -3,6 +3,55 @@ all: cpm.sys cpm816.sys cpmv20.sys
 cpmwk.img: base.img
 	cp base.img $@
 
+cpm86-at-large.img: cpm.sys base-large.img 
+	cp base-large.img $@
+	cpmcp -f ibmpc-514ds $@ cpm.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ds $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f ibmpc-514ds $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/stat.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/setup.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/dskmaint.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/hdmaint.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/function.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/config.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/assign.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/data.pfk 0:
+	cpmcp -f ibmpc-514ds $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/tod.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/help.* 0:
+	cpmcp -f ibmpc-514ds $@ base/print.* 0:
+	cpmcp -f ibmpc-514ds $@ base/mform.* 0:
+	cpmcp -f ibmpc-514ds $@ base/ddt86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/asm86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/gencmd.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/gendef.cmd 0:
+	cpmls -F -f ibmpc-514ds $@ 0:*.*
+
+cpm86-large.img: cpm.sys base-large.img 
+	cp base-large.img $@
+	cpmcp -f ibmpc-514ds $@ cpm.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ds $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/stat.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/setup.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/dskmaint.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/hdmaint.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/function.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/config.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/assign.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/data.pfk 0:
+	cpmcp -f ibmpc-514ds $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/tod.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/help.* 0:
+	cpmcp -f ibmpc-514ds $@ base/print.* 0:
+	cpmcp -f ibmpc-514ds $@ base/mform.* 0:
+	cpmcp -f ibmpc-514ds $@ base/ddt86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/asm86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/gencmd.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/gendef.cmd 0:
+	cpmls -F -f ibmpc-514ds $@ 0:*.*
+
 cpm86-at-1.img: cpm.sys base.img 
 	cp base-at.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
@@ -119,10 +168,12 @@ clean:
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
+	rm -rf cpm86-at-large.img cpm86-large.img
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
 
-dist: cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
+dist: cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img \
+    cpm86-large.img cpm86-at-large.img
 
 test: dist
 	./cpm86
