@@ -3,7 +3,7 @@ all: cpm.sys cpm816.sys cpmv20.sys
 cpmwk.img: base.img
 	cp base.img $@
 
-cpm86-at-large.img: cpm.sys base-large.img 
+cpm86-320-at.img: cpm.sys base-large.img 
 	cp base-large.img $@
 	cpmcp -f ibmpc-514ds $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ds $@ extra/atinit.cmd 0:ATINIT.CMD
@@ -28,7 +28,7 @@ cpm86-at-large.img: cpm.sys base-large.img
 	cpmcp -f ibmpc-514ds $@ base/gendef.cmd 0:
 	cpmls -F -f ibmpc-514ds $@ 0:*.*
 
-cpm86-large.img: cpm.sys base-large.img 
+cpm86-320.img: cpm.sys base-large.img 
 	cp base-large.img $@
 	cpmcp -f ibmpc-514ds $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ds $@ base/pip.cmd 0:
@@ -52,7 +52,23 @@ cpm86-large.img: cpm.sys base-large.img
 	cpmcp -f ibmpc-514ds $@ base/gendef.cmd 0:
 	cpmls -F -f ibmpc-514ds $@ 0:*.*
 
-cpm86-at-1.img: cpm.sys base.img 
+cpm86-320-dev.img: base-large.img 
+	cp base-large.img $@
+	cpmcp -f ibmpc-514ds $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ds $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/rasm86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/link86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/lib86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/xref86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/sid86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/pbasic.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/cbas86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/crun86.cmd 0:
+	cpmcp -f ibmpc-514ds $@ dev/mbasic86.cmd 0:
+	cpmls -F -f ibmpc-514ds $@ 0:*.*
+
+cpm86-160-at-1.img: cpm.sys base.img 
 	cp base-at.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
@@ -73,7 +89,7 @@ cpm86-at-1.img: cpm.sys base.img
 	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-1.img: cpm.sys base.img 
+cpm86-160-1.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
@@ -93,7 +109,7 @@ cpm86-1.img: cpm.sys base.img
 	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-2.img: base.img 
+cpm86-160-2.img: base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
@@ -104,7 +120,7 @@ cpm86-2.img: base.img
 	cpmcp -f ibmpc-514ss $@ base/gendef.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-3.img: cpm.sys base.img 
+cpm86-160-3.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ dev/rasm86.cmd 0:
 	cpmcp -f ibmpc-514ss $@ dev/link86.cmd 0:
@@ -113,7 +129,7 @@ cpm86-3.img: cpm.sys base.img
 	cpmcp -f ibmpc-514ss $@ dev/sid86.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpm86-4.img: cpm.sys base.img 
+cpm86-160-4.img: cpm.sys base.img 
 	cp base.img $@
 	cpmcp -f ibmpc-514ss $@ dev/pbasic.cmd 0:
 	cpmcp -f ibmpc-514ss $@ dev/cbas86.cmd 0:
@@ -167,13 +183,14 @@ cpmnew: cpm.sys
 clean:
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
-	rm -rf cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img
-	rm -rf cpm86-at-large.img cpm86-large.img
+	rm -rf cpm86-160-at-1.img cpm86-160-1.img \
+        cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
 
-dist: cpm86-at-1.img cpm86-1.img cpm86-2.img cpm86-3.img cpm86-4.img \
-    cpm86-large.img cpm86-at-large.img
+dist: cpm86-160-at-1.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
+    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img
 
 test: dist
 	./cpm86

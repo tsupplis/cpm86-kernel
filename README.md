@@ -45,15 +45,21 @@ Alternatively, you can use the excellent V20 MBC available at:
 <img src="./images/dskmaint.png" width="75%">
 </p>
 
-## Distribution
+## Distributions
 
 A full 160K single phase distribution is provided on 4 disks. The compiled cpm.sys file is also provided standalone.
 
-- cpm86-1.img: bootable core CP/M-86
-- cpm86-at-1.img: bootable core CP/M-86 with AT-compatible clock
-- cpm86-2.img: assembler CP/M-86 tools
-- cpm86-3.img: digital research dev tools
-- cpm86-4.img: basic development (microsoft basic, personal basic, cbasic)
+- cpm86-160-1.img: bootable core CP/M-86
+- cpm86-160-at-1.img: bootable core CP/M-86 with AT-compatible clock
+- cpm86-160-2.img: assembler CP/M-86 tools
+- cpm86-160-3.img: digital research dev tools
+- cpm86-160-4.img: basic development (microsoft basic, personal basic, cbasic)
+
+- cpm86-320.img: bootable core CP/M-86, assembler CP/M-86 tools
+- cpm86-320-at.img: bootable core CP/M-88 + assembler CP/M-86 tools with AT-compatible clock
+- cpm86-320-dev.img: digital research dev tools + basic development (microsoft basic, personal basic, cbasic)
+
+(Future) A full 320K single phase distribution is provided on 4 disks. The compiled cpm.sys file is also provided standalone.
 
 The kernels built and delivered standalone as part of the release are:
 - cpm86.sys (ibm pc xt)
