@@ -97,6 +97,59 @@ The CP/M-86 OS is enhanced with the following patched or updated components:
 
 also the images produced from the blank image have a boot loader terminating with 55AA allowing emulators like qemu to load CP/M-86 properly. Beware, if the image is formatted using dskmaint.cmd, the signature will not be added. A small boot fix will be added later.
 
+## cpmtools formats 
+
+cpmtools 2.23 with libdsk is used.
+
+cpmtools can be deployed with homebrew on mac of fetched at https://www.moria.de/~michael/cpmtools/.
+
+the definitions used are:
+
+```
+# IBM CP/M-86
+# setfdprm /dev/fd1 sect=8 dtr=1 hd ssize=512 tpi=48 head=1
+diskdef ibmpc-514ss
+   seclen 512
+   tracks 40
+   sectrk 8
+   blocksize 1024
+   maxdir 64
+   skew 1
+   boottrk 1
+   os 2.2
+   libdsk:format ibm160
+end
+
+# IBM CP/M-86
+# setfdprm /dev/fd1 sect=8 dtr=1 hd ssize=512 tpi=48
+diskdef ibmpc-514ds
+   seclen 512
+   tracks 80
+   sectrk 8
+   blocksize 2048
+   maxdir 64
+   skew 0
+   boottrk 2
+   os 2.2
+   libdsk:format ibm320
+end
+
+# CP/M 86 on 1.44MB floppies
+diskdef cpm86-144feat
+  seclen 512
+  tracks 160
+  sectrk 18
+  blocksize 4096
+  maxdir 256
+  skew 1
+  boottrk 2
+  os 3
+  libdsk:format ibm1440
+end
+```
+
+Currently the 320 format is not yet working. Using the format on a raw image results in the raw images being corrupted. the 2 other formats work perfectly. If you have a solution to that problem, please reach out.
+
 ## Pedigree
 
 The main source for it is: http://www.cpm.z80.de
@@ -105,5 +158,6 @@ The main source for it is: http://www.cpm.z80.de
 - Baseline: http://www.cpm.z80.de/download/cpmdev.zip
 - Patching Source: http://www.cpm.z80.de/download/cpm86ann.zip
 - Patching Source: http://www.cpm.z80.de/download/cpm86bug.zip
+- 144FEAT2 from Freek Heite
 
 To be continued...
