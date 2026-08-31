@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys
+all: cpm.sys cpm816.sys cpmv20.sys cpmnew.sys
 
 cpmwk.img: base-160.img
 	cp base-160.img $@
@@ -172,6 +172,10 @@ cpm86-160-4.img: cpm.sys base-160.img
 	cpmcp -f ibmpc-514ss $@ dev/mbasic86.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
+cpmnew.sys: cpm86new.h86
+	cpm_gencmd cpm86new.h86 8080 "CODE[A51,M0000]"
+	mv cpm86new.cmd cpmnew.sys
+
 cpm.sys: cpm86.h86
 	cpm_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
 	mv cpm86.cmd cpm.sys
@@ -198,6 +202,10 @@ cpm816.h86: cpm.h86 mbc816.h86
 	doscat cpm.h86 > cpm816.h86
 	cat mbc816.h86 >> cpm816.h86
 
+cpm86new.h86: cpm.h86 pcbionew.h86
+	doscat cpm.h86 > cpm86new.h86
+	cat pcbionew.h86 >> cpm86new.h86
+
 cpm86.h86: cpm.h86 pcbios.h86
 	doscat cpm.h86 > cpm86.h86
 	cat pcbios.h86 >> cpm86.h86
@@ -218,6 +226,7 @@ cpmnew: cpm.sys
 clean:
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
+	rm -rf cpm86new.cmd cpmnew.sys 
 	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
         cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-1440-at.img
@@ -226,6 +235,12 @@ clean:
 
 dist: cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
     cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img
+
+# Verify cpm.sys and cpmnew.sys are binary-identical.
+# Run after any change to pcbionew.a86 to confirm parity with pcbios.a86.
+check: cpm.sys cpmnew.sys
+	cmp cpm.sys cpmnew.sys && echo "OK: cpm.sys and cpmnew.sys are identical" || \
+	  { echo "FAIL: cpm.sys and cpmnew.sys differ"; exit 1; }
 
 test: dist
 	./cpm86
