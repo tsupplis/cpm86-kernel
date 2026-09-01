@@ -23,8 +23,10 @@ DIRECTIVES = {
 # (possibly followed by whitespace only)
 LABEL_ONLY_RE  = re.compile(r'^([A-Z_][A-Z0-9_]*):(\s*)$')
 
-# A label+instruction line: label at col 0, colon, then whitespace+content
-LABEL_INSTR_RE = re.compile(r'^([A-Z_][A-Z0-9_]*):([ \t]+)(\S.*)')
+# A label+instruction line: label at col 0, colon, then whitespace+non-comment content
+# NOTE: if the trailing content starts with ';' it is an inline comment, not an
+# instruction — we leave those on the label line rather than splitting them.
+LABEL_INSTR_RE = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*):([ \t]+)([^;\s]\S*.*)')
 
 # Space-only indent (not a col-0 label, not a comment, not blank)
 SPACE_INDENT_RE = re.compile(r'^( +)(\S.*)')
@@ -44,6 +46,7 @@ def process(lines):
             t = line
 
         # ── 1. Label + instruction on the same line ──────────────────────
+        # Only split when the trailing content is a real instruction, not a comment.
         m = LABEL_INSTR_RE.match(t)
         if m:
             label, _ws, rest = m.groups()

@@ -33,6 +33,20 @@ BDOS_OFST	EQU	0B06H		; BDOS entry point offset
 BIOS_CODE	EQU	2500H		; BIOS code starts here
 
 ;----------------------------------------
+; BIOS memory map (offsets within the CP/M load segment, 2500h–end):
+;
+;   2500h  BIOS jump vector   20 × JMP entries + config data + copyright
+;   ~2560h BIOS code          character I/O, disk I/O, interrupt handlers
+;   ~????h DSEG data area     I/O vectors, drive tables, disk parameters,
+;                             DPHs, stacks, sector buffers (data_offset)
+;   ~????h INIT / once-only   cold-start code overlaid on DSKBUF at runtime;
+;                             freed after boot (data_offst2)
+;   4980h  HDDBUF             HDD sector buffer  (512 bytes, fixed address)
+;   4BE2h  DIRBUF             directory scratch buffer (128 bytes)
+;   4C62h  CSV14              allocation vector for drive 4 (grows upward)
+;----------------------------------------
+
+;----------------------------------------
 ; Interrupt vector table — dummy data segment at segment 0
 ; These symbols give names to the 8086 interrupt vector slots
 ; used by CP/M-86.  The DSEG 0 directive references segment 0;
@@ -45,22 +59,22 @@ BIOS_CODE	EQU	2500H		; BIOS code starts here
 ZEROOFF		RW	1		; INT 0 offset  — divide-by-zero handler
 ZEROSEG		RW	1		; INT 0 segment
 
-		ORG	4*01BH
+		ORG	4*01BH		; = 006Ch  INT 1Bh vector (user break / Ctrl-Break)
 BREAKOFF	RW	1		; INT 1Bh offset — user break (Ctrl-Break)
 BREAKSEG	RW	1		; INT 1Bh segment
 
-TIMEROFF	RW	1		; INT 1Ch offset — timer tick
+TIMEROFF	RW	1		; INT 1Ch offset — timer tick  (sequential: 0070h)
 TIMERSEG	RW	1		; INT 1Ch segment
 
-		ORG	4*01EH
+		ORG	4*01EH		; = 0078h  INT 1Eh vector (diskette parameter table)
 I1EOFF		RW	1		; INT 1Eh offset — diskette parameter table pointer
 I1ESEG		RW	1		; INT 1Eh segment
 
-		ORG	4*0E0H
+		ORG	4*0E0H		; = 0380h  INT E0h vector (BDOS entry)
 BDOSOFF		RW	1		; INT E0h offset — BDOS entry
 BDOSSEG		RW	1		; INT E0h segment
 
-		ORG	4*0E6H
+		ORG	4*0E6H		; = 0398h  INT E6h vector (unknown disk handler)
 UNDSKOFF	RW	1		; INT E6h offset — unknown disk drive handler
 UNDSKSEG	RW	1		; INT E6h segment
 
@@ -2743,8 +2757,13 @@ RSTIOX:
 ;----------------------------------------
 data_offset	EQU offset $
 
+; Main BIOS data area — assembled contiguous with the BIOS code above.
+; data_offset captures the assembler's current location counter ($) at
+; the end of the code section, then DSEG+ORG re-opens the load segment
+; at that same offset so data symbols resolve to the correct addresses.
+;
 		DSEG
-		ORG	data_offset	; contiguous with code
+		ORG	data_offset	; contiguous with BIOS code
 
 BIOS_DATA_RSV	RS	75		; Reserved padding (aligns data to BIOS_CODE+offset)
 
@@ -3347,8 +3366,13 @@ LCLSTK	EQU	offset $		; (for init and timer routines)
 ;
 DSKBUF	EQU	offset $		; Disk buffer
 ;
+; INIT (once-only cold-start code) is placed at DSKBUF — the disk sector
+; buffer.  This is the classic CP/M overlay trick: cold-start code shares
+; the disk buffer, which is overwritten on the first disk read anyway.
+; After INIT completes, DSKBUF is reclaimed as the sector buffer.
+;
 	CSEG
-	ORG	DSKBUF			; code contiguous with data
+	ORG	DSKBUF			; overlays disk sector buffer (freed after boot)
 ;
 ;----------------------------------------
 ;
@@ -4072,8 +4096,13 @@ DISP_CHAR:
 
 data_offst2	EQU offset $
 ;
+; INIT data area — assembled contiguous with the INIT code above.
+; Same pattern as data_offset / data_offst2 pair: EQU captures $,
+; then DSEG+ORG re-opens the segment at that offset.
+; This data is also overlaid on DSKBUF and freed after boot.
+;
 		DSEG
-		ORG	data_offst2	; contiguous with code
+		ORG	data_offst2	; contiguous with INIT code (overlays DSKBUF)
 ;
 SIGNON		DB	cr,lf,lf
 		DB	'CP/M-86 for the IBM PC and IBM PC XT  Version 1.1'

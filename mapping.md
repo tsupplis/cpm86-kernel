@@ -1,0 +1,225 @@
+# CP/M-86 Memory Map
+
+All of CP/M-86 assembles into **one single load segment** (CS = DS = SS at
+runtime).  The three source files are assembled at fixed offsets within that
+segment; no relocation takes place.
+
+## Segment model
+
+| Directive | Argument | Runtime segment | Purpose |
+|-----------|----------|-----------------|---------|
+| `DSEG 0` | `0` | Segment 0000h | Address aliases into the 8086 interrupt vector table (IVT). No data emitted — read/written at runtime with `DS=0`. |
+| `DSEG 40H` | `40H` | Segment 0040h | Address alias for the ROM BIOS data area (equipment byte etc.). Accessed at runtime with `ES=0040h`. |
+| `DSEG` | *(none)* | CP/M load segment | Re-opens the single load segment so `ORG` can name fixed offsets within it. No data emitted unless `DB`/`DW`/`RS` etc. follow. |
+| `CSEG` | *(none)* | CP/M load segment | Code section of the load segment. |
+
+`DSEG` (no argument) and `CSEG` are the **same segment** at runtime; the
+distinction is purely an assembler convention for separating code from data.
+
+---
+
+## Load-segment address map
+
+```
+Offset   Region           File            Notes
+───────  ───────────────  ──────────────  ────────────────────────────────────
+0000h    CCP image        ccpnew.a86      Loaded separately; label CCP defined
+                                          here in pcbionew.a86 for WBOOT jump
+0000h    TOP              ccpnew.a86      Jump table: CCPCLD / CCPABE / CCPHOT
+0009h    CMBUFF           ccpnew.a86      127-byte command input buffer
+~0050h   CCP code body    ccpnew.a86      Parser, built-in commands
+0800h    CCP data (DSEG)  ccpnew.a86      Variables, FCBs, stack, tables
+09FAh    Patch slot 1     ccpnew.a86      PATCHSUBMITSELDSK (TS patch)
+0A40h    Patch slot 2     ccpnew.a86      DIRPAT short-line display (TS patch)
+0AFFh    — end of CCP —
+
+0B00h    BDOS image       bdosnew.a86     User ID bytes + official BDOS entry
+0B00h    Patch slots      bdosnew.a86     Pre-BDOS area: PATCH13, MLOADK,
+         (0A00h–0AFFh)                    MLOADQ, BDOSBC, PATCH15, IXMAIN
+0B06h    BDOSEN           bdosnew.a86     Interrupt handler / BDOS dispatcher
+~0B20h   BDOS code body   bdosnew.a86     All 60 BDOS functions
+2200h    BDOS data (DSEG) bdosnew.a86     Variables, buffers, system stack
+24FFh    — end of BDOS —
+
+2500h    BIOS jump vector pcbionew.a86    20 × JMP + config data + copyright
+~2560h   BIOS code body   pcbionew.a86    Char I/O, disk I/O, interrupts
+????h    BIOS data (DSEG) pcbionew.a86    I/O vectors, drive tables, DPHs,
+         (data_offset)                    disk parameters, stacks, buffers
+????h    INIT / once-only pcbionew.a86    Cold-start code + data overlaid on
+         (DSKBUF /                        the disk sector buffer; freed after
+          data_offst2)                    first boot (CSEG + DSEG at DSKBUF)
+4980h    HDDBUF           pcbionew.a86    HDD sector buffer (512 bytes)
+4BE2h    DIRBUF           pcbionew.a86    Directory scratch buffer (128 bytes)
+4C62h    CSV14+           pcbionew.a86    Allocation vectors, grow upward
+```
+
+---
+
+## ccpnew.a86 — ORG / segment detail
+
+| ORG value | Segment | First symbol | Description |
+|-----------|---------|--------------|-------------|
+| `0000h` | CSEG | `TOP` | CCP jump table (cold / abort / hot start) |
+| `0800h` | DSEG | `CODCMD` | CCP data area: variables, FCBs, stack, tables |
+| `09FAh` | CSEG | `PATCHSUBMITSELDSK` | TS patch slot 1 (submit-drive fix) |
+| `0A40h` | CSEG | `DIRPAT` | TS patch slot 2 (short-line directory display) |
+
+### CCP data area layout (DSEG, from 0800h)
+
+```
+0800h  CODCMD     'CMD' transient-type tag (3 bytes)
+0803h  DDMASG     base-page segment
+0805h  MDSUBE     submit mode flag       ← referenced by BDOS as MDSUBE EQU 0805h
+0806h  SUBFCB     submit file FCB (36 bytes)
+082Ah  WKFCB      work FCB (36 bytes)
+084Eh  RWBUFF     128-byte sector read buffer + 2 spare bytes
+08D0h  BSDIRC     directory bias
+08D1h  USRCOD     user code
+08D2h  TRCMOD     transient command mode
+        RS 96
+0935h  STACK      CCP system stack
+0936h  WKBIOS     BIOS direct-call work block (9 bytes)
+093Fh  PNTCMD     command buffer pointer
+0941h  TPNCMD     temporary command buffer pointer
+0943h  CURDRV     current drive
+0944h  TDRVNU     temporary drive mode
+        indexed data, error strings, user-ID bytes …
+        MODIRE, MODDIR
+        IXRSRT     resident command routine index
+```
+
+---
+
+## bdosnew.a86 — ORG / segment detail
+
+| ORG value | Segment | First symbol | Description |
+|-----------|---------|--------------|-------------|
+| `0000h` | CSEG | `TOP` | Dummy anchor at segment base (never executed) |
+| `0A00h` | CSEG | `PATCH13` | TS patch 13 — BDOS internal call fix |
+| `0A20h` | CSEG | `MLOADK` | Load-program OK exit stub |
+| `0A30h` | CSEG | `MLOADQ` | Load-program error exit stub |
+| `0A50h` | CSEG | `BDOSBC` | Function-code range check helper |
+| `0A60h` | CSEG | `PATCH15` | TS patch 15 — data-group base fix |
+| `0A80h` | CSEG | `IXMAIN` | BDOS function dispatch table (54 × DW = 6Ch bytes) + MRTVNO + MGTSAD |
+| `0B00h` | CSEG | `BDOSEN` | Official BDOS entry point (user ID bytes + interrupt handler) |
+| `2200h` | DSEG | `JPBIOS` | BDOS data area (variables, buffers, system stack) |
+
+### BDOS data area layout (DSEG, from 2200h)
+
+```
+2200h  JPBIOS / SGBIOS    BIOS call routine vector
+2204h  VBADSC … VROFIL    error routine vectors (4 × DW)
+220Ch  BFGRDC             group descriptor buffer (36 words = 48h bytes)
+         BFLDPR           program loading buffer (128 bytes)
+         DGBASE           data group base
+         MODE80           8080 model flag
+         SYSMCB           memory control block work (5 bytes)
+         UFCBOF/LPSTOF/LPSTSG/FMODEL
+         ECHKIL/PPROMP/PCARIG/BFCONC   console I/O work
+         DLTFCB/RODSKV/LGDSKV          disk I/O work
+         PNDRCK/PNTRAK/PNSCTR          disk parameter work
+         DIRBUF/PNTDPB/PNCHSM/PNALMP  DPH copy
+         SPT … PNXTBL                  DPB copy
+         EXTMOD … FLOMOD               disk work parameters
+         CNTREG/SIZREG/TBLREG (64B)    memory region table
+         TBUMCB (40B)                  used MCB buffer
+         CNUMCB/PNUMCB/SYSMOD …       MCB management
+         CERROR … CRODSK               error message strings
+         WKFCB (36B) + RS 164
+         STACK                         BDOS system stack
+         INSTSG/INSTOF/FLINSD          entry stack save
+         INPARA/OTPARA/INDSEG          call parameters
+         DMAADD/DMASEG/CURDSK …       system data area
+         CONWID/PRNWID/CONCOL/PRNCOL  console/printer widths
+```
+
+---
+
+## pcbionew.a86 — ORG / segment detail
+
+### Interrupt vector table aliases (DSEG 0, segment 0000h)
+
+| ORG expression | = byte offset | Symbols defined |
+|----------------|---------------|-----------------|
+| `ORG 0` | `0000h` | `ZEROOFF` / `ZEROSEG` — INT 0 (divide-by-zero) |
+| `4*01BH` | `006Ch` | `BREAKOFF` / `BREAKSEG` — INT 1Bh (Ctrl-Break) |
+| *(sequential)* | `0070h` | `TIMEROFF` / `TIMERSEG` — INT 1Ch (timer tick) |
+| `4*01EH` | `0078h` | `I1EOFF` / `I1ESEG` — INT 1Eh (diskette parameters) |
+| `4*0E0H` | `0380h` | `BDOSOFF` / `BDOSSEG` — INT E0h (BDOS entry) |
+| `4*0E6H` | `0398h` | `UNDSKOFF` / `UNDSKSEG` — INT E6h (unknown disk) |
+
+### ROM BIOS data area alias (DSEG 40H, segment 0040h)
+
+| ORG value | Symbol | Description |
+|-----------|--------|-------------|
+| `10H` | `BIOSHDW` | Equipment byte (video mode bits 5–4) |
+
+### BDOS internal variable aliases (DSEG, load segment)
+
+| ORG value | Symbol | Description |
+|-----------|--------|-------------|
+| `24A5h` | `BDOSUSER` | Current user number |
+| `24AFh` | `BDOSMODABT` | BDOS abort mode flag |
+| `24B7h` | `BDOSCURDRV` | Current default drive |
+| `24BDh` | `DHOUR` … `BDOSCONWID` | Clock, ASCII time, system message buffer |
+
+### BIOS load-segment ORGs (CSEG / DSEG, load segment)
+
+| ORG value | Segment | First symbol | Description |
+|-----------|---------|--------------|-------------|
+| `0000h` (CCP_OFFSET) | CSEG | `CCP` | Label-only forward ref; no code emitted |
+| `2500h` (BIOS_CODE) | CSEG | *(jmp INIT)* | BIOS jump vector + code start |
+| `data_offset` ($) | DSEG | `BIOS_DATA_RSV` | Main BIOS data area, contiguous with code |
+| `DSKBUF` ($) | CSEG | `INIT` | Once-only cold-start code, overlays disk buffer |
+| `data_offst2` ($) | DSEG | `SIGNON` | INIT data area, also overlays disk buffer |
+| `4980h` | DSEG | `HDDBUF` | HDD sector buffer (512 bytes, fixed address) |
+| `4BE2h` | DSEG | `DIRBUF` | Directory scratch buffer (128 bytes) |
+| `4C62h` | DSEG | `CSV14` | Allocation vector for drive 4 (grows upward) |
+
+---
+
+## Gap analysis — free bytes between ORG slots
+
+*All addresses and sizes verified from the `.lst` assembler listing files.*
+*All free holes confirmed unused — no jump targets, data pointers, or references land in any gap.*
+
+### ccpnew.a86 — code and data boundaries
+
+| Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
+|--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
+| CCP code (CSEG) | `0000h` | `07FCh` | `0800h` | 2048 | 2045 | 3 | `07FDh`–`07FFh` | `CMDPTR` DW 0,0 @ `07F9h` |
+| CCP data (DSEG) | `0800h` | `09F1h` | `09FAh` | 506 | 498 | 8 | `09F2h`–`09F9h` | `MODDIR` DB @ `09F1h` |
+
+### Interleaved patch slots — `09FAh`–`0AFFh` (CCP and BDOS share this range)
+
+The slots in `09FAh`–`0AFFh` are **interleaved between ccpnew.a86 and bdosnew.a86**.
+Each slot's "next ORG" is the immediately following slot regardless of which file owns it.
+
+| Slot | File | Start | Last byte | Next ORG | Avail (dec) | Used (dec) | Free (dec) | Hole range |
+|------|------|-------|-----------|----------|-------------|------------|------------|------------|
+| `PATCHSUBMITSELDSK` | ccpnew | `09FAh` | `09FFh` | `0A00h` | 6 | 6 | 0 | — |
+| `PATCH13` | bdosnew | `0A00h` | `0A1Fh` | `0A20h` | 32 | 32 | 0 | — ⚠ full |
+| `MLOADK` | bdosnew | `0A20h` | `0A24h` | `0A30h` | 16 | 5 | 11 | `0A25h`–`0A2Fh` |
+| `MLOADQ` | bdosnew | `0A30h` | `0A3Fh` | `0A40h` | 16 | 16 | 0 | — ⚠ full |
+| `DIRPAT` | ccpnew | `0A40h` | `0A4Eh` | `0A50h` | 16 | 15 | 1 | `0A4Fh` |
+| `BDOSBC` | bdosnew | `0A50h` | `0A5Ch` | `0A60h` | 16 | 13 | 3 | `0A5Dh`–`0A5Fh` |
+| `PATCH15` | bdosnew | `0A60h` | `0A75h` | `0A80h` | 32 | 22 | 10 | `0A76h`–`0A7Fh` |
+| `IXMAIN`+stubs | bdosnew | `0A80h` | `0AF6h` | `0B00h` | 128 | 119 | 9 | `0AF7h`–`0AFFh` |
+
+Notes:
+- **`PATCHSUBMITSELDSK`** slot is only 6 bytes wide (bounded by `PATCH13` at `0A00h`), not 70 as the source comment says.
+- **`PATCH13`** and **`MLOADQ`** slots are exactly full. ⚠ No room for additional code.
+- **`IXMAIN`** region: 54 × DW dispatch table (`0A80h`–`0AEBh`, 108 bytes) + `MRTVNO` (5 bytes @ `0AECh`) + `MGTSAD` (6 bytes @ `0AF1h`) = 119 bytes used.
+- All free holes verified against both `.lst` files — **no code, data, or references land in any hole.**
+
+### pcbionew.a86 — fixed-address buffer gaps
+
+| Symbol | Start | End+1 | Next ORG | Gap (dec) | Gap (hex) | Hole range | Notes |
+|--------|-------|-------|----------|-----------|-----------|------------|-------|
+| `CFG_PFKTBL` | `47F0h` | `4980h` | `4980h` | 0 | — | — | RS 400, ends exactly at `HDDBUF` |
+| `HDDBUF` | `4980h` | `4B80h` | `4BE2h` | 98 | `62h` | `4B80h`–`4BE1h` | Reserved padding — original DRI layout |
+| `DIRBUF` | `4BE2h` | `4C62h` | `4C62h` | 0 | — | — | RS 128, ends exactly at `CSV14` |
+
+- The **98-byte gap** (`4B80h`–`4BE1h`) is present in the original Digital Research binary, confirmed unreferenced in all `.lst` files, and must not be used.
+- `DSKBUF`/`INIT` overlay: INIT code+data spans `3BE2h`–`4062h` (**481 bytes**), placed in the disk-buffer area and reclaimed after first boot.
+

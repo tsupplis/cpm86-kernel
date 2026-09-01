@@ -202,8 +202,8 @@ cpm816.h86: cpm.h86 mbc816.h86
 	doscat cpm.h86 > cpm816.h86
 	cat mbc816.h86 >> cpm816.h86
 
-cpm86new.h86: cpm.h86 pcbionew.h86
-	doscat cpm.h86 > cpm86new.h86
+cpm86new.h86: cpmnew.h86 pcbionew.h86
+	doscat cpmnew.h86 > cpm86new.h86
 	cat pcbionew.h86 >> cpm86new.h86
 
 cpm86.h86: cpm.h86 pcbios.h86
@@ -213,6 +213,10 @@ cpm86.h86: cpm.h86 pcbios.h86
 cpm.h86: ccp.h86 bdos.h86
 	doscat ccp.h86 > cpm.h86
 	cat bdos.h86  >> cpm.h86
+
+cpmnew.h86: ccpnew.h86 bdosnew.h86
+	doscat ccpnew.h86 > cpmnew.h86
+	cat bdosnew.h86  >> cpmnew.h86
 
 %.h86: %.a86
 	cpm_asm86 $<
