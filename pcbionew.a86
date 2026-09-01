@@ -1,132 +1,122 @@
 
 ;----------------------------------------
-; IBM-PC Basic I/O System (PCBIOS)
-; For CPM-86 v1.1
+; IBM PC BIOS for CP/M-86 v1.1
+;
+; This file is the PC BIOS (PCBIOS) component of CP/M-86.
+; It provides the hardware-dependent layer between CP/M-86
+; and the IBM PC ROM BIOS: character I/O, disk I/O,
+; interrupt handling, and system initialisation.
+;
+; Note: in the original disassembly DI was used instead of SI
+; in PENRDB (light pen buffer fill) - this is a bug in the
+; original Digital Research code, preserved here as-is.
 ;----------------------------------------
-;
-; 31/12/1998
-;
-;   Code/data yet to comment....
-; 1. 3fef - setting i/o routines pointer (byte 47e1)
-; 2. SOSTATC	TEST	CL,AH
-; 3. VIDCOM -label calls to
-; 4. 4980 offset ??
-; 5. chkcp3 - comment
-; 6. chkcp4 - comment
-; 7. 2be5
-; 8. 3d52
-;
-; BUGS in original code
-;----------------------------------------
-; 1. labeled 'BUG DI' - Incorrectly using DI instead of SI
-;
-; #rcpmx.xxx
-;
-;  Start      End
-; 139D:0000 139D:47FF
-; #l2500,47ff
 
+; ASCII control character codes
 
-; Ascii characters
+CTRLC	EQU	03H		; Ctrl-C  (break)
+BEL		EQU	07H		; Bell
+BS		EQU	08H		; Backspace
+LF		EQU	0AH		; Line feed
+CR		EQU	0DH		; Carriage return
+ESC		EQU	1BH		; Escape
 
-CTRLC	EQU	03H
-BEL		EQU	07H
-BS		EQU	08H
-LF		EQU	0AH
-CR		EQU	0DH
-ESC		EQU	1BH
-
-; Logical
+; Boolean constants
 
 TRUE		EQU	0FFH
 FALSE		EQU	0
 
-; Addresses
+; Fixed load addresses
 
-CCP_OFFSET	EQU	0000H
-BDOS_OFST	EQU	0B06H		; BDOS entry point
-BIOS_CODE	EQU	2500H
+CCP_OFFSET	EQU	0000H		; CCP loads at segment base
+BDOS_OFST	EQU	0B06H		; BDOS entry point offset
+BIOS_CODE	EQU	2500H		; BIOS code starts here
 
 ;----------------------------------------
-; Dummy Data Section
-; for Interrupt Vectors
+; Interrupt vector table — dummy data segment at segment 0
+; These symbols give names to the 8086 interrupt vector slots
+; used by CP/M-86.  The DSEG 0 directive references segment 0;
+; no actual data is emitted here.
 ;----------------------------------------
 
-		DSEG	0		; MEMORY ZERO PAGE
+		DSEG	0		; address segment 0 (interrupt vector table)
 
-		ORG 	0		;
-ZEROOFF		RW	1		; DIV BY ZERO OFFSET
-ZEROSEG		RW	1		;  AND SEGMENT
+		ORG 	0
+ZEROOFF		RW	1		; INT 0 offset  — divide-by-zero handler
+ZEROSEG		RW	1		; INT 0 segment
 
 		ORG	4*01BH
-BREAKOFF	RW	1		; USER BREAK OFFSET
-BREAKSEG	RW	1		;  AND SEGMENT
+BREAKOFF	RW	1		; INT 1Bh offset — user break (Ctrl-Break)
+BREAKSEG	RW	1		; INT 1Bh segment
 
-TIMEROFF	RW	1		; TIMER INT OFFSET
-TIMERSEG	RW	1		;  AND SEGMENT
+TIMEROFF	RW	1		; INT 1Ch offset — timer tick
+TIMERSEG	RW	1		; INT 1Ch segment
 
 		ORG	4*01EH
-I1EOFF		RW	1		; DISK PARM POINTER OFFSET
-I1ESEG		RW	1		;  AND SEGMENT
+I1EOFF		RW	1		; INT 1Eh offset — diskette parameter table pointer
+I1ESEG		RW	1		; INT 1Eh segment
 
 		ORG	4*0E0H
-BDOSOFF		RW	1		; BDOS ENTRY OFFSET
-BDOSSEG		RW	1		;  AND SEGMENT
+BDOSOFF		RW	1		; INT E0h offset — BDOS entry
+BDOSSEG		RW	1		; INT E0h segment
 
 		ORG	4*0E6H
-UNDSKOFF	RW	1		; UNKNOWN DISK DRIVE INT OFFSET
-UNDSKSEG	RW	1		;  AND SEGMENT
+UNDSKOFF	RW	1		; INT E6h offset — unknown disk drive handler
+UNDSKSEG	RW	1		; INT E6h segment
 
 ;----------------------------------------
-; Dummy Data Section
-; for Page 0040H
+; ROM BIOS data area — dummy data segment at segment 0040h
+; BIOSHDW is the equipment byte that encodes the video mode.
 ;----------------------------------------
 
 		DSEG
 
 		ORG	10H
-BIOSHDW		RB	1		; BIOS hardware setting
+BIOSHDW		RB	1		; ROM BIOS equipment byte (bit 5-4 = video mode)
 
 ;----------------------------------------
-; Dummy Data Section
-; for BDOS Data
+; BDOS data area — symbols for fields inside the running BDOS
+; These are referenced by the BIOS to read/write BDOS state.
 ;----------------------------------------
 
 		DSEG
 
 		ORG	24A5h
-BDOSUSER	RB	1		; USER NUM HIDES HERE
+BDOSUSER	RB	1		; Current user number
 
 		ORG	24AFh
-BDOSMODABT	RB	1		; BDOS ABORT MODE
+BDOSMODABT	RB	1		; Non-zero: BDOS abort mode active
 
 		ORG	24B7h
-BDOSCURDRV	RB	1		; BDOS CURRENT DRIVE
+BDOSCURDRV	RB	1		; Current default drive (0=A:)
 
 		ORG	24BDh
-DHOUR		RB	1		; DECIMAL HOURS
-DMINUTE		RB	1		; DECIMAL MINUTES
-DSECOND		RB	1		; DECIMAL SECONDS
+DHOUR		RB	1		; Clock: hours   (decimal, 0-23)
+DMINUTE		RB	1		; Clock: minutes (decimal, 0-59)
+DSECOND		RB	1		; Clock: seconds (decimal, 0-59)
 ;
-AMONTH		RW	1		; ASCII MONTH
-		RB	1		; /
-ADAY		RW	1		; ASCII DAY
-		RB	1		; /
-AYEAR		RW	1		; ASCII YEAR
-		RB	1		; ,
-AHOUR		RW	1		; ASCII HOURS
-		RB	1		; :
-AMINUTE		RW	1		; ASCII MINUTES
-		RB	1		; :
-ASECOND		RW	1		; ASCII SECONDS
+; Real-time clock values in ASCII (maintained by TIMERINT)
+; Layout: MM/DD/YY,HH:MM:SS
+;
+AMONTH		RW	1		; ASCII month  (2 digits)
+		RB	1		; separator '/'
+ADAY		RW	1		; ASCII day    (2 digits)
+		RB	1		; separator '/'
+AYEAR		RW	1		; ASCII year   (2 digits)
+		RB	1		; separator ','
+AHOUR		RW	1		; ASCII hours  (2 digits)
+		RB	1		; separator ':'
+AMINUTE		RW	1		; ASCII minutes (2 digits)
+		RB	1		; separator ':'
+ASECOND		RW	1		; ASCII seconds (2 digits)
 		RB	1
 
-SYSMESSAGE	RB	14		; SYS STATUS MESSAGE
-BDOSCONWID	RB	1		; BDOS CONSOLE WIDTH
+SYSMESSAGE	RB	14		; System status message buffer
+BDOSCONWID	RB	1		; Console width reported to BDOS
 
 ;----------------------------------------
-; Dummy Code Section
-; for CCP entry points
+; CCP entry point — dummy code segment reference
+; CCP is loaded at CCP_OFFSET; CCP+6 is the warm-boot entry.
 ;----------------------------------------
 
 	CSEG
@@ -135,8 +125,8 @@ BDOSCONWID	RB	1		; BDOS CONSOLE WIDTH
 CCP:
 
 ;----------------------------------------
-; Code Section
-; BIOS Jump Vector for Individual Routines
+; BIOS jump vector — one JMP per BIOS function, at BIOS_CODE
+; CP/M-86 dispatches all BIOS calls through this table.
 ;----------------------------------------
 
 	CSEG
@@ -163,265 +153,283 @@ CCP:
 	jmp	GETIOB			; Return I/O map byte (IOBYTE)
 	jmp	SETIOB			; Set I/O map byte (IOBYTE)
 
-	RS	15		; Reserved - 5 more JMP's
+	RS	15			; 5 reserved JMP slots (future expansion)
 
-				; Pointers to
-	DW	offset PFKTABLE	;  - Function keys data
-	DW	offset DISK	;  - Disk parameters
-	DW	offset SER1	;  - Serial port init parameters
-	DB	010h,033h	;  - Device data
-	DW	offset FIDDSMEM	;  - FIDD data
-	DW	offset CRTMOD	;  - Screen data
+	; Configuration data pointers (read by CP/M at startup)
+	DW	offset PFKTABLE		; -> programmable function key table
+	DW	offset DISK		; -> disk drive parameter block
+	DW	offset SER1		; -> serial port init parameters
+	DB	010h,033h		;    device capability byte (printers/serial)
+	DW	offset FIDDSMEM		; -> FIDDS memory size
+	DW	offset CRTMOD		; -> current screen mode
 
 	DB	'Copyright (C) 1983, Digital Research'
 
 ;----------------------------------------
-; Arrive here from BDOS call 0
+; WBOOT — warm boot entry (BDOS function 0)
+; Resets the disk-dirty state, then hands control to CCP.
 ;
 WBOOT:
-	mov	byte ptr DSK_DIRTY,0	; Default drive on startup ?
-	mov	byte ptr DSK_LAST,0FFh	; Disk error or change ???
-	jmp	CCP+6			; Jump to cold start entry of CCP
+	mov	byte ptr DSK_DIRTY,0	; clear write-pending flag
+	mov	byte ptr DSK_LAST,0FFh	; invalidate track cache
+	jmp	CCP+6			; enter CCP warm-boot entry point
 
 ;----------------------------------------
-; CP/M Character I/O Interface Routines
-;----------------------------------------
-; Return console keyboard char
+; CP/M-86 character I/O interface
 ;
-;   Input: none
-;   Output: AL:=char AND 07FH
+; Each BIOS entry point loads the I/O vector word for that
+; device into AX (SYS_CONI, SYS_CONO, etc.), then falls
+; through to the common XINPUT / XOUTPUT dispatcher.
+; The vector word is a bitmask: bit N selects device N in
+; INROUTINES / OUTROUTINES.
+;----------------------------------------
+;
+; CONIN — read one character from the console input device
+;   Out: AL = character (bit 7 masked off)
 ;
 CONIN:
-	mov	ax,word ptr SYS_CONI
+	mov	ax,word ptr SYS_CONI	; console input device vector
 	jmps	XINPUT
 ;
-; Write char to console device
-;
-;   Input: CL:=char
-;   Output: none
+; CONOUT — write one character to the console output device
+;   In:  CL = character
 ;
 CONOUT:
-	mov	ax,word ptr SYS_CONO
+	mov	ax,word ptr SYS_CONO	; console output device vector
 	jmps	XOUTPUT
 ;
-; Return console keyboard status
-;
-;   Input: none
-;   Output: IF ready THEN AL:=0FFH
-;                    ELSE AL:=00
+; CONST — return console input ready status
+;   Out: AL = 0FFh if a character is waiting, 00h if not
 ;
 CONST:
-	mov	ax,word ptr SYS_CONI
-	mov	cl,01h
+	mov	ax,word ptr SYS_CONI	; console input device vector
+	mov	cl,01h			; status request flag
 	jmps	XOSTATUS
 ;
-; Return char from reader device
-;
-;   Input: none
-;   Output: AL:=char AND 07FH
+; READER — read one character from the auxiliary input device
+;   Out: AL = character (bit 7 masked off)
 ;
 READER:
-	mov	ax,word ptr SYS_AUXI
+	mov	ax,word ptr SYS_AUXI	; auxiliary input device vector
 	jmps	XINPUT
 ;
-; Write character to punch device
-;
-;   Input: CL:=char
-;   Output: none
+; PUNCH — write one character to the auxiliary output device
+;   In:  CL = character
 ;
 PUNCH:
-	mov	ax,word ptr SYS_AUXO
+	mov	ax,word ptr SYS_AUXO	; auxiliary output device vector
 	jmps	XOUTPUT
 ;
-; Write character to list device
-;
-;   Input: CL:=char
-;   Output: none
+; LISTOUT — write one character to the list (printer) device
+;   In:  CL = character
 ;
 LISTOUT:
-	mov	ax,word ptr SYS_LST
+	mov	ax,word ptr SYS_LST	; list device vector
 	jmps	XOUTPUT
 ;
-; Return list status
-;
-;   Input: none
-;   Output: IF ready THEN AL:=0FFH
-;                    ELSE AL:=00
+; LISTST — return list device ready status
+;   Out: AL = 0FFh if ready, 00h if not
 ;
 LISTST:
-	mov	ax,word ptr SYS_LST
-	mov	cl,20h
+	mov	ax,word ptr SYS_LST	; list device vector
+	mov	cl,20h			; status request flag
 	jmps	XOSTATUS
 ;
-; Common character input routine
+;----------------------------------------
+; XINPUT — common input dispatcher
+;
+; AX = device vector bitmask; scans INROUTINES table,
+; calls the first routine whose bit is set in AX.
+; Falls back to KEYIN if no bit matches.
 ;
 XINPUT:
 	cld
-	mov	bx,offset INROUTINES
-	mov	cx,11			; Only 11 possible routines
+	mov	bx,offset INROUTINES	; -> device routine table
+	mov	cx,11			; 11 possible devices
 	sub	dx,dx
 XINPUT1:
-	ror	ax,1h
-	jnb	XINPUT2
-	jmp	word ptr [bx]		; Transfer to first routine
+	ror	ax,1h			; test next device bit
+	jnb	XINPUT2			; not set, advance
+	jmp	word ptr [bx]		; call matching device routine
 XINPUT2:
-	inc	bx			; Next routine
+	inc	bx			; next table entry (word)
 	inc	bx
 	loop	XINPUT1
-	jmp	KEYIN			; No more - assume keyboard
+	jmp	KEYIN			; no device matched, use keyboard
 ;
-; Common character output routine
+;----------------------------------------
+; XOUTPUT — common output dispatcher
+;
+; AX = device vector bitmask; calls ALL routines whose bit
+; is set in AX (output can go to multiple devices at once).
 ;
 XOUTPUT:
 	cld
-	mov	bx,offset OUTROUTINES
-	mov	ch,11			; Only 11 possible routines
+	mov	bx,offset OUTROUTINES	; -> device routine table
+	mov	ch,11			; 11 possible devices
 
 XOUTPUT1:
-	ror	ax,1			; Is this it
-	jnb	XOUTPUT2		; No
+	ror	ax,1			; test next device bit
+	jnb	XOUTPUT2		; not set, skip
 	push	ax
 	push	bx
 	push	cx
 	sub	dx,dx
-	call	word ptr [bx]		; Transfer to that routine
+	call	word ptr [bx]		; call this device routine
 	pop	cx
 	pop	bx
 	pop	ax
 XOUTPUT2:
-	inc	bx			; Check for next
+	inc	bx			; next table entry
 	inc	bx
-	dec	ch			; Any more?
-	jnz	XOUTPUT1		; Try again
-	ret				; Now leave
+	dec	ch			; all devices checked?
+	jnz	XOUTPUT1		; no, continue
+	ret
 ;
+;----------------------------------------
+; XOSTATUS — common input status dispatcher
 ;
-; Common input status
-;
-; Routine to return status of CONSOLE or LIST device
+; AX = device vector bitmask; scans OUTSTATUS table,
+; returns 0FFh if the matching device is ready, 00h if not.
+; If no bit is set, returns 0FFh (always ready).
 ;
 XOSTATUS:
-	mov	bx,offset OUTSTATUS
-	mov	ch,0Bh
+	mov	bx,offset OUTSTATUS	; -> device status table
+	mov	ch,0Bh			; 11 possible devices
 	sub	dx,dx
 XOSTAT1:
-	ror	al,1
-	jb	XOSTAT2
+	ror	al,1			; test next device bit
+	jb	XOSTAT2			; set: call status routine
 	inc	bx
 	inc	bx
 	dec	ch
 	jnz	XOSTAT1
-	mov	al,0FFh
+	mov	al,0FFh			; no device: assume ready
 	ret
 XOSTAT2:
-	jmp	word ptr [bx]
+	jmp	word ptr [bx]		; call device status routine
 ;
+;----------------------------------------
+; KEYSTAT — keyboard ready status
+;   Out: AL = 0FFh if a character is available, 00h if not
 ;
-; Keyboard status
-; Exit:  AL = 0ffh if char ready
-; AL = 0 if not ready
+; Checks the PFK (programmable function key) buffer first;
+; if empty, polls the ROM BIOS keyboard status.
 ;
 KEYSTAT:
 	push	si
-	mov	si,word ptr KEYPTR	; Check PFK buffer
-	mov	al,[si]			; Char from buffer
+	mov	si,word ptr KEYPTR	; pointer into PFK buffer
+	mov	al,[si]			; peek at next byte
 	pop	si
-	test	al,al			; Valid if not zero
-	jnz	KEYSTAT1		; Skip if readys
+	test	al,al			; zero = buffer empty
+	jnz	KEYSTAT1		; non-zero: character ready
 ;
-	mov	ah,01h			; Read keyboard status
+	mov	ah,01h			; INT 16h: peek keyboard buffer
 	int	16h			; PC ROM BIOS Keyboard Service
-	mov	al,0			; Assume not readys
-	jz	KEYSTAT2
+	mov	al,0			; assume not ready
+	jz	KEYSTAT2		; ZF set = no key waiting
 KEYSTAT1:
-	mov	al,0FFh			; Character readys
+	mov	al,0FFh			; character available
 KEYSTAT2:
 	ret
 ;
+;----------------------------------------
+; KEYIN — read one character from the keyboard
+;   Out: AL = ASCII character
 ;
-; Keyboard input
-; Exit:  AL = char
+; Drains the PFK expansion buffer first.  If the buffer is
+; empty, reads the ROM BIOS keyboard and checks whether the
+; scan code maps to a programmable function key string.
 ;
 KEYIN:
 	push	si
 
 KEYIN1:
-	mov	si,word ptr KEYPTR	; Check key buffer
-	lodsb				; Get the character
-	test	al,al			; Return buf char
-	jz	KEYIN3			; Else read keyboard
-	mov	word ptr KEYPTR,si
+	mov	si,word ptr KEYPTR	; pointer into PFK buffer
+	lodsb				; fetch next byte
+	test	al,al			; 0 = buffer exhausted
+	jz	KEYIN3			; go read keyboard
+	mov	word ptr KEYPTR,si	; advance buffer pointer
 KEYIN2:
 	pop	si
 	ret
 
 KEYIN3:
-	sub	ah,ah			; Read char from keyboard
+	sub	ah,ah			; INT 16h: read key
 	int	16h			; PC ROM BIOS Keyboard Service
-	and	al,7Fh
-	jnz	KEYIN2			; Return if ascii
+	and	al,7Fh			; strip high bit
+	jnz	KEYIN2			; printable ASCII: return it
 ;
-; Check for programmable function keys
+; Scan code only (AL=0, AH=scan code) — check PFK table
 ;
 	push	cx
 	push	di
 	push	es
-	mov	al,ah			; Get key code
-	call	GETPFK			; AX -> pfk entry
-	jc	KEYIN4			; C set if illegal
+	mov	al,ah			; scan code to look up
+	call	GETPFK			; find PFK entry; AX -> string, CX = length
+	jc	KEYIN4			; carry set: not a PFK, ignore
 ;
-	mov	si,ax			; Table pointer
-	mov	di,offset KEYBUF
-	mov	word ptr KEYPTR,di	; Checked at entry
-	rep	movsb			; Move to keybuffer
+	mov	si,ax			; SI -> PFK string in table
+	mov	di,offset KEYBUF	; DI -> key expansion buffer
+	mov	word ptr KEYPTR,di	; reset buffer pointer to start
+	rep	movsb			; copy PFK string into buffer
 KEYIN4:
 	pop	es
 	pop	di
 	pop	cx
-	jmp	KEYIN1			; Start it
+	jmp	KEYIN1			; re-enter: drain the buffer
 ;
-; Point to PFK entry
-; Entry:  AL = key code
-; Exit:  AX = pointer to table entry
-; CX = Length of table entry
-; Carry = not a legal PFK
+;----------------------------------------
+; GETPFK — look up a scan code in the PFK table
+;   In:  AL = keyboard scan code
+;   Out: AX = offset of matching PFK string
+;        CX = length of string (20 bytes per entry)
+;        Carry set if scan code not found in table
 ;
 GETPFK:
 	mov	di,cs
 	mov	es,di
-	mov	di,offset PFKSCAN	; Function key scancode table ?
-	mov	cx,20
-	repne	scasb
-	stc				; Assume illegal
-	jnz	GETPFK2			; Exit if not found
+	mov	di,offset PFKSCAN	; -> scan code lookup table
+	mov	cx,20			; 20 entries
+	repne	scasb			; search for matching code
+	stc				; preset carry (not found)
+	jnz	GETPFK2			; jump if no match
 ;
 	mov	ax,20
-	mul	cl
-	add	ax,offset PFKTABLE	; Offset to table entry
-	mov	cx,20			; Length of table entry
+	mul	cl			; CX remaining -> entry index
+	add	ax,offset PFKTABLE	; compute offset of PFK string
+	mov	cx,20			; each PFK entry is 20 bytes
 GETPFK2:
 	ret
 ;
+;----------------------------------------
+; VIDOUT — video output entry point
 ;
-; Video output routine
+; Jumps through STATE vector, which normally points to
+; VIDNORM but is redirected during multi-byte ESC sequences.
 ;
 VIDOUT:
 	jmp	word ptr STATE
 ;
-;
-; Null output routine
+; NULLST — always-ready status stub (used for devices with no status)
+;   Out: AL = 0FFh
 ;
 NULLST:
 	mov	al,0FFh
 	ret
 ;
-; Normal ascii video vector
-; Character is in the AL register (CL on entry)
+;----------------------------------------
+; VIDNORM — normal ASCII video output
+;   In: CL = character to display
+;
+; Dispatches control characters (BS, LF, CR, ESC, BEL)
+; to their handlers; all other characters are written
+; directly to the screen via the ROM BIOS.
 ;
 VIDNORM:
 	mov	al,cl
 VIDNORM1:
-	mov	dx,word ptr CURSOR	; Collect cursor position
+	mov	dx,word ptr CURSOR	; current cursor position (DH=row, DL=col)
 
 	cmp	al,BS
 	jz	VIDBS			; Back space
@@ -438,14 +446,14 @@ VIDNORM1:
 ; Printable ascii characters fall through
 ;
 VIDASCII:
-	mov	ah,09h			; Write code
+	mov	ah,09h			; INT 10h: write char+attr at cursor
 	mov	bh,0			; Page 0
 	mov	cx,1			; One copy of char
 	mov	bl,byte ptr ATTRIB	; Attribute
-	call	VIDCOM			; Write it
+	call	VIDCOM			; Issue INT 10h
 ;
 	inc	dl			; Next column
-	cmp	dl,byte ptr CRTCOL	; Past the edge ?
+	cmp	dl,byte ptr CRTCOL	; Past right edge?
 	jb	SETCURSOR		; If not, skip
 ;
 ; Test for end of line wrap around
@@ -460,7 +468,7 @@ VIDASCII:
 ;
 VIDLF:
 	inc	dh			; Next line
-	cmp	dh,18h			; At page end?
+	cmp	dh,18h			; At bottom of page?
 	jb	SETCURSOR		; If not, skip
 
 	mov	ax,0601h		; Scroll one line
