@@ -65,23 +65,30 @@ UNDSKOFF	RW	1		; INT E6h offset — unknown disk drive handler
 UNDSKSEG	RW	1		; INT E6h segment
 
 ;----------------------------------------
-; ROM BIOS data area — dummy data segment at segment 0040h
-; BIOSHDW is the equipment byte that encodes the video mode.
+; ROM BIOS data area — symbol alias into segment 0040h
+; BIOSHDW resolves at runtime as ES:BIOSHDW with ES=0040h.
+; (See the DSEG 40H directive and the code in SETCURCRT that
+;  loads AX,0040h into ES before accessing BIOSHDW.)
 ;----------------------------------------
 
-		DSEG
+		DSEG	40H		; address segment 0040h (ROM BIOS data area)
 
-		ORG	10H
+		ORG	10H		; offset 0010h = equipment byte
 BIOSHDW		RB	1		; ROM BIOS equipment byte (bit 5-4 = video mode)
 
 ;----------------------------------------
-; BDOS data area — symbols for fields inside the running BDOS
-; These are referenced by the BIOS to read/write BDOS state.
+; BDOS internal variables — symbol aliases within the CP/M load segment
+;
+; All of CP/M-86 (CCP at 0000h, BDOS at 0B06h, BIOS at 2500h) occupies
+; one single segment.  The bare DSEG below re-opens that same segment so
+; the ORG directives can name fixed offsets inside the running BDOS.
+; No data is emitted; these are address-only aliases used by the BIOS
+; to read and write BDOS state at runtime via DS (=CS = load segment).
 ;----------------------------------------
 
-		DSEG
+		DSEG			; same segment as CSEG (the CP/M load segment)
 
-		ORG	24A5h
+		ORG	24A5h		; offset of BDOSUSER within the load segment
 BDOSUSER	RB	1		; Current user number
 
 		ORG	24AFh
@@ -115,22 +122,27 @@ SYSMESSAGE	RB	14		; System status message buffer
 BDOSCONWID	RB	1		; Console width reported to BDOS
 
 ;----------------------------------------
-; CCP entry point — dummy code segment reference
-; CCP is loaded at CCP_OFFSET; CCP+6 is the warm-boot entry.
+; CCP label — forward reference into the CP/M load segment
+;
+; The first CSEG+ORG places the CCP label at offset 0000h so that
+; WBOOT can jump to CCP+6 (the warm-boot entry inside the CCP).
+; No code is emitted here; the CCP image is loaded separately.
+; The second CSEG+ORG then advances the origin to BIOS_CODE (2500h)
+; where the actual BIOS code begins.
 ;----------------------------------------
 
 	CSEG
-	ORG	CCP_OFFSET
+	ORG	CCP_OFFSET		; offset 0000h — start of CCP image
 
-CCP:
+CCP:					; label only; no code emitted here
 
 ;----------------------------------------
-; BIOS jump vector — one JMP per BIOS function, at BIOS_CODE
+; BIOS jump vector — one JMP per BIOS function, at BIOS_CODE (2500h)
 ; CP/M-86 dispatches all BIOS calls through this table.
 ;----------------------------------------
 
 	CSEG
-	ORG BIOS_CODE
+	ORG	BIOS_CODE		; offset 2500h — start of BIOS code
 	jmp	INIT			; Enter from BOOT ROM or LOADER
 	jmp	WBOOT			; Arrive here from BDOS call 0
 	jmp	CONST			; Return console keyboard status
@@ -4131,15 +4143,24 @@ CFG_IOVEC	RW	5		; Config: I/O vector data (5 words)
 ; TS: PATCH END
 CFG_PFKTBL	RS	400		; Config: programmable function key table
 ;
-		ORG	4980h
-HDDBUF		RS	512		; HDD sector buffer
+; Fixed-address buffers — these three ORGs pin the large runtime buffers
+; to known absolute offsets within the CP/M load segment.
+; The gaps between them are intentional padding reserved by the original
+; Digital Research layout; do not add data inside the gaps.
+;
+;   4980h .. 4B7Fh  HDDBUF   (512 bytes — one HDD sector)
+;   4B80h .. 4BE1h  <62h bytes / 98 bytes padding — reserved>
+;   4BE2h .. 4C61h  DIRBUF   (128 bytes — directory scratch buffer)
+;   4C62h           CSV14    (allocation vector for drive 4, grows upward)
+;
+		ORG	4980h		; must not overlap CFG_PFKTBL end
+HDDBUF		RS	512		; HDD sector buffer (512 bytes)
 
-; 
-		ORG	4BE2h
-DIRBUF		RS	128		; Directory buffer
+		ORG	4BE2h		; 4980h + 200h + 62h padding
+DIRBUF		RS	128		; Directory scratch buffer (128 bytes)
 
-		ORG	4C62h
-CSV14		EQU	$
+		ORG	4C62h		; 4BE2h + 80h = end of DIRBUF
+CSV14		EQU	$		; Allocation vector for drive 4 (grows upward)
 
 ;----------------------------------------
 
