@@ -28,8 +28,8 @@ distinction is purely an assembler convention for separating code from data.
 | `~0050h` | CCP code body | `ccpnew.a86` | Parser, built-in commands |
 | `0800h` | CCP data (DSEG) | `ccpnew.a86` | Variables, FCBs, stack, tables |
 | `00DAh` | CCP helper | `ccpnew.a86` | `SUBMITSELDRV`, falls through to `SELDRV` |
-| `09D0h` | CCP patch area | `ccpnew.a86` | `DIRPAT` (TS patch) |
-| `09DCh` | Free CCP patch | `ccpnew.a86` | 36 bytes free through `09FFh` |
+| `051Fh` | CCP inline code | `ccpnew.a86` | `DIRPAT` (TS patch), falls through to `DIROUP` |
+| `09C0h` | CCP patch area | `ccpnew.a86` | Reserved for future patches |
 | `0A00h` | BDOS patch area | `bdosnew.a86` | `PATCH13`, packed `MLOADQ`/`MLOADK`, `BDOSBC`, `PATCH15` (`0A00h`–`0A7Fh`) |
 | `0A80h` | IXMAIN | `bdosnew.a86` | BDOS function dispatch table |
 | `0B00h` | BDOS image | `bdosnew.a86` | User ID bytes + official BDOS entry |
@@ -54,7 +54,8 @@ distinction is purely an assembler convention for separating code from data.
 | `0000h` | CSEG | `TOP` | CCP jump table (cold / abort / hot start) |
 | `0800h` | DSEG | `CODCMD` | CCP data area: variables, FCBs, stack, tables |
 | `00DAh` | CSEG | `SUBMITSELDRV` | CCP helper; falls through directly to `SELDRV` at `00DDh` |
-| `09D0h` | CSEG | `DIRPAT` | Upper CCP TS patch |
+| `051Fh` | CSEG | `DIRPAT` | Inline CCP TS patch before `DIROUP` |
+| `09C0h` | CSEG | — | Reserved upper CCP patch area |
 
 ### CCP data area layout (DSEG, from 0800h)
 
@@ -179,18 +180,18 @@ distinction is purely an assembler convention for separating code from data.
 
 | Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
-| CCP code (CSEG) | `0000h` | `07D4h` | `0800h` | 2048 | 2005 | 43 | `07D5h`–`07FFh` | `CMDPTR` DW 0,0 @ `07D1h` |
-| CCP data (DSEG) | `0800h` | `09B9h` | `09D0h` | 464 | 442 | 22 | `09BAh`–`09CFh` | `MODDIR` DB @ `09B9h` |
+| CCP code (CSEG) | `0000h` | `07DAh` | `0800h` | 2048 | 2010 | 37 | `07DBh`–`07FFh` | `CMDPTR` DW 0,0 @ `07D7h` |
+| CCP data (DSEG) | `0800h` | `09B9h` | `09C0h` | 448 | 442 | 6 | `09BAh`–`09BFh` | `MODDIR` DB @ `09B9h` |
 
-### Packed patch areas — `09D0h`–`0A7Fh`
+### Packed patch areas — `09C0h`–`0A7Fh`
 
 `SUBMITSELDRV` is part of the main CCP code at `00DAh` and falls through to `SELDRV`.
-The upper CCP patch occupies `09D0h`–`09DBh`; the remaining upper patch space is free through `09FFh`.
+`DIRPAT` is inlined in the main CCP code at `051Fh` and falls through to `DIROUP`. The upper CCP patch area begins at `09C0h` and is currently free through `09FFh`.
 The BDOS patch area begins at `0A00h` and ends before `IXMAIN` at `0A80h`.
 
 | Slot | File | Start | Last byte | Next ORG | Avail (dec) | Used (dec) | Free (dec) | Hole range |
 |------|------|-------|-----------|----------|-------------|------------|------------|------------|
-| `DIRPAT` | ccpnew | `09D0h` | `09DBh` | `0A00h` | 48 | 12 | 36 | `09DCh`–`09FFh` |
+| `CCP patch area` | ccpnew | `09C0h` | `09FFh` | `0A00h` | 64 | 0 | 64 | `09C0h`–`09FFh` |
 | `PATCH13` | bdosnew | `0A00h` | `0A1Fh` | `0A20h` | 32 | 32 | 0 | — ⚠ full |
 | `MLOADQ + MLOADK + BDOSBC` | bdosnew | `0A20h` | `0A3Fh` | `0A40h` | 32 | 32 | 0 | — |
 | `PATCH15` | bdosnew | `0A40h` | `0A53h` | `0A80h` | 64 | 20 | 44 | `0A54h`–`0A7Fh` |
@@ -198,7 +199,8 @@ The BDOS patch area begins at `0A00h` and ends before `IXMAIN` at `0A80h`.
 
 Notes:
 - **`SUBMITSELDRV`** is a 3-byte helper at `00DAh` that falls through to `SELDRV` at `00DDh`; its two callers resolve to `00DAh`.
-- **`DIRPAT`** is the only upper CCP patch, using `09D0h`–`09DBh` and leaving 36 bytes free at `09DCh`–`09FFh`.
+- **`DIRPAT`** is now inlined at `051Fh`–`0526h` and falls through to `DIROUP`; its former separate jump and upper-code placement are gone.
+- The upper CCP patch area begins at `09C0h` and currently has 64 bytes free through `09FFh`.
 - **`PATCH13`** and the packed `MLOADQ`/`MLOADK`/`BDOSBC` block are full. `PATCH15` occupies `0A40h`–`0A53h`, leaving 44 bytes free at `0A54h`–`0A7Fh`.
 - **`IXMAIN`** contains 54 DW dispatch entries (`0A80h`–`0AEBh`, 108 bytes) + `MRTVNO` (5 bytes @ `0AECh`) + `MGTSAD` (6 bytes @ `0AF1h`) = 119 bytes used.
 - All free holes verified against both `.lst` files — **no code, data, or references land in any hole.**

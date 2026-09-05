@@ -52,8 +52,9 @@ SYSDMA	EQU	80H		;SYSTEM DMA ADDRESS
 ;   0009h  CMBUFF            command input buffer (127-byte CP/M buffer record)
 ;   ~0050h code              CCP body (command parser, built-in commands)
 ;   0800h  DSEG data area    CCP variables, FCBs, stack, indexed tables
-;   07F8h  CCP inline patch  SUBMITSELDRV (TS patch)
-;   09D0h  CCP patch area    DIRPAT (TS patch)
+;   00DAh  CCP helper        SUBMITSELDRV (falls through to SELDRV)
+;   051Fh  CCP inline code   DIRPAT (TS patch)
+;   09C0h  CCP patch area    reserved for future patches
 ;   0AFFh  end               BDOS begins at 0B00h in the load segment
 ;
 	CSEG
@@ -956,8 +957,14 @@ DIROUD:
 	mov	al,dl
 	inc	dl		;UP DISPLAY POSITION COUNT
 	push	dx
-	jmp	DIRPAT		;GET DISPLAY WIDTH MODE
 ;
+;  DIRECTORY OUT PATCH FOR SHORT LINE DISPLAY
+;
+DIRPAT:
+	cmp	byte ptr .Y24E0,60
+	jnc	DIROUP	;LONG LINE
+	;SHORT LINE
+	and	al,01H
 DIROUP:
 	and	al,3		;GET POSITION
 	push	ax
@@ -1337,7 +1344,7 @@ ENDPRE:
 ;
 CMDPTR	DW	0,0
 
-;
+
 ;  DATA AREA
 ;
 ; CCP data area — fixed at offset 0800h within the CP/M load segment.
@@ -1447,20 +1454,10 @@ MODDIR	DB	0		;DIRECTORY MODE  0 NON-SYSTEM  1 SYSTEM FILE
 Y24E0	EQU	024E0H		;MAX COLUMN (CONWID in BDOS)
 ;
 ;
-; DIRPAT is the remaining fixed-address patch in the upper CCP code area.
+; Reserved upper CCP patch area.
 ;
 	CSEG
 
-    ORG 09D0h
-;
-;  DIRECTORY OUT PATCH FOR SHORT LINE DISPLAY
-;
-DIRPAT:
-	cmp	byte ptr .Y24E0,60
-	jnc	DIRPAT_LONG	;LONG LINE
-	;SHORT LINE
-	and	al,01H
-	DIRPAT_LONG:
-	jmp	DIROUP
+    ORG 09C0h
 
 	END
