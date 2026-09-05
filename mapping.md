@@ -178,7 +178,7 @@ distinction is purely an assembler convention for separating code from data.
 
 | Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
-| CCP code (CSEG) | `0000h` | `07FCh` | `0800h` | 2048 | 2045 | 3 | `07FDh`–`07FFh` | `CMDPTR` DW 0,0 @ `07F9h` |
+| CCP code (CSEG) | `0000h` | `07F7h` | `0800h` | 2048 | 2040 | 8 | `07F8h`–`07FFh` | `CMDPTR` DW 0,0 @ `07F4h` |
 | CCP data (DSEG) | `0800h` | `09C3h` | `09D0h` | 464 | 452 | 12 | `09C4h`–`09CFh` | `MODDIR` DB @ `09C3h` |
 
 ### Packed patch areas — `09D0h`–`0A7Fh`
