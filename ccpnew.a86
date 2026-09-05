@@ -52,7 +52,8 @@ SYSDMA	EQU	80H		;SYSTEM DMA ADDRESS
 ;   0009h  CMBUFF            command input buffer (127-byte CP/M buffer record)
 ;   ~0050h code              CCP body (command parser, built-in commands)
 ;   0800h  DSEG data area    CCP variables, FCBs, stack, indexed tables
-;   09D0h  CCP patch area    PATCHSUBMITSELDSK + DIRPAT (TS patches)
+;   07F8h  CCP inline patch  SUBMITSELDRV (TS patch)
+;   09D0h  CCP patch area    DIRPAT (TS patch)
 ;   0AFFh  end               BDOS begins at 0B00h in the load segment
 ;
 	CSEG
@@ -169,6 +170,12 @@ INBDOS:
 ;  INPUT
 ;  AL:DRIVE NUMBER
 ;
+;
+;  SUBMITSELDRV fits in the final eight bytes before the CCP data area.
+;
+SUBMITSELDRV:
+	mov	al, CURDRV
+	; jmp	SELDRV
 SELDRV:
 	mov	dl,al
 	mov	cl,CSELDR
@@ -299,7 +306,7 @@ RDCOMN:
 	xor	ax,ax
 ; TS PATCH START FIX SUBMIT OUT OF HOME
 ;	CALL	SELDRV		;TO HOME DRIVE
-	call    PATCHSUBMITSELDSK
+	call    SUBMITSELDRV
 ; TS PATCH END FIX SUBMIT OUT OF HOME
 RDCOMS:
 	mov	dx,offset SUBFCB
@@ -411,7 +418,7 @@ DELSUS:
 	mov	MDSUBE,al	;CLEAR SUBMIT FILE EXIST MODE
 ; TS PATCH START FIX SUBMIT OUT OF HOME
 ;	CALL	SELDRV		;TO HOME DRIVE
-	call    PATCHSUBMITSELDSK
+	call    SUBMITSELDRV
 ; TS PATCH START FIX SUBMIT OUT OF HOME
 	mov	dx,offset SUBFCB
 	call	DELETF		;DELETE SUBMIT FILE
@@ -1349,11 +1356,12 @@ ENDPRE:
 ;  WORK FOR CALL TO COMMAND FILE
 ;
 CMDPTR	DW	0,0
+
 ;
 ;  DATA AREA
 ;
 ; CCP data area — fixed at offset 0800h within the CP/M load segment.
-; Sits above the CCP code and below the patch slots (09FAh, 0A40h).
+; Sits above the CCP code and below the upper CCP patch area.
 ; The BDOS references some of these variables directly (e.g. COMBUF,
 ; MDSUBE) by their absolute offsets within the load segment.
 ;
@@ -1460,21 +1468,11 @@ MODDIR	DB	0		;DIRECTORY MODE  0 NON-SYSTEM  1 SYSTEM FILE
 Y24E0	EQU	024E0H		;MAX COLUMN (CONWID in BDOS)
 ;
 ;
-; Patch slots — fixed addresses in the upper CCP code area (09FAh–0AFFh).
-; These slots were unused space in the original CCP binary; TS patches
-; insert code here rather than overwriting existing instructions.
+; DIRPAT is the remaining fixed-address patch in the upper CCP code area.
 ;
 	CSEG
 
     ORG 09D0h
-	;ORG	09FAH			; patch slot 1: 09FAh–0A3Fh (66 bytes available)
-; TS PATCH START FIX SUBMIT OUT OF HOME
-PATCHSUBMITSELDSK:
-	mov al, CURDRV
-	jmp SELDRV
-; TS PATCH END FIX SUBMIT OUT OF HOME
-
-	; CCP patch area continues sequentially after PATCHSUBMITSELDSK
 ;
 ;  DIRECTORY OUT PATCH FOR SHORT LINE DISPLAY
 ;
