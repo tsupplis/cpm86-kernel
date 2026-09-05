@@ -2994,7 +2994,7 @@ CUSER		DB	99
 TICK_GUARD2	DB	0DBh		; Sentinel / padding
 ;
 TIMEMSG		DB	42h
-		DB	' V1.1-03 U'
+		DB	' V1.1-04 U'
 BUSER		RW	1
 		DB	'     '
 BHOUR		DB	' 0'

@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys cpmnew.sys
+all: cpm.sys cpm816.sys cpmv20.sys cpmnew.sys cpmorg.sys
 
 cpmwk.img: base-160.img
 	cp base-160.img $@
@@ -103,6 +103,27 @@ cpm86-320-dev.img: base-320.img
 	cpmcp -f ibmpc-514ds $@ dev/mbasic86.cmd 0:
 	cpmls -F -f ibmpc-514ds $@ 0:*.*
 
+cpm86new-160-1-at.img: cpmnew.sys base-160.img 
+	cp base-160-at.img $@
+	cpmcp -f ibmpc-514ss $@ cpmnew.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/setup.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/dskmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/hdmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/function.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/config.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/assign.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/data.pfk 0:
+	cpmcp -f ibmpc-514ss $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/tod.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/help.* 0:
+	cpmcp -f ibmpc-514ss $@ base/print.* 0:
+	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
+	cpmls -F -f ibmpc-514ss $@ 0:*.*
+
 cpm86-160-1-at.img: cpm.sys base-160.img 
 	cp base-160-at.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
@@ -127,6 +148,26 @@ cpm86-160-1-at.img: cpm.sys base-160.img
 cpm86-160-1.img: cpm.sys base-160.img 
 	cp base-160.img $@
 	cpmcp -f ibmpc-514ss $@ cpm.sys 0:CPM.SYS
+	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/setup.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/dskmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/hdmaint.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/function.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/config.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/assign.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/data.pfk 0:
+	cpmcp -f ibmpc-514ss $@ base/ed.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/tod.cmd 0:
+	cpmcp -f ibmpc-514ss $@ base/help.* 0:
+	cpmcp -f ibmpc-514ss $@ base/print.* 0:
+	cpmcp -f ibmpc-514ss $@ base/mform.* 0:
+	cpmls -F -f ibmpc-514ss $@ 0:*.*
+
+cpm86new-160-1.img: cpmnew.sys base-160.img 
+	cp base-160.img $@
+	cpmcp -f ibmpc-514ss $@ cpmnew.sys 0:CPM.SYS
 	cpmcp -f ibmpc-514ss $@ base/pip.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/stat.cmd 0:
 	cpmcp -f ibmpc-514ss $@ base/submit.cmd 0:
@@ -172,13 +213,17 @@ cpm86-160-4.img: cpm.sys base-160.img
 	cpmcp -f ibmpc-514ss $@ dev/mbasic86.cmd 0:
 	cpmls -F -f ibmpc-514ss $@ 0:*.*
 
-cpmnew.sys: cpm86new.h86
-	cpm_gencmd cpm86new.h86 8080 "CODE[A51,M0000]"
-	mv cpm86new.cmd cpmnew.sys
-
 cpm.sys: cpm86.h86
 	cpm_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
 	mv cpm86.cmd cpm.sys
+
+cpmorg.sys: cpm86org.h86
+	cpm_gencmd cpm86org.h86 8080 "CODE[A51,M0000]"
+	mv cpm86org.cmd cpmorg.sys
+
+cpmnew.sys: cpm86new.h86
+	cpm_gencmd cpm86new.h86 8080 "CODE[A51,M0000]"
+	mv cpm86new.cmd cpmnew.sys
 
 cpmv20.sys: cpmv20.h86
 	cpm_gencmd cpmv20.h86 8080 "CODE[A40]"
@@ -202,17 +247,25 @@ cpm816.h86: cpm.h86 mbc816.h86
 	doscat cpm.h86 > cpm816.h86
 	cat mbc816.h86 >> cpm816.h86
 
-cpm86new.h86: cpmnew.h86 pcbionew.h86
-	doscat cpmnew.h86 > cpm86new.h86
-	cat pcbionew.h86 >> cpm86new.h86
-
 cpm86.h86: cpm.h86 pcbios.h86
 	doscat cpm.h86 > cpm86.h86
 	cat pcbios.h86 >> cpm86.h86
 
+cpm86new.h86: cpmnew.h86 pcbionew.h86
+	doscat cpmnew.h86 > cpm86new.h86
+	cat pcbionew.h86 >> cpm86new.h86
+
+cpm86org.h86: cpmorg.h86 pcbioorg.h86
+	doscat cpmorg.h86 > cpm86org.h86
+	cat pcbioorg.h86 >> cpm86org.h86
+
 cpm.h86: ccp.h86 bdos.h86
 	doscat ccp.h86 > cpm.h86
 	cat bdos.h86  >> cpm.h86
+
+cpmorg.h86: ccporg.h86 bdosorg.h86
+	doscat ccporg.h86 > cpmorg.h86
+	cat bdosorg.h86  >> cpmorg.h86
 
 cpmnew.h86: ccpnew.h86 bdosnew.h86
 	doscat ccpnew.h86 > cpmnew.h86
@@ -221,30 +274,30 @@ cpmnew.h86: ccpnew.h86 bdosnew.h86
 %.h86: %.a86
 	cpm_asm86 $<
 
-cpmnew: cpm.sys
-	cpmrm -f ibmpc-514ss cpm86-1.img 0:cpm.sys
-	cpmcp -f ibmpc-514ss cpm86-1.img cpm.sys 0:cpm.sys
-	cpmrm -f ibmpc-514ss cpm86-1-at.img 0:cpm.sys
-	cpmcp -f ibmpc-514ss cpm86-1-at.img cpm.sys 0:cpm.sys
-
 clean:
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86new.cmd cpmnew.sys 
+	rm -rf cpm86org.cmd cpmorg.sys
 	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
         cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
+	rm -rf cpm86new-160-1-at.img cpm86new-160-1.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-1440-at.img
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
 
 dist: cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
-    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img
+    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img \
+	cpm86new-160-1.img cpm86new-160-1-at.img
 
 # Verify cpm.sys and cpmnew.sys are binary-identical.
 # Run after any change to pcbionew.a86 to confirm parity with pcbios.a86.
-check: cpm.sys cpmnew.sys
-	cmp cpm.sys cpmnew.sys && echo "OK: cpm.sys and cpmnew.sys are identical" || \
-	  { echo "FAIL: cpm.sys and cpmnew.sys differ"; exit 1; }
+check: cpm.sys cpmorg.sys
+	cmp cpm.sys cpmorg.sys && echo "OK: cpm.sys and cpmorg.sys are identical" || \
+	  { echo "FAIL: cpm.sys and cpmorg.sys differ"; exit 1; }
 
 test: dist
 	./cpm86
+
+testnew: dist
+	./cpm86new

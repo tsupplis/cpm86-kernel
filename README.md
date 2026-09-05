@@ -68,6 +68,8 @@ A full 1440 hd  distribution is provided on 1 disk (Using 144FEAT2 from Freek He
 
 The kernels built and delivered standalone as part of the release are:
 - cpm86.sys (ibm pc xt)
+- cpm86org.sys (should be identical to cpm86, sentinel for documentation of sources)
+- cpm86new.sys (optimized cleaned up version of cpm86.sys, experimental)
 - cpmv20.sys (MBC V20, 8088 mode)
 - cpm816.sys (MBC V20, mixed 8080/8088 mode with CP/M-80 compatibility)
 
