@@ -66,10 +66,10 @@ VSTIOB	EQU	VBIOS+3CH	;SET I/ BYTE
 ;
 ;   0000h  TOP        dummy label at segment base (never executed)
 ;   0A00h  PATCH13    TS patch 13: BDOS internal call fix
-;   0A20h  MLOADK     load-program OK exit stub
-;   0A30h  MLOADQ     load-program error exit stub
-;   0A50h  BDOSBC     function-code range check helper
-;   0A60h  PATCH15    TS patch 15: data-group base fix
+;   0A20h  MLOADQ     load-program error exit stub
+;   0A2Fh  MLOADK     load-program OK exit stub
+;   0A34h  BDOSBC     function-code range check helper
+;   0A40h  PATCH15    TS patch 15: data-group base fix
 ;   0A80h  IXMAIN     BDOS function dispatch table (60 entries × 2 bytes)
 ;   0B00h  BDOSEN     BDOS entry / user ID bytes (official CP/M entry point)
 ;
@@ -98,19 +98,11 @@ PATCH13:
 	nop
     ; TS: END PATCH 13
 ;
-	ORG	0A20H			; patch slot: MLOADK — load program OK exit
+	ORG	0A20H			; patch slot: MLOADQ — load program error exit
 ;
 ;  PATCH AREA
 ;
 ;  FOR LOAD PROGRAM
-;
-MLOADK:
-;OK END
-	mov	INSTOF,ax	;RESTORE ENTRY STACK & END FOR LOAD PROGRAM
-	pop	es
-	ret
-;
-	ORG	0A30H			; patch slot: MLOADQ — load program error exit
 ;
 MLOADQ:
 ;ERROR END OF LOAD PROGRAM
@@ -119,7 +111,13 @@ MLOADQ:
 	mov	OTPARA,-1
 	jmp	MLOADE
 ;
-	ORG	0A50H			; patch slot: BDOSBC — function-code range check
+MLOADK:
+;OK END
+	mov	INSTOF,ax	;RESTORE ENTRY STACK & END FOR LOAD PROGRAM
+	pop	es
+	ret
+;
+	;ORG	0A50H			; patch slot: BDOSBC — function-code range check
 ;
 ;  FOR BDOS BODY
 ;  CHECK BDOS FUNCTION CODE RANGE
@@ -134,7 +132,7 @@ BDOSBI:
 	jmp	BDOSBS
 ;
 ;
-	ORG	0A60H			; patch slot: PATCH15 (TS patch 15)
+	ORG	0A40H			; packed after BDOSBC: PATCH15 (TS patch 15)
 	   ; TS: START PATCH 15
 ; DB	'12 january 82'
 PATCH15:
@@ -160,7 +158,7 @@ END_PATCH15:
     ;JMP BIOSCL
     ; TS: END PATCH IBM VINIT
 
-	ORG	0A80H			; BDOS function dispatch table (60 × DW = 78h bytes)
+	ORG	0A80H			; BDOS function dispatch table (54 × DW = 6Ch bytes)
 ;
 ;  BDOS FUNCTION INDEX
 ;

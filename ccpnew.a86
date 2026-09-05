@@ -52,8 +52,7 @@ SYSDMA	EQU	80H		;SYSTEM DMA ADDRESS
 ;   0009h  CMBUFF            command input buffer (127-byte CP/M buffer record)
 ;   ~0050h code              CCP body (command parser, built-in commands)
 ;   0800h  DSEG data area    CCP variables, FCBs, stack, indexed tables
-;   09FAh  patch slot 1      PATCHSUBMITSELDSK (TS patch)
-;   0A40h  patch slot 2      DIRPAT short-line display patch (TS patch)
+;   09D0h  CCP patch area    PATCHSUBMITSELDSK + DIRPAT (TS patches)
 ;   0AFFh  end               BDOS begins at 0B00h in the load segment
 ;
 	CSEG
@@ -1414,14 +1413,14 @@ IXRSCM:
 ;
 ;  COMMENTS
 ;
-CNOFIL	DB	'NO FILE',0
-CALLOK	DB	'ALL (Y/N)?',0
-CFLEXT	DB	'FILE EXISTS',0
-CMNAVL	DB	'MEMORY NOT AVAILABLE',0
-CRDERR	DB	'READ ERROR',0
-CCLSER	DB	CR,LF,'CANNOT CLOSE',0
-CNSYSF	DB	CR,LF,'NON-SYSTEM FILE(S) EXIST',0
-CSYSFL	DB	CR,LF,'SYSTEM FILE(S) EXIST',0
+CNOFIL	DB	'E/NOFILE',0
+CALLOK	DB	'ALL(Y/N)?',0
+CFLEXT	DB	'E/FEXIST',0
+CMNAVL	DB	'E/NOMEM',0
+CRDERR	DB	'E/READ',0
+CCLSER	DB	CR,LF,'E/CLOSE',0
+CNSYSF	DB	CR,LF,'W/NSYSFEXIST',0
+CSYSFL	DB	CR,LF,'W/SYSFEXIST',0
 ;
 ;  USER ID CODE
 ;
@@ -1467,25 +1466,24 @@ Y24E0	EQU	024E0H		;MAX COLUMN (CONWID in BDOS)
 ;
 	CSEG
 
-	ORG	09FAH			; patch slot 1: 09FAh–0A3Fh (66 bytes available)
+    ORG 09D0h
+	;ORG	09FAH			; patch slot 1: 09FAh–0A3Fh (66 bytes available)
 ; TS PATCH START FIX SUBMIT OUT OF HOME
 PATCHSUBMITSELDSK:
 	mov al, CURDRV
 	jmp SELDRV
 ; TS PATCH END FIX SUBMIT OUT OF HOME
 
-	ORG	0A40H			; patch slot 2: 0A40h–0AFFh (192 bytes available)
+	; CCP patch area continues sequentially after PATCHSUBMITSELDSK
 ;
 ;  DIRECTORY OUT PATCH FOR SHORT LINE DISPLAY
 ;
 DIRPAT:
 	cmp	byte ptr .Y24E0,60
-	jc	DIRPAS		;SHORT LINE
-	jmp	DIROUP
-;
-DIRPAS:
-;SHORT LINE
+	jnc	DIRPAT_LONG	;LONG LINE
+	;SHORT LINE
 	and	al,01H
+	DIRPAT_LONG:
 	jmp	DIROUP
 
 	END
