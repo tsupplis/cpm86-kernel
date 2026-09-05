@@ -1,100 +1,100 @@
-;  CONSOLE COMMAND PROCESSOR
+;  Console command processor
 ;
-;  FOR CP/M 86
+;  For CP/M-86
 ;
 ;  1983.8.8.
 ;
-;  EQUATIONS OF BDOS FUNCTION
+;  BDOS function constants
 ;
-CRSTSY	EQU	0		;RESET SYSTEM
-CCONIN	EQU	1		;CONSOLE INPUT
-CCONOT	EQU	2		;CONSOLE OUTPUT
-CRDCBF	EQU	10		;READ CONSOLE BUFFER
-CCONST	EQU	11		;CONSOLE STATUS
-CINBDS	EQU	13		;INITIALIZE BDOS
-CSELDR	EQU	14		;SELECT DRIVE
-COPEN	EQU	15		;OPEN FILE
-CCLOSE	EQU	16		;CLOSE FILE
-CSERCH	EQU	17		;SEARCH DIRECTORY FIRST
-CSERCN	EQU	18		;SEARCH NEXT
-CDELET	EQU	19		;DELETE FILE
-CREADN	EQU	20		;READ SEQUENTIAL
-CRENAM	EQU	23		;RENAME
-CGTDRV	EQU	25		;INTERROGATE DRIVE
-CSTDMA	EQU	26		;SET DMA OFFSET
-CGTUSR	EQU	32		;GET/SET USER CODE
-CDBIOS	EQU	50		;DIRECT BIOS CALL
-CSTDMS	EQU	51		;SET DMA SEGMENT
-CMFREE	EQU	58		;FREE ALL MEMORY
-CLOADP	EQU	59		;LOAD PROGRAM
+CRSTSY	EQU	0		;Reset system
+CCONIN	EQU	1		;Console input
+CCONOT	EQU	2		;Console output
+CRDCBF	EQU	10		;Read console buffer
+CCONST	EQU	11		;Console status
+CINBDS	EQU	13		;Initialize BDOS
+CSELDR	EQU	14		;Select drive
+COPEN	EQU	15		;Open file
+CCLOSE	EQU	16		;Close file
+CSERCH	EQU	17		;Search directory first
+CSERCN	EQU	18		;Search next
+CDELET	EQU	19		;Delete file
+CREADN	EQU	20		;Read sequential
+CRENAM	EQU	23		;Rename
+CGTDRV	EQU	25		;Interrogate drive
+CSTDMA	EQU	26		;Set DMA offset
+CGTUSR	EQU	32		;Get/set user code
+CDBIOS	EQU	50		;Direct BIOS call
+CSTDMS	EQU	51		;Set DMA segment
+CMFREE	EQU	58		;Free all memory
+CLOADP	EQU	59		;Load program
 ;
-;  EQUATIONS OF DATA
+;  Data constants
 ;
-BDOSI	EQU	0E0H		;BDOS INTERRUPT
-LF	EQU	0AH		;LINE FEED
-CR	EQU	0DH		;CARRIAGTE RETURN
-EOF	EQU	1AH		;END OF FILE
-SCTLNG	EQU	128		;ONE SECTOR DATA LENGTH
+BDOSI	EQU	0E0H	;BDOS interrupt
+LF	EQU	0AH			;Line feed
+CR	EQU	0DH			;Carriage return
+EOF	EQU	1AH			;End of file
+SCTLNG	EQU	128		;One-sector data length
 ;
-BDOS	EQU	.0B00H		;BODS ENTRY
+BDOS	EQU	.0B00H		;BDOS entry
 ;
-;  EQUATIONS OF BASE PAGE OFFSET
+;  Base-page offsets
 ;
-DFPAGE	EQU	0		;BASE PAGE TOP
-DFESSG	EQU	0FH		;EXTRA SEGMENT
-DFCB	EQU	5CH		;DEFAULT FCB
-DFCMBF	EQU	80H		;DEFAULT COMMAND BUFFER
-SYSDMA	EQU	80H		;SYSTEM DMA ADDRESS
+DFPAGE	EQU	0		;Base-page top
+DFESSG	EQU	0FH		;Extra segment
+DFCB	EQU	5CH		;Default FCB
+DFCMBF	EQU	80H		;Default command buffer
+SYSDMA	EQU	80H		;System DMA address
 ;
-; CCP memory map (offsets within the CP/M load segment, 0000h–0AFFh):
+; CCP memory map (offsets within the CP/M load segment, 0000h–0AFFh)
 ;
 ;   0000h  TOP / jump table  (cold start, abort, hot start — 3 × JMP = 9 bytes)
-;   0009h  CMBUFF            command input buffer (127-byte CP/M buffer record)
+;   0009h  CMBUFF            Command input buffer (127-byte CP/M buffer record)
 ;   ~0050h code              CCP body (command parser, built-in commands)
 ;   0800h  DSEG data area    CCP variables, FCBs, stack, indexed tables
 ;   00DAh  CCP helper        SUBMITSELDRV (falls through to SELDRV)
 ;   051Fh  CCP inline code   DIRPAT (TS patch)
-;   09C0h  CCP patch area    reserved for future patches
+;   09C0h  CCP patch area    Reserved for future patches
 ;   0AFFh  end               BDOS begins at 0B00h in the load segment
 ;
 	CSEG
-	ORG	0			; offset 0000h — start of CCP image
+	ORG	0			; Offset 0000h — start of CCP image
 ;
 TOP:
-;TAG FOR BIASED ADDRESS
+;Tag for biased address
 ;
-;  CCP ENTRY JUMP TABLE
+;  CCP Entry jump table
 ;
-	jmp	CCPCLD		;COLD START
+	jmp	CCPCLD		;Cold start
 	jmp	CCPABE
-	jmp	CCPHOT		;HOT START
+	jmp	CCPHOT		;Hot start
 ;
-;  COMMAND READ BUFFER
+;  Command read buffer
 ;
-CMBUFF	DB	127		;BUFFER LENGTH
-	DB	0		;LENGTH OF CODE
+CMBUFF	DB	127		;Buffer length
+	DB	0			;Length of code
 	DB	'                '
 	DB	'COPYRIGHT (C) 1980, '
 	DB	'DIGITAL RESEARCH  '
 	RS	74
 ;
-;  TO BDOS
+;  To BDOS
 ;
 ENBDOS:
-	int	BDOSI		;TO BDOS
+	int	BDOSI		;To BDOS
 	mov	bp,cs
 	mov	es,bp
 	ret
 ;
-;  SYSTEM RESET
+;  System reset
 ;
 SYSRST:
 	mov	cl,CRSTSY
 	xor	dx,dx
 	jmps	ENBDOS
 ;
-;  CONSOLE OUT
-;  INPUT
+;  Console output
+;  Input
 ;  AL:CODE
 ;
 CONOUT:
@@ -102,7 +102,7 @@ CONOUT:
 	mov	cl,CCONOT
 	jmps	ENBDOS
 ;
-;  SPACE
+;  Space
 ;
 SPACE:
 	mov	al,' '
@@ -112,7 +112,7 @@ CONOTB:
 	pop	cx
 	ret
 ;
-;  CARRIAGE RETURN & LINE FEED
+;  Carriage return/Line feed
 ;
 CRLF:
 	mov	al,CR
@@ -120,92 +120,91 @@ CRLF:
 	mov	al,LF
 	jmps	CONOTB
 ;
-;  PRINT BUFFERED STRING
-;  INPUT
-;  CX:STRING POINTER
+;  Print buffered string
+;  Input
+;  CX: string pointer
 ;
 BUFPRN:
 	push	cx
 	call	CRLF
 	pop	bx
 BUFPRL:
-	mov	al,[bx]		;GET CODE
+	mov	al,[bx]	;Get code
 	or	al,al
-	jnz	BUFPRS		;GET ACTIVE CODE
-	ret			;END BY 0
+	jnz	BUFPRS	;Get active code
+	ret			;End by 0
 ;
 BUFPRS:
 	inc	bx
 	push	bx
 	call	CONOUT
 	pop	bx
-	jmps	BUFPRL		;TO NEXT
+	jmps	BUFPRL		;To next
 ;
-;  LOAD PROGRAM
+;  Load program
 ;
 LOADPR:
 	mov	dx,offset WKFCB
 	mov	cl,CLOADP
 	jmps	ENBDOS
-;
-;  DIRECT BIOS SELECT DISK
+;;
+;  Direct BIOS select disk
 ;
 SELDSK:
 	mov	cx,CDBIOS
 	mov	dx,offset WKBIOS
 	jmps	ENBDOS
 ;
-;  FREE ALL MEMORY
+;  Free all memory
 ;
 MEMFRE:
 	mov	cl,CMFREE
 	jmps	ENBDOS
 ;
-;  INITIALIZE BDOS
+;  Initialize BDOS
 ;
 INBDOS:
 	mov	cl,CINBDS
 	jmps	ENBDOS
 ;
-;  SELECT DRIVE
-;  INPUT
-;  AL:DRIVE NUMBER
+;  Select drive
+;  Input
+;  AL: drive number
 ;
 ;
 ;  SUBMITSELDRV fits in the final eight bytes before the CCP data area.
 ;
 SUBMITSELDRV:
 	mov	al, CURDRV
-	; jmp	SELDRV
 SELDRV:
 	mov	dl,al
 	mov	cl,CSELDR
-	jmps	ENBDOS
+	jmps ENBDOS
 ;
-;  DIRECTORY PROCESS COMMON
+;  Directory process common
 ;  OUTPUT
-;  ZF:ON ERROR
+;  ZF:ON error
 ;
 DIRCOM:
-	call	ENBDOS
-	mov	BSDIRC,al	;SAVE BIAS OF DIRECTORY
+	call ENBDOS
+	mov	BSDIRC,al	; Save bias of directory
 	inc	al
 	ret
 ;
-;  OPEN FILE
+;  Open file
 ;
 OPEN:
 	mov	cl,COPEN
 	jmps	DIRCOM
 ;
-;  OPEN BY WORK FCB
+;  Open by work FCB
 ;
 OPENW:
-	mov	WKFCB+32,0	;CLEAR CURRENT RECORD
+	mov	WKFCB+32,0	;Clear current record
 	mov	dx,offset WKFCB
 	jmps	OPEN
 ;
-;  CLOSE FILE
+;  Close file
 ;
 CLOSE:
 	mov	cl,CCLOSE
@@ -214,29 +213,29 @@ CLOSE:
 	ret
 ;
 CLOSER:
-;CLOSE ERROR
+	; Close Error
 	mov	cx,offset CCLSER
 	jmps	WHYPR
 ;
-;  SEARCH FIRST
+;  Search first
 ;
 SEARCH:
 	mov	cl,CSERCH
 	jmps	DIRCOM
 ;
-;  SEARCH NEXT
+;  Search next
 ;
 SEARCN:
 	mov	cl,CSERCN
 	jmps	DIRCOM
 ;
-;  SEARCH BY WORK FCB
+;  Search by work FCB
 ;
 SEARCW:
 	mov	dx,offset WKFCB
 	jmps	SEARCH
 ;
-;  DELETE FILE
+;  Delete file
 ;
 DELETF:
 	mov	cl,CDELET
@@ -251,7 +250,7 @@ FRWCOM:
 	or	al,al
 	ret
 ;
-;  READ SEQUENTIAL
+;  Read sequential
 ;
 READNX:
 	mov	cl,CREADN

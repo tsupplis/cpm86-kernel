@@ -126,6 +126,12 @@ distinction is purely an assembler convention for separating code from data.
          CONWID/PRNWID/CONCOL/PRNCOL  console/printer widths
 ```
 
+### BDOS error-message area
+
+| Symbol | Start | End | Size | Contents |
+|--------|-------|-----|------|----------|
+| `CERROR`–`CRODSK` | `239Bh` | `23BAh` | 32 bytes | Compact BDOS error text: `E/`, drive marker, `BADSECTOR`, `SELECT`, `FILE`, and `R/O` |
+
 ---
 
 ## pcbionew.a86 — ORG / segment detail
@@ -151,10 +157,10 @@ distinction is purely an assembler convention for separating code from data.
 
 | ORG value | Symbol | Description |
 |-----------|--------|-------------|
-| `24A5h` | `BDOSUSER` | Current user number |
-| `24AFh` | `BDOSMODABT` | BDOS abort mode flag |
-| `24B7h` | `BDOSCURDRV` | Current default drive |
-| `24BDh` | `DHOUR` … `BDOSCONWID` | Clock, ASCII time, system message buffer |
+| `249Ah` | `USRCOD` | Current user number |
+| `24A4h` | `MODABT` | BDOS abort mode flag |
+| `24ACh` | `CURDRV` | Current default drive |
+| `24D5h` | `CONWID` … `PRNCOL` | Console/printer widths and cursor positions |
 
 ### BIOS load-segment ORGs (CSEG / DSEG, load segment)
 
@@ -182,6 +188,13 @@ distinction is purely an assembler convention for separating code from data.
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
 | CCP code (CSEG) | `0000h` | `07DAh` | `0800h` | 2048 | 2010 | 37 | `07DBh`–`07FFh` | `CMDPTR` DW 0,0 @ `07D7h` |
 | CCP data (DSEG) | `0800h` | `09B9h` | `09C0h` | 448 | 442 | 6 | `09BAh`–`09BFh` | `MODDIR` DB @ `09B9h` |
+
+### bdosnew.a86 — code and data boundaries
+
+| Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
+|--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
+| BDOS code (CSEG) | `0B00h` | `21F8h` | `2200h` | 5888 | 5881 | 7 | `21F9h`–`21FFh` | `MFLUSH` `RET` @ `21F8h` |
+| BDOS data (DSEG) | `2200h` | `24E9h` | `2500h` | 768 | 746 | 22 | `24EAh`–`24FFh` | final `DB 0` @ `24E9h` |
 
 ### Packed patch areas — `09C0h`–`0A7Fh`
 

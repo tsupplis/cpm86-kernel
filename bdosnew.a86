@@ -70,7 +70,7 @@ VSTIOB	EQU	VBIOS+3CH	;SET I/ BYTE
 ;   0A2Fh  MLOADK     load-program OK exit stub
 ;   0A34h  BDOSBC     function-code range check helper
 ;   0A40h  PATCH15    TS patch 15: data-group base fix
-;   0A80h  IXMAIN     BDOS function dispatch table (60 entries × 2 bytes)
+;   0A80h  IXMAIN     BDOS function dispatch table (54 entries × 2 bytes)
 ;   0B00h  BDOSEN     BDOS entry / user ID bytes (official CP/M entry point)
 ;
 	CSEG
@@ -4246,11 +4246,11 @@ SYSFLG	DB	0		;USER 0 MATCH MODE  -1 USER CODE MISS SEARCH
 ;
 ;  ERROR COMMENTS
 ;
-CERROR	DB	'Bdos Err On '
-CERRDK	DB	' : $'
-CBADSC	DB	'Bad Sector$'
-CSELCT	DB	'Select$'
-CROFIL	DB	'File '
+CERROR	DB	'E/'
+CERRDK	DB	' :,$'
+CBADSC	DB	'BADSECTOR$'
+CSELCT	DB	'SELECT$'
+CROFIL	DB	'FILE '
 CRODSK	DB	'R/O$'
 ;
 WKFCB:

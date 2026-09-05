@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys cpmnew.sys cpmorg.sys
+all: cpm.sys cpm816.sys cpmv20.sys cpmnew.sys cpmorg.sys cpmnew.sys
 
 cpmwk.img: base-160.img
 	cp base-160.img $@
