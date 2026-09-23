@@ -1,0 +1,86 @@
+name scd1
+;
+;	CP/M 3.0 MP/M-86 2.0 (BDOS version 3.0)
+;	Interface for PLM-86 with separate code and data
+;	Code org'd at 0
+;	December 18, 1981
+
+
+dgroup	group	dats,stack
+cgroup	group	code
+
+assume	cs:cgroup, ds:dgroup, ss:dgroup
+
+stack	segment	word stack 'STACK'
+stack_base	label byte
+stack	ends
+
+dats     segment para public 'DATA'	;CP/M page 0 - LOC86'd at 0H
+
+	org	4
+bdisk	db	?
+	org	6
+maxb	dw	?
+	org	50h
+cmdrv	db	?
+pass0	dw	?
+len0	db	?
+pass1	dw	?
+len1	db	?
+	org	5ch
+fcb	db	16 dup (?)
+fcb16	db	16 dup (?)
+cr	db	?
+rr	dw	?
+ro	db	?
+buff	db	128 dup (?)
+tbuff	equ	buff
+
+	public	bdisk,maxb,cmdrv,pass0,len0
+	public	pass1,len1,fcb,fcb16,cr,rr
+	public	ro,buff,tbuff
+
+dats ends
+
+
+code	segment	public	'CODE'
+public	reset,xdos,mon1,mon2,mon3,mon4
+extrn	plm:near
+
+	org	0h		; for separate code and data
+	jmp	reset
+	db 'COPYRIGHT (c) 1983 by DIGITAL RESEARCH INC.'
+reset:
+	pushf
+	pop	ax
+	cli
+	mov	cx,ds
+	mov	ss,cx
+	lea	sp,stack_base
+	push	ax
+	popf
+	call	plm
+	xor	cx,cx
+	mov	dx,cx
+	int	224
+
+
+xdos	proc
+	push	bp
+	mov	bp,sp
+	mov	dx,[bp+4]
+	mov	cx,[bp+6]
+	int	224
+	pop	bp
+	ret	4
+xdos	endp
+
+mon1	equ	xdos		; no returned value
+mon2	equ	xdos		; returns byte in AL
+mon3	equ	xdos		; returns address or word BX
+mon4    equ     xdos		; returns pointer in BX and ES
+
+    	org	07fh		; reserve patch area
+    	db	0
+code	ends
+end

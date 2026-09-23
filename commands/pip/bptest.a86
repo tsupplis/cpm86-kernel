@@ -1,0 +1,138 @@
+;
+;	bptest.a86 - probe CP/M-86 base page and BDOS gap functions
+;
+;	build:	asm86 bptest.a86
+;		gencmd bptest 8080
+;	run:	bptest
+;
+;	fn44/fn45 land on NOPROC (a bare RET) in this kernel, so the
+;	probes below are inert - see bdos.a86 dispatch, CL-6 for 41..46.
+;
+
+BDOS	EQU	0E0H
+
+	CSEG
+	ORG	100H
+
+START:
+	MOV	DX,OFFSET MVER
+	CALL	PSTR
+	MOV	CL,12
+	INT	BDOS
+	CALL	PWORD
+	CALL	CRLF
+
+	MOV	DX,OFFSET MPAGE
+	CALL	PSTR
+	XOR	SI,SI
+	MOV	DI,16
+DLOOP:
+	MOV	AL,[SI]
+	CALL	PHEX
+	MOV	DL,' '
+	CALL	PCHR
+	INC	SI
+	DEC	DI
+	JNZ	DLOOP
+	CALL	CRLF
+
+	MOV	DX,OFFSET M04
+	CALL	PSTR
+	MOV	SI,4
+	MOV	AX,[SI]
+	CALL	PWORD
+	CALL	CRLF
+
+	MOV	DX,OFFSET M06
+	CALL	PSTR
+	MOV	SI,6
+	MOV	AX,[SI]
+	CALL	PWORD
+	CALL	CRLF
+
+	MOV	DX,OFFSET M44
+	CALL	PSTR
+	MOV	CL,44
+	MOV	DL,1
+	INT	BDOS
+	CALL	PWORD
+	CALL	CRLF
+
+	MOV	DX,OFFSET M45
+	CALL	PSTR
+	MOV	CL,45
+	MOV	DL,0FFH
+	INT	BDOS
+	CALL	PWORD
+	CALL	CRLF
+
+	MOV	DX,OFFSET MEND
+	CALL	PSTR
+	MOV	CL,0
+	XOR	DX,DX
+	INT	BDOS
+
+;
+;	helpers - BDOS preserves SI, DI and BP, so the dump loop is safe
+;
+
+PSTR:
+	MOV	CL,9
+	INT	BDOS
+	RET
+
+PCHR:
+	MOV	CL,2
+	INT	BDOS
+	RET
+
+CRLF:
+	MOV	DL,0DH
+	CALL	PCHR
+	MOV	DL,0AH
+	CALL	PCHR
+	RET
+
+PWORD:
+	PUSH	AX
+	MOV	AL,AH
+	CALL	PHEX
+	POP	AX
+	CALL	PHEX
+	RET
+
+PHEX:
+	PUSH	AX
+	PUSH	AX
+	SHR	AL,1
+	SHR	AL,1
+	SHR	AL,1
+	SHR	AL,1
+	CALL	PNIB
+	POP	AX
+	CALL	PNIB
+	POP	AX
+	RET
+
+PNIB:
+	AND	AL,0FH
+	ADD	AL,'0'
+	CMP	AL,'9'
+	JBE	PN1
+	ADD	AL,7
+PN1:
+	MOV	DL,AL
+	PUSH	AX
+	CALL	PCHR
+	POP	AX
+	RET
+
+MVER	DB	'fn12 AX (AH=OS type, AL=version): $'
+MPAGE	DB	'base page 00-0F: $'
+M04	DB	'word at 0004: $'
+M06	DB	'word at 0006 (MAXB): $'
+M44	DB	'fn44 returned AX=$'
+M45	DB	'fn45 returned AX=$'
+MEND	DB	'done.',0DH,0AH,'$'
+
+	END

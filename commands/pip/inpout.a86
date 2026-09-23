@@ -1,0 +1,46 @@
+name inpout
+;
+;	CP/M-86 1.1 PIP Utility INP: / OUT:
+;	Interface module with separate code and data
+;	Code org'd at 080h
+;	December 18, 1981
+
+cgroup	group	code
+
+assume	cs:cgroup
+
+code	segment	public	'CODE'
+public	inploc,outloc,inpd,outd
+
+	org	00h		; for separate code and data
+inpd	proc
+    	push bp
+    	call inploc
+    	pop bp
+    	ret
+inpd	endp
+
+outd	proc
+    	push bp
+    	mov bp,sp
+    	mov al,[bp]+4
+    	call outloc
+    	pop bp
+    	ret 2
+outd	endp
+
+inploc	proc
+    	mov al,01Ah
+    	ret
+inploc	endp
+
+outloc	proc
+    	ret
+    	nop
+    	nop
+outloc	endp
+
+    	org	07fh
+    	db	0
+code	ends
+end
