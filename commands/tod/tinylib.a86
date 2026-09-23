@@ -1,0 +1,85 @@
+;
+; Licensed under the MIT license. See LICENSE file in the project root for details.
+;
+
+quit:           
+            xor     cx,cx 
+            int     0E0h    
+            ret
+
+print_char:
+            push	cx
+            push	dx
+            push	bx
+            xor     ah, ah
+            mov     dx, ax
+            mov     cl, 2            
+            int     0E0h    
+            pop	    bx
+            pop	    dx
+            pop	    cx
+            ret
+
+print_uint16:
+            push	ax
+            push	cx
+            push	dx
+            push	bx
+            push    es
+            xor	    cx, cx
+print_uint16_next1:
+            xor	    dx, dx
+            div 	bx
+            cmp	    dl, 10
+            jb	    print_uint16_isdigit
+            add	    dl, 'A' - 10 - '0';
+print_uint16_isdigit:
+            add	    dl, '0'
+            push	dx
+            inc	    cx
+            or	    ax, ax
+            jnz	    print_uint16_next1
+print_uint16_next2:
+            pop	    ax
+            push    cx
+            push    dx
+            mov	    dx,ax
+            xor     dh,dh
+            mov	    cx, 02h
+            int	    0E0h
+            pop     dx
+            pop     cx
+            loop	print_uint16_next2
+            pop     es
+            pop	    bx
+            pop	    dx
+            pop	    cx
+            pop	    ax
+            ret
+
+print_str:
+            push	ax
+            push	bx
+            push    cx
+            push    dx
+            push	es
+            push	si
+            cld
+print_str_next:
+            lodsb
+            or	    al, al
+            jz	    print_str_done
+            mov	    dx, ax
+            xor     dh, dh
+            mov	    cx, 02h
+            int	    0E0h
+            jmp	    print_str_next
+print_str_done:
+            pop	    si
+            pop     es
+            pop     dx
+            pop     cx
+            pop	    bx
+            pop	    ax
+            ret                
+

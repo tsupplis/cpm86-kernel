@@ -1,0 +1,257 @@
+;
+; Licensed under the MIT license. See LICENSE file in the project root for details.
+;
+
+clear_keys:
+            push    ax
+            push    cx
+            push    dx
+            mov     dx,0FFh
+            mov     cx,06h
+            int     0E0h
+            or      al, 0
+            jnz     clear_keys
+            pop     dx
+            pop     cx
+            pop     ax
+            ret
+                 
+in_key:
+            push    cx
+            push    dx
+            mov     dx,0FFh
+            mov     cx,06h
+            int     0E0h
+            pop     dx
+            pop     cx
+            ret 
+
+wait_key:
+            push    cx
+            push    bx
+            push    dx
+            push    di
+            mov     bx, 01h  
+wait_key_l2: 
+            mov     di, 0FFFh  
+wait_key_l1: 
+            push    di
+            push    bx
+            mov     dx,0FFh
+            mov     cx,06h
+            int     0E0h
+            pop     bx
+            pop     di
+            or      ax, 0
+            jnz     wait_end
+            dec     di   
+            jnz     wait_key_l1    
+            dec     bx 
+            jnz     wait_key_l2 
+wait_end:
+            pop     di
+            pop     dx
+            pop     bx
+            pop     cx
+            ret                
+
+delay:
+            push    bx
+            push    di
+            mov     bx, 05h  
+delay_l2: 
+            mov     di, 0FFFFh  
+delay_l1: 
+            dec     di   
+            jnz     delay_l1    
+            dec     bx 
+            jnz     delay_l2 
+            pop     di
+            pop     bx
+            ret                
+
+parse_opt:
+            push	ax
+            push	bx
+            push	dx
+            mov     bh, 1h
+            cld
+            mov	    ah, 1
+parse_opt_skip:
+            jcxz	parse_opt_done
+            lodsb
+            call    to_lower
+            dec	    cx
+            cmp	    al, 32
+            jbe	    parse_opt_skip
+            xor	    ah, ah
+            cmp	    al, '"'
+            je	    parse_opt_quote
+parse_opt_next:
+            cmp     al, '^'
+            je      pon_nostore
+            stosb
+pon_nostore:
+            jcxz	parse_opt_done
+            lodsb
+            call    to_lower
+            dec	    cx
+            cmp	    al, 32
+            jbe	    parse_opt_done
+            jmp	    parse_opt_next
+parse_opt_quote:
+            jcxz	parse_opt_done
+            lodsb
+            call    to_lower
+            dec	    cx
+            cmp	    al, '"'
+            je	    parse_opt_done
+            cmp     al, '^'
+            je      parse_opt_quote
+            stosb
+            jmp	    parse_opt_quote
+
+parse_opt_done:
+            xor	    al, al
+            stosb			
+            shr	    ah, 1	
+            pop	    dx
+            pop	    bx
+            pop	    ax
+            ret
+
+to_lower:   
+            cmp     al, '^'
+            jne     to_lower_cnt
+            or      bh, bh
+            jz      to_lower_on
+            xor     bh, bh
+            jmp     to_lower_end
+to_lower_on:
+            mov     bh, 1
+            jmp     to_lower_end
+to_lower_cnt:
+            or      bh,  bh
+            jz      to_lower_end
+            cmp     al, 'A'
+            jb      to_lower_end
+            cmp     al, 'Z'
+            ja      to_lower_end
+            add     al, 32
+to_lower_end:
+            ret
+
+print_dec4:
+         mov	    dx, 4
+         jmp	    print_dec
+
+print_dec2:
+    	mov	    dx, 2
+        xor	    ah, ah
+print_dec:
+         push	dx
+         mov	    dx, 10
+         push	dx
+         push	ax
+         call	print_uint16
+         add	    sp, 6
+         ret
+
+disk_count:
+        push    bx
+        push    cx
+        push    ds
+        push    es
+        mov     cx,0Ch
+        int     0E0h
+        cmp     ax,1041h
+        jz      disk_count_dosplus
+ 
+        mov     ax,80h
+        call    disk_count_dsk
+        xor     ah,ah
+        jmp     disk_count_end
+disk_count_dosplus:
+        mov     cl,9Ah
+        int     0E0h
+        push    ds
+        push    es
+        push    es
+        pop     ds
+        mov     ax,81h
+        mov     cx,0
+        callf   ds:dword ptr 28h[bx]
+        mov     cx,bx
+        pop     es
+        pop     ds
+        mov     ax,es:word ptr 2[bx]
+disk_count_end:
+        pop     es
+        pop     ds
+        pop     cx
+        pop     bx
+        ret
+
+disk_count_dsk:
+        push    bx
+        push    cx
+        push    dx
+        push    ds
+        push    es
+        push    di
+        push    si
+        mov     dl,al
+        ;push    dx
+        ;mov     ah,00h
+        ;int     13h
+        ;pop     dx
+        mov     ah,08h
+        int     13h
+        jnc     disk_count_dsk_end
+        clc
+        mov     dl,0
+disk_count_dsk_end:
+        mov     ah,bl
+        mov     al,dl
+        pop     si
+        pop     di
+        pop     es
+        pop     ds
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
+check_286_plus:
+        push    ax
+        pushf
+        ; ==========================================
+        ; === CHECK #1 =============================
+        ; ==========================================
+        ; Sets FLAGS to 0x0 and then immediately reads it back. On an 8086/80186, bits
+        ; 12-15 always come back set. On a 80286+ this is not the case.
+        ; 8086/80186 behavior: clc
+        ; 80286+ behavior: stc
+        xor ax,ax      ; AX=0x0
+        push ax
+        popf          ; pop 0x0 into FLAGS
+        pushf
+        pop ax         ; pop FLAGS into AX
+
+        and ax,0F000h  ; bits 12-13: IOPL, always 1 on 86/186
+        cmp ax,0F000h  ; bit 14: NT, always 1 on 86/186
+                       ; bit 15: Reserved, always 1 on 86/186, always 0 on 286+
+        jz check_186_minus
+        popf
+        stc
+        pop ax
+        ret
+check_186_minus:
+        popf
+        clc
+        pop ax
+        ret
+
+
+
+     
