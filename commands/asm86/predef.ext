@@ -1,0 +1,8 @@
+$nolist
+pfind:  proc (n,s,a) byte external;
+  dcl
+  n        byte,
+  (s,a)    address;
+
+end pfind;
+$list

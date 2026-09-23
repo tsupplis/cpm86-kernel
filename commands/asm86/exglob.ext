@@ -1,0 +1,21 @@
+$nolist
+
+dcl
+cip             addr external,   /* current instruction pointer */
+csegtype        byte external,   /* current segment type, code,data */
+csegvalue       addr external,   /* current segment value */
+csegspec        byte external,   /* true if segment value specified */
+dspec           byte external,
+curdseg         addr external,   /* current data segment value */
+token   struc(                   /* actual token scanned */
+        type    byte,
+        descr   byte,
+        value   addr) external,      /* token value  */
+nextch          byte external,    /* next input character */
+acclen          byte external,    /* accumulator length */
+accum(80)       byte external,    /* actual token scanned */
+nooper          byte    external, /* no of instruction operands */
+operands(4)     operandstruc      /* instruction operands,max 4 */
+                        external;
+
+$list

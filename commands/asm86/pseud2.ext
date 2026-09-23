@@ -1,0 +1,48 @@
+$nolist
+
+/*
+
+  modified  7/24/81  R. Silberstein
+
+*/
+
+IFrout: proc external;
+end IFrout;
+
+ENDIFrout: proc external;
+end ENDIFrout;
+
+INCLUDErout: proc external;
+end INCLUDErout;
+
+ENDrout: proc external;
+end ENDrout;
+
+PAGESIZErout: proc external;
+end PAGESIZErout;
+
+PAGEWIDTHrout: proc external;
+end PAGEWIDTHrout;
+
+TITLErout: proc external;
+end TITLErout;
+
+EJECTrout: proc external;
+end EJECTrout;
+
+SIMFORMrout: proc external;
+end SIMFORMrout;
+
+LISTrout: proc external;
+end LISTrout;
+
+NOLISTrout: proc external;
+end NOLISTrout;
+
+IFLISTROUT: PROC EXTERNAL;
+END IFLISTROUT;
+
+NOIFLISTROUT: PROC EXTERNAL;
+END NOIFLISTROUT;
+
+$list

@@ -1,0 +1,117 @@
+$title ('INTERFACE TO CP/M I/O')
+io:
+do;
+
+  /*
+      Template for all BDOS calls
+  */
+
+/*
+
+    modified  3/26/81  R. Silberstein
+    modified  6/16/81  R. Silberstein
+    modified  9/14/81  R. Silberstein
+
+*/
+
+declare tbuff (80h) byte external;
+
+mon1: procedure (func,info) external;
+  declare func byte;
+  declare info address;
+end mon1;
+
+mon2: procedure (func,info) byte external;
+  declare func byte;
+  declare info address;
+end mon2;
+
+/**************************************
+ *                                    *
+ *       B D O S   Externals          *
+ *                                    *
+ **************************************/
+
+system$reset: procedure public;
+  call mon1 (0,0);
+end system$reset;
+
+read$console: procedure byte public;
+  return mon2 (1,0);
+end read$console;
+
+write$console: procedure (char) public;
+  declare char byte;
+  call mon1 (2,char);
+end write$console;
+
+write$list: procedure (char) public;
+  declare char byte;
+  call mon1 (5,char);
+end write$list;
+
+constat: procedure byte public;
+  return mon2 (11,0);
+end constat;
+
+VERSION: PROCEDURE ADDRESS PUBLIC;
+  RETURN MON2 (12, 0);
+END VERSION;
+
+select$disk: procedure (disk$number) public;
+  declare disk$number byte;
+  call mon1 (14,disk$number);
+end select$disk;
+
+set$DMA$address: procedure (DMA$address) public;
+  declare DMA$address address;
+  call mon1 (26,DMA$address);
+end set$DMA$address;
+  
+open$file: procedure (fcb$address) byte public;
+  declare fcb$address address;
+  CALL SET$DMA$ADDRESS (.TBUFF);   /* FOR 1.4 SYSTEMS */
+  return mon2 (15,fcb$address);
+end open$file;
+
+OPEN$RO$FILE: PROCEDURE (FCB$ADDRESS) BYTE PUBLIC;
+  DECLARE FCB$ADDRESS ADDRESS, FCB BASED FCB$ADDRESS (32) BYTE;
+  FCB (6) = FCB (6) OR 80H;
+  RETURN OPEN$FILE (FCB$ADDRESS);
+END OPEN$RO$FILE;
+
+close$file: procedure (fcb$address) byte public;
+  declare fcb$address address;
+  return mon2 (16,fcb$address);
+end close$file;
+
+delete$file: procedure (fcb$address) public;
+  declare fcb$address address;
+  CALL mon1 (19,fcb$address);
+end delete$file;
+
+read$record: procedure (fcb$address) byte public;
+  declare fcb$address address;
+  return mon2 (20,fcb$address);
+end read$record;
+
+write$record: procedure (fcb$address) byte public;
+  declare fcb$address address;
+  return mon2 (21,fcb$address);
+end write$record;
+
+create$file: procedure (fcb$address) byte public;
+  declare fcb$address address;
+  return mon2 (22,fcb$address);
+end create$file;
+
+interrogate$disk: procedure byte public;
+  return mon2 (25,0);
+end interrogate$disk;
+
+crlf: procedure public;
+  call write$console (0dh);
+  call write$console (0ah);
+end crlf;
+
+end io;

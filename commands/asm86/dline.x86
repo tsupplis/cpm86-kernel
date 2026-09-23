@@ -1,0 +1,24 @@
+$nolist
+
+
+dcl
+pass            byte external,   /* current pass no, 1,2,3 */
+
+prefix (240)    byte external,   /* prefix to source line */
+prefixptr       byte external,   /* pointer to prefix buffer */
+
+accumsave(80)   byte external,
+acclensave      byte external,
+
+      /* Mischellaneous variables: */
+
+fullsymbtab     byte external,    /* full if symboltable is full */
+currentsymbol   symbolstruc       /* current scanned symbol */
+                external,
+symbtabadr      address external, /* pointer at symbol in table */
+codemacroptr    address external, /* pointer to found codemacro */
+codemacro$flag  byte    external; /* true if building a codemacro */
+
+
+$list
+

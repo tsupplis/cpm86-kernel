@@ -1,0 +1,56 @@
+$nolist
+
+clearcmindex: proc external;
+end clearcmindex;
+
+emit: proc external;   /* emit codebytes for an instruction */
+end emit;
+
+emitdummies: proc external; /* emit dummy (NO-OPs) bytes if error */
+end emitdummies;
+
+commandtype: proc(comno,lg,pt) byte external;
+  dcl (comno,lg) byte,pt address;
+end commandtype;
+
+mDBNrout: proc external;
+end mDBNrout;
+
+mDBFrout: proc external;
+end mDBFrout;
+
+mDWNrout: proc external;
+end mDWNrout;
+
+mDWFrout: proc external;
+end mDWFrout;
+
+mDDFrout: proc external;
+end mDDFrout;
+
+mRELBrout: proc external;
+end mRELBrout;
+
+mRELWrout: proc external;
+end mRELWrout;
+
+mNOSEGFIXrout: proc external;
+end mNOSEGFIXrout;
+
+mSEGFIXrout: proc external;
+end mSEGFIXrout;
+
+mMODRM1rout: proc external;
+end mMODRM1rout;
+
+mMODRM2rout: proc external;
+end mMODRM2rout;
+
+mDBITrout: proc external;
+end mDBITrout;
+
+/* test if operands match instruction */
+searchformatch: proc byte external;
+end searchformatch;
+
+$list

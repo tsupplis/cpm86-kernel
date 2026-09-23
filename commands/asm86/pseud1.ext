@@ -1,0 +1,43 @@
+$nolist
+
+/*
+
+  modified  4/9/81   R. Silberstein
+
+*/
+
+LISTCIP: PROCEDURE EXTERNAL;
+END LISTCIP;
+
+DBrout: proc external;
+end DBrout;
+
+DWrout: proc external;
+end DWrout;
+
+DDrout: proc external;
+end DDrout;
+
+RSrout: proc (typ) external;
+  dcl typ byte;
+end RSrout;
+
+CSEGrout: proc external;
+end CSEGrout;
+
+DSEGrout: proc external;
+end DSEGrout;
+
+SSEGrout: proc external;
+end SSEGrout;
+
+ESEGrout: proc external;
+end ESEGrout;
+
+ORGrout: proc external;
+end ORGrout;
+
+EQUrout: proc external;
+end EQUrout;
+
+$list

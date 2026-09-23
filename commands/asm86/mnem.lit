@@ -1,0 +1,14 @@
+$nolist
+
+/*      Convenient literals to compress source:    */
+
+declare
+h       literally 'structure(n address,l byte,p address',
+
+opcod2  literally 'h,a(2) byte)',
+opcod3  literally 'h,a(3) byte)',
+opcod4  literally 'h,a(4) byte)',
+opcod5  literally 'h,a(5) byte)',
+opcod6  literally 'h,a(6) byte)';
+
+$list

@@ -1,0 +1,491 @@
+$title('FILE AND I/O MODULE')
+file:
+do;
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/7/81   R. Silberstein
+  modified  4/16/81  R. Silberstein
+  modified  6/16/81  R. Silberstein
+  modified  9/14/81  R. Silberstein
+
+ */
+
+/*
+        This is the modules to perform BYTE i/o to      
+        the following 5 logical devices:                        
+
+                source   - file
+                include  - file
+                hex      - file
+                symbol   - file
+                print    - file
+
+        Each of the logical files may be assigned to the
+        following physical devices :
+
+                null     (not legal for source and include file)
+                console
+                printer  (not legal for source and include file)
+                disk
+
+        The module defines the following set
+        of public subroutines:
+
+                INSOURCEBYTE         - read 1 byte from source file
+                ININCLUDEBYTE        - read 1 byte from include file
+                OUTHEXBYTE (ch)      - write 1 byte to hex file
+                OUTSYMBOLBYTE (ch)   - write 1 byte to symbol file
+                OUTPRINTBYTE (ch)    - write 1 byte to print file
+
+                OPENSOURCE           - open source file
+                OPENINCLUDE          - open include file
+                OPENHEX              - open hex file
+                OPENSYMBOL           - open symbol file
+                OPENPRINT            - open print file
+                REWINDSOURCE         - rewind source file
+
+                CLOSESOURCE          - close source file
+                CLOSEINCLUDE         - close include file
+                CLOSEHEX             - close hex file
+                CLOSESYMBOL          - close symbol file
+                CLOSEPRINT           - close print file
+
+        In addition, 2 subroutines to set up the correct
+        file names and routing to correct physical device
+        are included. These are:
+
+                FILESETUP
+                I$FILESETUP
+
+        The "filesetup" routine sets up the source, hex, symbol
+        and print files by scanning the user command tail of the
+        program activating line. The format of the command line
+        is described in the program format section of the user's
+        manual. The routine also initiates the global string array
+        "SOURCENAME" with the source file name, this array to be
+        used later by the printout module.
+
+        The "ifilesetup" sets up the format of the include file
+        given by the INCLUDE command of the assembler.
+
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:dev.lit)
+$include (:f1:io.ext)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$INCLUDE (:F1:TEXT.EXT)
+$include (:f1:global.ext)
+
+dcl
+diskunit                byte,
+
+nulltype        lit     '0',    /* subroutine "devicetype" */
+consoletype     lit     '1',
+printertype     lit     '2',
+disktype        lit     '3',
+
+dr              lit     '0',    /* drive code in fcb block */
+fn              lit     '1',    /* filename in fcb block */
+ft              lit     '9',    /* filetype in fcb block */
+ex              lit     '12',   /* file extension number */
+s2              lit     '14',
+nr              lit     '32',   /* file record number */
+dollar          lit     '''$''',
+
+asmdefault(3)   byte data ('A86'),   /* different file types */
+hexdefault(3)   byte data ('H86'),
+lstdefault(3)   byte data ('LST'),
+symdefault(3)   byte data ('SYM'),
+
+sourcefile      file$i$structure,
+includefile     file$i$structure,
+hexfile         file$o$structure,
+printfile       file$o$structure,
+symbolfile      file$o$structure;
+
+clearfcb: proc(fcbpt,defaultpt);
+  dcl
+  (fcbpt,defaultpt) addr,
+  dest based  fcbpt (1) byte;
+  CALL FILL (0, 33, FCBPT);
+  CALL FILL (' ', 8, FCBPT+FN);
+  call copy(3,defaultpt,.dest(ft));
+end clearfcb;
+
+clearcontrol: procedure(point,defaultptr);
+  dcl (point,defaultptr) addr,
+      x based point file$o$structure;
+  call clearfcb(.x.fcbblock,defaultptr);
+  x.disk=diskunit;
+end clearcontrol;
+
+devicetype: proc(ch) byte;
+  dcl ch byte;
+  if ch=null then return nulltype;
+  if ch=console then return consoletype;
+  if ch=printer then return printertype;
+  return disktype;
+end devicetype;
+
+disk$select: procedure(disk);
+  dcl disk byte;
+  if diskunit <> disk then$do
+    diskunit=disk;
+    call select$disk(diskunit);
+  end$if;
+end disk$select;
+
+inbyte: proc (ptr) byte;
+  dcl ptr addr,
+      x based ptr file$i$structure,
+      ch byte,
+      i  addr;
+
+  i=x.bufptr;
+  if i=length(x.buffer) then$do
+    i=0;
+    call disk$select(x.disk);
+    do while i < length(x.buffer);
+      call SET$DMA$ADDRESS (.x.buffer(i));
+      IF (CH := READ$RECORD (.X.FCBBLOCK)) <> 0 THEN$DO
+        IF CH = 1 THEN$DO
+          X.BUFFER (I) = END$OF$FILE;
+          I = LENGTH (X.BUFFER);
+        ELSE$DO
+          CALL FILEABORT (.X, .DISKREADERRTEXT);
+        END$IF;
+      else$do
+        i=i+128;
+      end$if;
+    end$while;
+    i=0;
+  end$if;
+  ch=x.buffer(i);
+  x.bufptr=i+1;
+  return ch;
+end inbyte;
+
+FLUSHBUFFER: PROCEDURE (PTR);
+  DECLARE (PTR, I) ADDRESS, X BASED PTR FILE$O$STRUCTURE;
+
+    call disk$select(x.disk);
+    i=0;
+    do while i < x.bufptr;
+      call SET$DMA$ADDRESS (.x.buffer(i));
+      IF WRITE$RECORD (.X.FCBBLOCK) > 0 THEN
+        CALL FILEABORT (.X, .DISKWRITEERRTXT);
+      i=i+128;
+    end$while;
+END FLUSHBUFFER;
+
+outbyte: proc(ch,ptr);
+  dcl ch byte,
+      ptr addr,
+      x based ptr file$o$structure,
+      i  addr;
+
+  do case devicetype(x.disk);
+
+    /* null */
+    do; end;       /* do nothing */
+
+    /* console */
+    call write$console(ch);
+
+    /* printer */
+    call write$list(ch);
+
+    /* disk file */
+    do;
+    i=x.bufptr;
+    if i=length(x.buffer) then$do
+      CALL FLUSHBUFFER (PTR);
+      i=0;
+    end$if;
+    x.buffer(i)=ch;
+    x.bufptr=i+1;
+    end;
+  end$case;
+end outbyte;
+
+open$input: proc (ptr);
+  dcl ptr addr,
+      x based ptr file$i$structure;
+
+  x.bufptr=length(x.buffer);
+  call disk$select(x.disk);
+  IF LOW (VERSION) >= 30H THEN$DO
+    IF OPEN$RO$FILE (.X.FCBBLOCK) <> 0FFH THEN RETURN;
+  ELSE$DO
+    IF OPEN$FILE (.X.FCBBLOCK) <> 0FFH THEN RETURN;
+  END$IF;
+  CALL FILEABORT (.X, .OPENERRTEXT);
+end open$input;
+
+open$output: proc(ptr);
+  dcl ptr addr,
+      x based ptr file$o$structure;
+
+  if devicetype(x.disk)=disktype then$do
+    x.bufptr=0;
+    call disk$select(x.disk);
+    CALL delete$file(.x.fcbblock);
+    if create$file(.x.fcbblock) = 0ffh then
+      CALL FILEABORT (.X, .MAKEERRTEXT);
+  end$if;
+end open$output;
+
+outputclose: proc(ptr);
+  dcl ptr addr,
+      x based ptr file$o$structure;
+
+  if devicetype(x.disk)=disktype then$do
+    call outbyte(end$of$file,.x);
+    CALL FLUSHBUFFER (PTR);
+    IF CLOSE$FILE (.X.FCBBLOCK) = 0FFH THEN
+      CALL FILEABORT (.X, .CLOSEERRTEXT);
+  end$if;
+end outputclose;
+
+INPUT$CLOSE: PROCEDURE (PTR);
+  DECLARE PTR ADDRESS, X BASED PTR FILE$I$STRUCTURE;
+  CALL DISK$SELECT (X.DISK);
+  CALL SET$DMA$ADDRESS (.X.BUFFER);
+  IF CLOSE$FILE (.X.FCBBLOCK) THEN;
+END INPUT$CLOSE;
+
+outhexbyte: proc(ch) public;
+  dcl ch byte;
+  call outbyte(ch,.hex$file);
+end outhexbyte;
+
+outprintbyte: proc(ch) public;
+  dcl ch byte;
+  if printfile.disk=console then$do
+    call write$console(ch);
+  else$do
+    if error$printed then call write$console(ch);
+    call outbyte(ch,.printfile);
+  end$if;
+end outprintbyte;
+
+outsymbolbyte: proc(ch) public;
+  dcl ch byte;
+  call outbyte(ch,.symbolfile);
+end outsymbolbyte;
+
+insourcebyte: proc byte public;
+  return inbyte(.sourcefile);
+end insourcebyte;
+
+inincludebyte: proc byte public;
+  return inbyte(.includefile);
+end inincludebyte;
+
+opensource: proc public;
+  CALL open$input(.sourcefile);
+end opensource;
+
+openinclude: proc public;
+  CALL open$input(.includefile);
+end openinclude;
+
+openhex: proc public;
+  CALL open$output(.hexfile);
+end openhex;
+
+openprint: proc public;
+  CALL open$output(.printfile);
+end openprint;
+
+opensymbol: proc public;
+  CALL open$output(.symbolfile);
+end opensymbol;
+
+close$source: proc public;
+  call input$close (.source$file);
+end close$source;
+
+rewindsource: proc public;
+  sourcefile.fcbblock(nr)=0;
+  sourcefile.bufptr=length(sourcefile.buffer);
+  if sourcefile.fcbblock(ex) <> 0 then$do
+    sourcefile.fcbblock(ex)=0;
+    sourcefile.fcbblock(s2)=0;
+    CALL opensource;
+  end$if;
+end rewindsource;
+
+close$include: proc public;
+  call input$close (.include$file);
+end close$include;
+
+closehex: proc public;
+  call outputclose(.hexfile);
+end closehex;
+
+closeprint: proc public;
+  call outputclose(.printfile);
+end closeprint;
+
+closesymbol: proc public;
+  call outputclose(.symbolfile);
+end closesymbol;
+
+i$file$setup: proc(dev,filnam,filtyp) public;
+  dcl dev byte,(filnam,filtyp) addr;
+  call clearcontrol(.includefile,filtyp);
+  includefile.disk=dev;
+  call copy(8,filnam,.includefile.fcbblock(fn));
+end i$file$setup;
+
+filesetup:      proc    byte public;
+  dcl
+
+  ch            byte,           /* pick up character */
+  i             byte,           /* counter */
+  noleft        byte,           /* no of characters left in tbuff */
+  bpt           byte,           /* index of tbuff */
+  exitvalue     byte,           /* exitvalue of subroutine */
+  flag          byte;           /* program logic flag */
+
+  nextch: proc byte;
+    if noleft > 0 then$do
+      ch=tbuff(bpt);
+      noleft=noleft-1;
+      bpt=bpt+1;
+    else$do
+      ch=cr;
+    end$if;
+    return ch;
+  end nextch;
+
+  getdsk: procedure (p);
+    declare p address, dsk based p byte;
+      ch=upper(nextch);  /* test selected disk drive */
+      if letter(ch) then$do
+        dsk=ch-'A';
+        if dsk > validdisk then
+            if dsk < console then
+                exitvalue = false;	/* invalid drive */
+      else$do
+         exitvalue=false;
+         noleft=0;
+      end$if;
+  end getdsk;
+
+  exitvalue=true;
+
+                                /* save current disk */
+  default$drive,diskunit=interrogate$disk;
+                                     /* enter user selected disk */
+  if fcb(dr) <> 0 then$do
+    call selectdisk(diskunit:=fcb(dr)-1);
+  end$if;
+
+                               /* clear control blocks */
+  call clearcontrol(.sourcefile,.asmdefault);
+  call clearcontrol(.hexfile,.hexdefault);
+  call clearcontrol(.printfile,.lstdefault);
+  call clearcontrol(.symbolfile,.symdefault);
+  call copy(8,.fcb(fn),.sourcefile.fcbblock(fn));
+  call copy(8,.fcb(fn),.hexfile.fcbblock(fn));
+  call copy(8,.fcb(fn),.printfile.fcbblock(fn));
+  call copy(8,.fcb(fn),.symbolfile.fcbblock(fn));
+
+  if FCB (FT) <> SPACE then$do       /* pick up specified source file type */
+    call copy(3,.fcb(ft),.sourcefile.fcbblock(ft));
+  end$if;
+
+/* Move source file name to SOURCENAME */
+
+  CALL FILL (SPACE, LENGTH (SOURCENAME), .SOURCENAME);
+  i=0;
+  do while i<8 and (sourcename(i):=sourcefile.fcbblock(fn+i)) <> space;
+    i=i+1;
+  end$while;
+  sourcename(i)='.';
+  i=i+1;
+  call copy(3,.sourcefile.fcbblock(ft),.sourcename(i));
+
+  /* Test if file parameters */
+
+  noleft=tbuff(0);
+  bpt=1;
+  FLAG = FALSE;
+  IF FCB16 (1) <> SPACE THEN$DO
+    IF FCB16 (1) <> DOLLAR THEN$DO
+      EXITVALUE = FALSE;
+    ELSE$DO
+      DO WHILE (NOLEFT > 0) AND (NEXTCH <> DOLLAR);
+      END$WHILE;
+      FLAG = TRUE;
+    END$IF;
+  END$IF;
+
+  if flag then$do
+
+    /* file parameters present - pick them up */
+
+    do while noleft > 0;
+      if (ch:=upper(nextch)) <> space then$do
+
+          /* A-parameter */
+          IF CH = 'A' THEN call getdsk(.sourcefile.disk);
+
+          /* H-parameter */
+          ELSE IF CH = 'H' THEN call getdsk(.hexfile.disk);
+
+          /* P-parameter */
+          ELSE IF CH = 'P' THEN call getdsk(.printfile.disk);
+
+          /* S-parameter */
+          ELSE IF CH = 'S' THEN call getdsk(.symbolfile.disk);
+
+          /* F-parameter */
+          ELSE IF CH = 'F' THEN$DO
+            if (ch:=upper(nextch)) = 'I' then$do
+              intel$hex$on=true;
+            else$do
+              if ch= 'D' then$do
+                intel$hex$on=false;
+              else$do
+                exitvalue=false;
+                noleft=0;
+              endif;
+            endif;
+          END$IF;
+
+          /* error,no legal parameter */
+          ELSE
+            DO;
+              exitvalue=false;
+              noleft=0;
+            END$DO;
+
+      end$if;
+    end$while;
+  end$if;
+
+  printdevice=printfile.disk;  /* set global printdevice flag */
+  SYMBOLDEVICE = SYMBOLFILE.DISK;
+  INCLUDE$DEFAULT = SOURCEFILE.DISK;
+
+     /* input must be from a disk file */
+
+  if devicetype(sourcefile.disk) <> disktype then$do
+    exitvalue=false;
+  end$if;
+
+  return exitvalue;
+
+end filesetup;
+
+end file;

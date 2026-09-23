@@ -1,0 +1,322 @@
+$title ('SCANNER MODULE')
+scanm:
+do;
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/10/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:equals.lit)
+$include (:f1:files.ext)
+$include (:f1:predef.ext)
+$include (:f1:subr2.ext)
+$include (:f1:print.ext)
+$include (:f1:global.ext)
+
+        /* Variables : */
+
+dcl
+eoffound        byte,   /* true if end-of-file is found */
+lowercase       byte,   /* false if stringinput, otherwise true */
+crfound         byte,   /* true if previous input was CR */
+printready      byte,   /* true if output line to be printed */
+stacksave       addr;   /* save of stack pointer */
+
+
+/* Routine to perform unnormal exit from module */
+
+exit: proc;
+  stackptr=stacksave;   /* restore input stack */
+end exit;
+
+/* Put printcharacter into printfile output buffer */
+
+putprintchar: proc(ch);
+  dcl ch byte;
+  sourcebuf(sourceptr)=ch;
+  if sourceptr < last(sourcebuf) then$do
+    sourceptr=sourceptr+1;
+  end$if;
+end putprintchar;
+
+
+/* Read single character from input file. Put characters
+   except CR-LF to printbuffer. Convert to uppercase letters */
+
+read$input: proc byte;
+  dcl ch byte;
+  if eoffound then call exit;  /* unnormal exit */
+                               /* read byte from file */
+  if include$on then ch=inincludebyte; else ch=insourcebyte;
+  if ch=end$of$file then$do   /* test for end-of-file */
+    eoffound=true;
+  else$do
+    if crfound and ch=lf then$do /* ignore LF after CR */
+      ch=space;
+    else$do;
+      if ch=cr then$do    /* test for CR */
+        crfound=true;
+      else$do;
+        crfound=false;
+        call putprintchar(ch);
+        if ch=lf then ch=space; /* interpret LF within line as space */
+      end$if;
+    end$if;
+  end$if;
+  if not lowercase then$do   /* convert to uppercase */
+    ch=upper(ch);
+  end$if;
+  return ch;
+end read$input;
+
+
+/* skip blanks and tab's in input */
+
+skip$blanks: proc;
+  do while nextch=space or nextch=tab;
+    nextch=read$input;
+  end$while;
+end skip$blanks;
+
+
+/* Put character into accumulator */
+
+putaccum: proc(ch);
+  dcl ch byte;
+  accum(acclen)=ch;
+  if acclen < last(accum) then$do
+    acclen=acclen+1;
+  end$if;
+end put$accum;
+
+
+/* Routine to scan remainder of token until a non-
+   alphanumeric character is found. Skip blanks
+   behind token */
+
+get$remainder: proc(numb);
+  dcl (cont,numb) byte;
+  cont=true;
+  do while cont;
+    do while alphanumeric(nextch:=read$input);
+      call putaccum(nextch);
+    end$while;
+    cont=false;
+    if nextch = '@' or nextch = '_' then$do
+      cont=true;
+      if numb then call putaccum(nextch);
+    end$if;
+  end$while;
+  call skipblanks;
+end get$remainder;
+
+/* Routine to scan a text string. Called from SCAN */
+
+stringr: proc;
+  dcl cont byte;
+  lowercase=true;
+  acclen=0;
+  cont=true;
+  do while cont;
+    nextch=readinput;
+    do while nextch <> '''' and nextch <> cr;
+      call putaccum(nextch);
+      nextch=read$input;
+    end$while;
+    if nextch='''' then$do
+      if (nextch:=readinput) = '''' then$do /* interpret '' as ' */
+        call putaccum(nextch);
+      else$do
+        lowercase=false;
+        call skipblanks;
+        token.type=string;
+        cont=false;
+      end$if;
+    else$do
+      lowercase=false;
+      token.type=error;
+      cont=false;
+    end$if;
+  end$while;
+end stringr;
+
+
+/* Routine to scan a number. Called from SCAN. Test syntax
+   of number, compute binary value. */
+
+numbr: proc;
+  dcl
+  nobase        byte, /* number system, 2,8,10 or 16 */
+  maxlgth       byte, /* max legal no of digits */
+  (i,j)         byte, /* counters */
+  ch            byte,
+  value         addr, /* 16 bit binary value */
+  errorflag     byte; /* syntax error flag */
+
+  errorflag=false;
+  call getremainder(true);   /* get rest of token */
+  ch=accum(acclen-1);   /* pick up last character of token */
+  j=acclen-2;
+
+  /* B (binary) */
+  IF CH = 'B' THEN
+    do; nobase=2; maxlgth=16; end;
+
+  /* O or Q (octal) */
+  ELSE IF CH = 'O' OR CH = 'Q' THEN
+    do; nobase=8; maxlgth=6; end;
+
+  /* H (hexadecimal) */
+  ELSE IF CH = 'H' THEN
+    do; nobase=16; maxlgth=4; end;
+
+  /* D (decimal) */
+  ELSE IF CH = 'D' THEN
+    do; nobase=10; maxlgth=5; end;
+
+  /* no subscript, default=decimal */
+  ELSE
+    do; nobase=10; maxlgth=5; j=j+1; end;
+
+  i=0ffh;      /* skip leading zeros */
+  do while accum(i:=i+1) = '0'; end;
+  if j < maxlgth+i then$do
+    value=0;      /* syntax check number, compute binary value */
+    do while i <= j;
+      ch=accum(i);
+      ch=ch-'0';
+      if ch > 9 then ch=ch-7;
+      if ch >= nobase then$do
+        errorflag=true;
+      end$if;
+      value=value*nobase+ch;
+      i=i+1;
+    end$while;
+  else$do
+    errorflag=true;
+  end$if;
+
+  if errorflag then$do
+    token.type=error;
+  else$do
+    token.type=number;
+    token.descr=0;
+    token.value=value;
+  end$if;
+
+end numbr;
+
+
+/* Routine to scan an identifier. Lookup identifier in table
+   for predefined symbols */
+
+identr: proc;
+  call get$remainder(false);  /* get rest of token into accumulator */
+                       /* look up identifier */
+  if not pfind(acclen,.accum(0),.token) then$do
+    token.type=ident;
+  end$if;
+end identr;
+
+        /* PUBLIC subroutines : */
+
+scaninit: proc public;
+  eofset,eoffound,crfound,lowercase,printready=false;
+  CALL FILL (SPACE, SIZE (PREFIX), .PREFIX);
+  CALL FILL (SPACE, LENGTH (ABSADDR), .ABSADDR);
+  sourceptr,prefixptr=0;
+  call printinit;   /* initiate print module */
+  call rewindsource;
+  nextch=space;
+end scaninit;
+
+scan: proc public;
+
+  stacksave=stackptr;
+  if printready then$do
+    call print$source$line;
+    print$ready=false;
+  end$if;
+  call skipblanks;
+  if eoffound then$do
+    token.type=spec;
+    if crfound then$do
+      eoffound=false;
+      eofset=true;
+    else$do
+      printready=true;  /* terminate line before EOF */
+      crfound=true;
+      accum(0)=cr;
+    end$if;
+  else$do
+    acclen=1;
+    accum(0)=nextch;
+
+    /* identifier */
+    IF LETTER (NEXTCH) THEN call identr;
+
+    /* number */
+    ELSE IF DIGIT (NEXTCH) THEN call numbr;
+
+    /* string */
+    ELSE IF NEXTCH = '''' THEN call stringr;
+
+    /* special letter */
+    ELSE
+      do;
+      token.type=spec;
+      if nextch='!' then accum(0) = cr;
+      IF NEXTCH = ';' THEN$DO
+        DO WHILE ACCUM (0) <> CR;
+          ACCUM (0) = READINPUT;
+        END$WHILE;
+      END$IF;
+      nextch=space;
+      if crfound then$do
+        print$ready=true;
+      else$do
+        call skipblanks;
+      end$if;
+      end;
+
+  end$if;
+end scan;
+
+skip$rest$of$line: proc public;
+  do while accum(0) <> cr;
+    call scan;
+  end$while;
+end skip$rest$of$line;
+
+specialtoken: proc(tok) byte public;
+  dcl tok byte;
+  if (token.type=spec) and (accum(0)=tok) then return true;
+  return false;
+end specialtoken;
+
+skip$until: proc(tok) byte public;
+  dcl tok byte;
+  do forever;
+    if token.type=spec then$do
+      if accum(0)=tok then$do
+        call scan;
+        return true;
+      end$if;
+      if accum(0)=cr then return false;
+    end$if;
+    call scan;
+  end$forever;
+end skip$until;
+
+emptyline: proc byte public;
+  return specialtoken(cr);
+end emptyline;
+
+end$module scanm;

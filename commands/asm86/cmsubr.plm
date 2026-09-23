@@ -1,0 +1,452 @@
+$title ('CODEMACRO SUBROUTINE MODULE')
+cmsubr:
+do;
+
+/*
+
+  modified  4/7/81   R. Silberstein
+  modified  4/13/81  R. Silberstein
+  modified  5/5/81   R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+/*
+        This is the module to
+
+          1)  test if a set of operands matches a given instruction
+
+             and
+
+          2) produce output code for matched instruction
+
+        The module interfaces the CODEOUTPUT module to
+        physically send code bytes to the HEX output file.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:equals.lit)
+$include (:f1:cmacd.lit)
+$include (:f1:outp.lit)
+$include (:f1:scan.ext)
+$include (:f1:subr1.ext)
+$INCLUDE (:F1:SUBR2.EXT)
+$include (:f1:outp.ext)
+$include (:f1:ermod.ext)
+$include (:f1:cmsubr.x86)
+$eject
+dcl                   /* global variables */
+bytevar  based   macroptr byte, /* variables within codemacros */
+addrvar based   macroptr addr,
+emitbyte(80)    byte,          /* buffer of output codebytes */
+emitindex       byte,          /* index of "emitbyte" */
+bitcomtab(2)    byte     data  /* legal commands within "DBIT" */
+  (mnumberbits,mformalbits);
+$eject
+
+/********** MICHELLANEOUS SUBROUTINES: **********/
+
+clearcmindex: proc public;
+  emitindex=0;
+end clearcmindex;
+
+emit: proc public;   /* emit codebytes for an instruction */
+  dcl i byte;
+  i=0ffh;
+  do while (i:=i+1) < emitindex;
+    call emitcodebyte(emitbyte(i),CSdata);
+  end$while;
+end emit;
+
+emitdummies: proc public;  /* emit dummy (NO-OP-) bytes if error */
+  dcl (i,j) byte,nodum(4) byte data(2,5,6,8);
+  j=nooper;
+  if j>3 then j=3;
+  i=0ffh;
+  do while (i:=i+1) < nodum(j);
+    call emitcodebyte(90h,CSdata);  /* 90H = NOP */
+  end$while;
+end emitdummies;
+
+emitsinglebyte: proc(ch); /* fill local emitbuffer with a new byte */
+  dcl ch byte;
+  if noerror then$do
+    emitbyte(emitindex)=ch;
+    emitindex=emitindex+1;
+  end$if;
+end emitsinglebyte;
+
+emitsingleword: proc (var); /* fill 2 new bytes into emitbuffer */
+  dcl var addr, byt1 byte at(.var), byt2 byte at(.var+1);
+  call emitsinglebyte(byt1);
+  call emitsinglebyte(byt2);
+end emitsingleword;
+
+incrmacroptr: proc;
+  macroptr=macroptr+1;
+end incrmacroptr;
+
+getoperadr: proc address;
+  dcl pt address;
+  pt=.operands(bytevar);
+  call incrmacroptr;
+  return pt;
+end getoperadr;
+
+           /* recognize codemacro command type */
+commandtype: proc(comno,lg,pt) byte public;
+  dcl (comno,lg,i) byte,pt address,ch based pt(1) byte;
+  i=0ffh;
+  do while (i:=i+1) < lg;
+    if comno=ch(i) then$do call incrmacroptr; return i; end$if;
+  end$while;
+  return lg;
+end commandtype;
+$eject
+
+/******* CODEMACRO COMMAND SUBROUTINES: ********/
+
+
+mDBNrout: proc public;
+  call emitsinglebyte(bytevar);
+  call incrmacroptr;
+end mDBNrout;
+
+mDBFrout: proc public;
+  dcl pt address,opr based pt operandstruc;
+  pt=getoperadr;
+  call emitsinglebyte(opr.offset);
+end mDBFrout;
+
+mDWNrout: proc public;
+  call emitsingleword(addrvar);
+  call incrmacroptr;
+  call incrmacroptr;
+end mDWNrout;
+
+mDWFrout: proc public;
+  dcl pt address,opr based pt operandstruc;
+  pt=getoperadr;
+  call emitsingleword(opr.offset);
+end mDWFrout;
+
+mDDFrout: proc public;
+  dcl pt address,opr based pt operandstruc;
+  pt=getoperadr;
+  if (opr.sflag and segmbit) = 0 then call errmsg(misssegminfo);
+  call emitsingleword(opr.offset);
+  call emitsingleword(opr.segment);
+end mDDFrout;
+
+mRELBrout: proc public;
+  dcl pt address,opr based pt operandstruc,displ addr;
+  pt=getoperadr;
+  displ=opr.offset-cip-2;
+  if (opr.segment <> csegvalue) or (typecalc(displ)=wrd) then$do
+    call errmsg(laboutofrange);
+  end$if;
+  call emitsinglebyte(displ);
+  IF ABSADDR (0) = SPACE THEN$DO
+    CALL HEX2OUT (OPR.OFFSET, .ABSADDR);
+  END$IF;
+end mRELBrout;
+
+mRELWrout: proc public;
+  dcl pt address,opr based pt operandstruc;
+  pt=getoperadr;
+  if opr.segment <> csegvalue then call errmsg(laboutofrange);
+  call emitsingleword(opr.offset-cip-3);
+  IF ABSADDR (0) = SPACE THEN$DO
+    CALL HEX2OUT (OPR.OFFSET, .ABSADDR);
+  END$IF;
+end mRELWrout;
+
+mNOSEGFIXrout: proc public;
+  dcl (segr,flag,segt) byte,pt address,opr based pt operandstruc;
+  segr=bytevar;
+  call incrmacroptr;
+  pt=getoperadr;
+  if (opr.baseindex and nooverridebit) = 0 then$do
+    flag=opr.sflag;
+    segt=shr(flag,segtypecount) and 3;
+    noerror=(segt=segr);
+  end$if;
+end mNOSEGFIXrout;
+
+mSEGFIXrout: proc public;
+  dcl pt address,opr based pt operandstruc,(segr,override,sflag) byte;
+  DSovertest: proc byte;
+    segr=shr(opr.baseindex,baseregcount) and 1;
+    return (((sflag and bregbit) <> 0) and (segr=1));   /*  1 = BP */
+  end DSovertest;
+
+  pt=getoperadr;
+  sflag=opr.sflag;
+  if (opr.baseindex and nooverridebit) = 0 then$do
+    segr=shr(sflag,segtypecount) and 3;
+    do case segr;
+      do; override=true; segr=ESover; end;            /* ES */
+      do; override=true; segr=CSover; end;            /* CS */
+      do; override=not DSovertest; segr=SSover; end;  /* SS */
+      do; override=DSovertest; segr=DSover; end;      /* DS */
+    end$case;
+    if override then call emitsinglebyte(segr);
+  end$if;
+end mSEGFIXrout;
+
+MODRM: proc (regfield,pt);
+  dcl pt address,opr based pt operandstruc,
+      (regfield,modfield,rmfield,dispflag,stype,sflag,segr) byte,
+      BASEIND BYTE,
+      offset addr,
+      displow byte at(.offset),disphigh byte at (.offset+1);
+
+  disptype: proc byte;
+    if segr=rcs then return 2;  /* disp always 2 for variable in CS */
+    if offset = 0 then return 0;
+    return typecalc(offset);
+  end disptype;
+
+  indextype: proc byte;
+    if (sflag and iregbit) <> 0 then$do
+      if (sflag and bregbit) <> 0 then return 0;
+      return 1;
+    end$if;
+    return 2;
+  end indextype;
+
+  offset=opr.offset;    /* pick up operand attributes */
+  stype=opr.stype;
+  sflag=opr.sflag;
+  segr=shr(sflag,segtypecount) and 3;
+  BASEIND = OPR.BASEINDEX AND (BASEREGBIT OR INDEXREGBIT);
+
+  if stype=reg then$do
+    rmfield=offset;
+    modfield=11b;
+    dispflag=0;
+  else$do
+    if (sflag and (iregbit or bregbit)) = 0 then$do
+      rmfield=110b;
+      modfield=0;
+      dispflag=2;
+    else$do
+      dispflag=disptype;   /* get no of DISP bytes */
+      modfield=dispflag;
+      do case indextype;
+
+        /* both base- and index-reg */
+        RMFIELD = BASEIND AND (INDEXREGBIT OR BASEREGBIT);
+
+        /* index reg only */
+        RMFIELD = 100B OR (BASEIND AND INDEXREGBIT);
+
+        do;     /* base reg only */
+        IF (BASEIND AND BASEREGBIT) > 0 THEN$DO
+          rmfield=110b;
+		/* mod=00 and r/m=110B is a special case */
+          if dispflag=0 then$do
+            dispflag,modfield=1;
+          end$if;
+        else$do
+          rmfield=111b;
+        end$if;
+        end;
+      end$case;
+    end$if;
+  end$if;
+  regfield=shl(regfield,3) and 38h;
+  modfield=shl(modfield,6) and 0c0h;
+  call emitsinglebyte(regfield or modfield or rmfield);
+  if dispflag > 0 then$do
+    call emitsinglebyte(displow);
+    if dispflag=2 then call emitsinglebyte(disphigh);
+  end$if;
+end MODRM;
+
+mMODRM1rout: proc public;
+  dcl regfield byte;
+  regfield=bytevar;
+  call incrmacroptr;
+  call MODRM(regfield,getoperadr);
+end mMODRM1rout;
+
+mMODRM2rout: proc public;
+  dcl regfield byte,pt address,opr based pt operandstruc;
+  pt=getoperadr;
+  regfield=opr.offset;
+  call MODRM(regfield,getoperadr);
+end mMODRM2rout;
+
+mDBITrout: proc public;
+  dcl (result,crbit) byte,bittab(8) byte data(1,2,4,8,16,32,64,128);
+
+  join: proc(numb,nobit,noshift);
+    dcl (numb,nobit,noshift) byte;
+    if noshift > 0 then numb=shr(numb,noshift);
+    if nobit < 8 then numb=shl(numb,8-nobit);
+    do while (crbit <> 0ffh) and (nobit > 0);
+      if (numb and 80h) <> 0 then result=result or bittab(crbit);
+      crbit=crbit-1;
+      nobit=nobit-1;
+      numb=shl(numb,1);
+    end$while;
+  end join;
+
+  NUMBERBITSrout: proc;
+    dcl nobit byte;
+    nobit=bytevar;
+    call incrmacroptr;
+    call join(bytevar,nobit,0);
+    call incrmacroptr;
+  end NUMBERBITSrout;
+
+  FORMBITSrout: proc;
+    dcl (nobit,numb) byte,pt address,opr based pt operandstruc;
+    nobit=bytevar;
+    call incrmacroptr;
+    pt=getoperadr;
+    numb=opr.offset;
+    call join(numb,nobit,bytevar);
+    call incrmacroptr;
+  end FORMBITSrout;
+
+  result=0;
+  crbit=7;    /* current bit position */
+  do while bytevar <> mendbit;  /* do until ENDBIT command */
+    do case commandtype(bytevar,length(bitcomtab),.bitcomtab);
+      call NUMBERBITSrout;
+      call FORMBITSrout;
+      do; end;
+    end$case;
+  end$while;
+  call incrmacroptr;  /* skip ENDBIT command */
+  call emitsinglebyte(result);
+end mDBITrout;
+
+$eject
+
+/********* ROUTINES TO MATCH OPERANDS TO INSTRUCTION ********/
+
+/* test user operand against codemacro parameter */
+matchsingleop: proc(opno) byte;
+  dcl (match,specletter,modletter,range,rangetype) byte,
+      (rangev1,rangev2,opno) byte,
+      pt address, oper based pt operandstruc;
+
+
+  rangetest: proc byte;   /* perform rangetest */
+    dcl opervalue byte;
+    rangev1=bytevar;
+    call incrmacroptr;
+    if range=doublerange then$do
+      rangev2=bytevar;
+      call incrmacroptr;
+    end$if;
+    opervalue=oper.offset;
+    if range=doublerange then$do
+      return ((opervalue>=rangev1) and (opervalue<=rangev2));
+    else$do
+      return (opervalue=rangev1);
+    end$if;
+  end rangetest;
+
+  modlettertest: proc byte;
+    dcl numb addr,(styp,modbyt) byte;
+    styp=oper.stype;
+    if styp=lab then return true;
+    modbyt=oper.sflag and typebit;
+    if styp = reg then return (modbyt=modletter);
+    if styp = variable then
+              return ((modbyt=nomod) or (modbyt=modletter));
+    if styp=number then$do
+      numb=oper.offset;
+      do case modletter-1;
+        return not wrdtest(numb);    /* BYTE */
+        return wrdtest(numb);        /* WORD */
+        return (typecalc(numb)=byt); /* signed BYTE */
+        return false;                /* DWORD */
+      end$case;
+    end$if;
+    return false;
+  end modlettertest;
+
+  speclettertest: proc byte;
+    dcl (opertype,locvalue,loctype) byte;
+    memtest: proc byte;
+      return (opertype=variable);
+    end memtest;
+
+    opertype=oper.stype;
+    locvalue=oper.offset;
+    loctype=oper.sflag and typebit;
+    do case specletter;
+      /* A - accumulator (AX or AL) */
+      return ((opertype=reg) and (locvalue=rax));
+      /* C - code reference,i.e. label */
+      return (opertype=lab);
+      /* D - immediate data */
+      return (opertype=number);
+      /* E - effective address, i.e. memory address or register */
+      return (memtest or (opertype=reg));
+      /* M - memory address */
+      return memtest;
+      /* R - register except segment register */
+      return ((opertype=reg) and (loctype <> dwrd));
+      /* S - segment register */
+      return ((opertype=reg) and (loctype = dwrd));
+      /* X - memory address without indexing */
+      return ((opertype=variable) and
+              ((oper.sflag and (iregbit or bregbit))=0));
+    end$case;
+  end speclettertest;
+
+  specletter=bytevar;   /* pick up codemacro attributes */
+  call incrmacroptr;
+  modletter=bytevar and modletter$bit;
+  range=bytevar and range$and;
+  rangetype=bytevar and rangetype$and;
+  call incrmacroptr;
+  pt=.operands(opno);  /* address of current user operand */
+
+  match=true;
+  if range <> norange then match=rangetest;
+  if modletter <> 0 then match=match and modlettertest;
+  if match then match=speclettertest;
+  return match;
+end matchsingleop;
+
+/* test if operands match a specific codemacro */
+matchingops: proc byte;
+  dcl savept address,(nopara,match,parno) byte;
+  savept=macroptr;
+  call incrmacroptr;  /* macroptr=macroptr+2 */
+  call incrmacroptr;
+  nopara=bytevar;     /* pick up no of parameters */
+  call incrmacroptr;  /* advance to first formal */
+  if (nopara and prefix$on) <> 0 then return true; /* PREFIX */
+  if nopara <> nooper then$do
+    match=false;
+  else$do
+    match=true;
+    parno=0ffh;
+    do while (parno:=parno+1) < nopara;
+      match=match and matchsingleop(parno);
+    end$while;
+  end$if;
+  if not match then macroptr=savept;
+  return match;
+end matchingops;
+
+/* test if operands match instruction */
+searchformatch: proc byte public;
+  dcl next based macroptr address;
+  macroptr=firstmacroptr;
+  do forever;
+    if matchingops then return true;
+    if next=0 then return false;
+    macroptr=next;
+  end$forever;
+end searchformatch;
+
+end$module cmsubr;

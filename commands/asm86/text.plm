@@ -1,0 +1,43 @@
+$title ('TEXT MODULE')
+text:
+do;
+$include (:f1:macro.lit)
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/8/81   R. Silberstein
+  modified  4/15/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/* Bytes to define "yes" and "no": */
+
+dcl yes byte public data ('Y'),
+    no  byte public data ('N');
+
+
+/* Text strings: */
+
+dcl
+initials(*)  byte public data('CP/M ASM86 1.1N SOURCE: ',0),
+pagetext(*)  byte public data(' PAGE',0),
+endtext(*)   byte public data('END OF ASSEMBLY.  ',
+                          'NUMBER OF ERRORS: ',0),
+USEFACTOR (*) BYTE PUBLIC DATA ('.  USE FACTOR: ',0),
+asm86text(*) byte public data(cr,lf,'CP/M 8086 ASSEMBLER VER 1.1N',
+                              cr,lf,0),
+parerrtext(*) byte public data(cr,lf,'PARAMETER ERROR',cr,lf,0),
+openerrtext(*) byte public data(cr,lf,'NO FILE',0),
+DISKREADERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'DISK READ ERROR',0),
+DISKWRITEERRTXT (*) BYTE PUBLIC DATA (CR,LF,'DISK FULL',0),
+MAKEERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'DIRECTORY FULL',0),
+CLOSEERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'CANNOT CLOSE',0),
+SYMBFULLERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'SYMBOL TABLE OVERFLOW',0),
+usbreaktext(*) byte public data(cr,' USER BREAK. OK(Y/N)? ',0),
+pass0text  (*) byte public data('END OF PASS 1',cr,lf,0),
+pass1text  (*) byte public data('END OF PASS 2',cr,lf,0);
+
+end$module text;

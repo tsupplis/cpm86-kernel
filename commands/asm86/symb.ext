@@ -1,0 +1,50 @@
+$nolist
+
+/*
+
+  modified  7/24/81  R. Silberstein
+
+*/
+
+dcl freept addr external;
+DCL END$OF$SYMBTAB ADDR EXTERNAL;
+
+symbterminate: proc external;
+end symbterminate;
+
+symbinit: proc external;
+end symbinit;
+
+newsymbol: proc(lg,stradr,result) byte external;
+  dcl lg byte,(stradr,result) addr;
+end newsymbol;
+
+newmacro: proc(lg,stradr,macdefpt) byte external;
+  dcl lg byte,(stradr,macdefpt) addr;
+end newmacro;
+
+findsymbol: proc(lg,stradr,result) byte external;
+  dcl lg byte,(stradr,result) addr;
+end findsymbol;
+
+getattributes: proc(symbadr,dest) external;
+  dcl (symbadr,dest) addr;
+end getattributes;
+
+enterattributes: proc(symbadr,source) external;
+  dcl (symbadr,source) addr;
+end enterattributes;
+
+findcodemacro: proc(lg,stradr,result) byte external;
+  dcl lg byte,(stradr,result) addr;
+end findcodemacro;
+
+new$cm$body: PROC(lg,ptr) byte external;
+  dcl lg byte,ptr addr;
+end$proc new$cm$body;
+
+new$cm$name: PROC(lg,asciiptr,returnptr) byte external;
+  dcl lg byte,(asciiptr,returnptr) addr;
+end$proc new$cm$name;
+
+$list

@@ -1,0 +1,23 @@
+$nolist
+
+scaninit: proc external;
+end scaninit;
+
+scan: proc external;
+end scan;
+
+skip$rest$of$line: proc external;
+end skip$rest$of$line;
+
+specialtoken: proc (tok) byte external;
+  dcl tok byte;
+end specialtoken;
+
+skip$until: proc (tok) byte external;
+  dcl tok byte;
+end skip$until;
+
+emptyline: proc byte external;
+end emptyline;
+
+$list

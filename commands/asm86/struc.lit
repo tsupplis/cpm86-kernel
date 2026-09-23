@@ -1,0 +1,79 @@
+$nolist
+
+/*
+
+  modified  3/27/81  R. Silberstein
+  modified  3/28/81  R. Silberstein
+  modified  4/13/81  R. Silberstein
+
+*/
+
+/* This file contains all structure definitions used */
+
+dcl
+
+file$o$structure lit     'struc(
+ disk         byte,
+ fcbblock(33) byte,
+ bufptr       addr,
+ buffer(512)  byte)',
+
+file$i$structure lit     'struc(
+ disk         byte,
+ fcbblock(33) byte,
+ bufptr       addr,
+ buffer(1024) byte)',
+
+symbolstruc      lit     'struc(
+ length       addr,
+ stype        byte,
+ sflag        byte,
+ segment      addr,
+ offset       addr,
+ baseindex    byte)',
+
+operandstruc     lit     'symbolstruc',
+
+symbolhead       lit     'struc(
+ next         addr,
+ slength      byte,
+ length       addr,
+ stype        byte,
+ sflag        byte,
+ segment      addr,
+ offset       addr,
+ baseindex    byte)',
+
+codemacrohead    lit     'struc(
+ next         addr,
+ slength      byte,
+ defptr       addr)',
+
+/* define bits of SFLAG of structures above */
+
+type$bit      lit '7h',  /* bit 0-2 */
+segtypebit    lit '18h', /* bit 3-4 */
+segmbit       lit '20h', /* bit 5 */
+iregbit       lit '40h', /* bit 6 */
+bregbit       lit '80h', /* bit 7 */
+
+         /* left-shift counters */
+typecount     lit '0',
+segtypecount  lit '3',
+segmcount     lit '5',
+iregcount     lit '6',
+bregcount     lit '7',
+
+/* define bits of BASEINDEX byte of structures above */
+
+indexregbit   lit '01h', /* bit 0 */
+baseregbit    lit '02h', /* bit 1 */
+nooverridebit lit '40h', /* bit 6 */
+
+         /* left shift counters */
+
+indexregcount lit '0',
+baseregcount  lit '1',
+noovercount   lit '6';
+
+$list

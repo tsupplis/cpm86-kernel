@@ -1,0 +1,16 @@
+$nolist
+
+/*
+
+  modified  4/24/81  R. Silberstein
+
+*/
+
+dcl
+end$of$line$err        lit '6',   /* garabage at end of line */
+pseudooperr            lit '11',  /* illegal pseudo operand */
+illexprelem            lit '20',  /* illegal expression element */
+misssegminfo           lit '23';  /* missing segment info in operand */
+
+$list
+

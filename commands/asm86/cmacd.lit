@@ -1,0 +1,95 @@
+$nolist
+$eject
+
+/*      Here are the definitions for the        */
+/*      codemacro instructions of the           */
+/*      ASM86 assembler                         */
+
+
+        /* Commands within codemacros: */
+
+declare
+mdbn            lit     '0',    /* DB with number */
+mdbf            lit     '1',    /* DB with formal parameter */
+mdwn            lit     '2',    /* DW with numbers */
+mdwf            lit     '3',    /* DW with formal parameter */
+mddf            lit     '4',    /* DD with formal parameter */
+mdbit           lit     '5',    /* DBIT */
+mendm           lit     '6',    /* ENDM */
+mrelb           lit     '7',    /* RELB */
+mrelw           lit     '8',    /* RELW */
+mendbit         lit     '9',    /* ENDBIT */
+mmodrm1         lit     '10',   /* MODRM with 1 formal parameter */
+mmodrm2         lit     '11',   /* MODRM with 2 formal parmeters */
+msegfix         lit     '12',   /* SEGFIX */
+mnosegfix       lit     '13',   /* NOSEGFIX */
+mformalbits     lit     '14',   /* define bits from formal par. */
+mnumberbits     lit     '15';   /* define bits from number */
+
+
+        /* Specifier letters:   */
+
+declare
+specA   lit     '0',    /* accumulator, AX or AL */
+specC   lit     '1',    /* code, address expression */
+specD   lit     '2',    /* data, number used as immediate data */
+specE   lit     '3',    /* effective address, either a memory
+                           address (specM) or register (specR) */
+specM   lit     '4',    /* memory address, variable (with or without
+                           indexing) or [register expression] */
+specR   lit     '5',    /* general register only (not segment) */
+specS   lit     '6',    /* segment register */
+specX   lit     '7';    /* simple variable name without indexing */
+
+
+        /* Modifier letters:    */
+
+declare
+nomod   lit     '0',
+modb    lit     '1',    /* byte expression */
+modw    lit     '2',    /* word expression */
+modsb   lit     '3',    /* byte in range (-128,127) */
+modd    lit     '4';    /* 2-word expression */
+
+/*       Segment override bytes:    */
+dcl
+ESover lit '26h',
+CSover lit '2eh',
+SSover lit '36h',
+DSover lit '3eh';
+
+
+        /* "AND"-masks for codemaco head flag  */
+
+declare
+nopar$and       lit '0fh', /* no of parameters, bit 0-3 */
+prefix$and      lit '10h'; /* prefix flag, bit 4 */
+
+
+        /* "OR"-masks for codemacro head flag */
+
+declare
+prefix$on	lit '10h'; /* PREFIX on flag */
+
+
+	/* "AND"-masks for modifier-letter/range spec. byte */
+
+declare
+modletter$bit   lit '07h',  /* bits 0-2 */
+range$spec$bit  lit '0f8h', /* bits 3-7 */
+modlettercount  lit '0',    /* bit position counters */
+rangespeccount  lit '3';
+
+
+	/* "OR"-masks for range-specifier bits */
+
+declare
+norange         lit '0',   /* no range specfier (bits 3-4) */
+singlerange     lit '08h', /* single range */
+doublerange     lit '10h', /* double range */
+rangeand        lit '18h',
+number$range	lit '0',   /* bit 5 */
+register$range  lit '20h',
+rangetypeand    lit '20h';
+
+$list

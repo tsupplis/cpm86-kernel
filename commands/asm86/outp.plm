@@ -1,0 +1,226 @@
+$title ('HEX OUTPUT MODULE')
+hexout:
+do;
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/9/81   R. Silberstein
+
+*/
+
+/*
+        This is the module to produce the (hex-)output
+        from the assembler. The interface to other modules
+        goes through the subroutine
+
+               EMITCODEBYTE (outputbyte,segmenttype).
+
+        This routine outputs one byte of generated code of
+        a specified segment type (code,data,stack,extra).
+
+        The subroutine also updates the value of the current
+        instruction pointer of the current segment (CIP),
+        and prints the output code on the print line.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:outp.lit)
+$include (:f1:subr2.ext)
+$include (:f1:files.ext)
+$include (:f1:global.ext)
+
+
+dcl
+empty       lit '0ffh',  /* buffer empty value */
+recordlimit lit '30',    /* max no of bytes pr record */
+loccip      addr,        /* local copy of instruction pointer */
+startfound  byte,        /* true if start record sent */
+gtyp        byte,        /* incomming byte type */
+gbyt        byte,        /* incomming byte */
+curtyp      byte,        /* current byte type */
+sum         byte,        /* used to compute check sum */
+buffer (35) byte,        /* record buffer (RECORDLIMIT+5) */
+recordlg    byte at (.buffer(0)),
+recordtype  byte at (.buffer(3)),
+offsetaddr  addr at (.buffer(1)),
+bufpt       byte,        /* buffer index */
+
+       /* Record type conversion table */
+       /*   ( to be changed later ??? ) */
+
+rectyp$I$tab(12) byte data
+
+  (0ffh,eoftype,0ffh,starttype,INTELdata,INTELdata,
+   INTELdata,INTELdata,INTELsegment,INTELsegment,INTELsegment,
+   INTELsegment),
+
+rectyp$D$tab(12) byte data
+
+  (0ffh,eoftype,0ffh,starttype,DRcodedata,DRdatadata,
+   DRstackdata,DRextradata,DRcodesegm,DRdatasegm,DRstacksegm,
+   DRextrasegm);
+
+
+/*********** subroutines **********/
+
+rectyptab: procedure(n) byte;
+  declare n byte;
+  if intel$hex$on then$do
+    return rectyp$I$tab(n);
+  else$do
+    return rectyp$D$tab(n);
+  end$if;
+end rectyptab;
+
+switch$high$low: procedure(p);
+  declare p address, ch based p byte, (s1,s2) byte;
+  s1=ch;
+  p=p+1;
+  s2=ch;
+  ch=s1;
+  p=p-1;
+  ch=s2;
+end switch$high$low;
+
+writebyt: proc (ch);
+  dcl ch byte;
+  call outhexbyte(ch);
+end writebyt;
+
+writerecord: proc;  /* write current recor to file */
+  call switch$high$low(.offsetaddr);
+  recordlg=bufpt-4;
+  sum=0;              /* compute check sum */
+  i=0ffh;
+  do while (i:=i+1) < bufpt;
+    sum=sum+buffer(i);
+  end$while;
+  buffer(bufpt)=-sum;  /* check sum */
+  call writebyt(':');
+  do i=0 to bufpt;     /* print hexbytes to file */
+    call hex1out(buffer(i),.help(0));
+    call writebyt(help(0));
+    call writebyt(help(1));
+  end$do;
+  call writebyt(cr);
+  call writebyt(lf);
+end writerecord;
+
+enternewbyt: proc(b); /* enter a new byte into buffer */
+  dcl b byte;
+  if bufpt > recordlimit then$do /* test if record full */
+    call writerecord;
+    offsetaddr=cip;
+    bufpt=4;
+  end$if;
+  buffer(bufpt)=b;
+  bufpt=bufpt+1;
+end enternewbyt;
+
+enterinput: proc;
+  call enternewbyt(gbyt);
+end enterinput;
+
+eofrecord: proc;   /* write end-of-file record to file */
+  if curtyp<>empty then call writerecord;
+  recordtype=rectyptab(eoftype);
+  offsetaddr=0;
+  bufpt=4;
+  call writerecord;
+end eofrecord;
+
+startrecord: proc;  /* write a start record to file */
+  dcl seglow byte at (.csegvalue),seghigh byte at (.csegvalue+1),
+      offslow byte at (.cip),offshigh byte at (.cip+1);
+  if pass=2 then$do
+    startfound=true;
+    if curtyp <> empty then call writerecord;
+    bufpt=4;
+    offsetaddr=0;
+    recordtype=rectyptab(starttype);
+    if csegspec then$do
+      call enternewbyt(seghigh);
+      call enternewbyt(seglow);
+    else$do
+      call enternewbyt(0);
+      call enternewbyt(0);
+    end$if;
+    call enternewbyt(offshigh);
+    call enternewbyt(offslow);
+    call writerecord;
+    curtyp=empty;
+  end$if;
+end startrecord;
+
+segmbyte: proc;  /* write a segment value byte to file */
+  if pass = 2 then$do
+    if curtyp <> gtyp then$do
+      if curtyp <> empty then call writerecord;
+      curtyp=gtyp;
+      recordtype=rectyptab(gtyp);
+      offsetaddr=0;
+      bufpt=4;
+      call enterinput;
+    else$do
+      call enterinput;
+      call writerecord;
+      curtyp=empty;
+    end$if;
+  end$if;
+end segmbyte;
+
+databyte: proc;  /* write a data byte to file */
+  if pass=2 then$do
+    if (curtyp <> gtyp) or (loccip <> cip) then$do
+      if curtyp<>empty then call writerecord;
+      curtyp=gtyp;
+      recordtype=rectyptab(gtyp);
+      offsetaddr=cip;
+      bufpt=4;
+    end$if;
+    call enterinput;
+    call hex1out(gbyt,.prefix(prefixptr)); /* output to listing */
+    prefixptr=prefixptr+2;
+  end$if;
+  cip=cip+1;   /* update instruction pointer */
+  loccip=cip;
+end databyte;
+
+emitinit: proc public;
+  startfound=false;
+  curtyp=empty;
+end emitinit;
+
+emitterminate: proc public;
+  call eofrecord;  /* write EOF record */
+end emitterminate;
+
+emitcodebyte: proc (b,typ) public;
+  dcl (b,typ) byte;
+  gbyt=b;  /* move to global variables */
+  gtyp=typ;
+
+  do case typ-CSdata;
+
+    do;               /* CS data */
+    if not startfound then$do
+      call startrecord;
+    end$if;
+    call databyte;
+    end;
+    call databyte;   /* DS data */
+    call databyte;   /* SS data */
+    call databyte;   /* ES data */
+    call segmbyte;   /* CS value */
+    call segmbyte;   /* DS value */
+    call segmbyte;   /* SS value */
+    call segmbyte;   /* ES value */
+
+  end$case;
+
+end emitcodebyte;
+
+end$module hexout;

@@ -1,0 +1,43 @@
+$nolist
+
+        /*  Literals used in codemacro specification : */
+
+dcl
+divisor lit     '0',
+mplier  lit     '0',
+place   lit     '0',
+itype   lit     '0',
+si$ptr  lit     '0',
+di$ptr  lit     '1',
+port	lit	'1',
+adr     lit     '0',
+dst     lit     '0',
+src     lit     '1',
+opcode  lit     '0';
+
+/*       Literals to simplify table punching:    */
+
+dcl
+cmachead          lit 'struc (next address,nopar byte',
+cmac2struc        lit 'cmachead,body(2) byte)',
+cmac3struc        lit 'cmachead,body(3) byte)',
+cmac4struc        lit 'cmachead,body(4) byte)',
+cmac5struc        lit 'cmachead,body(5) byte)',
+cmac6struc        lit 'cmachead,body(6) byte)',
+cmac7struc        lit 'cmachead,body(7) byte)',
+cmac8struc        lit 'cmachead,body(8) byte)',
+cmac9struc        lit 'cmachead,body(9) byte)',
+cmac10struc       lit 'cmachead,body(10) byte)',
+cmac11struc       lit 'cmachead,body(11) byte)',
+cmac12struc       lit 'cmachead,body(12) byte)',
+cmac13struc       lit 'cmachead,body(13) byte)',
+cmac14struc       lit 'cmachead,body(14) byte)',
+cmac15struc       lit 'cmachead,body(15) byte)',
+cmac16struc       lit 'cmachead,body(16) byte)',
+cmac17struc       lit 'cmachead,body(17) byte)',
+cmac18struc       lit 'cmachead,body(18) byte)',
+cmac19struc       lit 'cmachead,body(19) byte)',
+cmac20struc       lit 'cmachead,body(20) byte)',
+cmac21struc       lit 'cmachead,body(21) byte)';
+
+$list

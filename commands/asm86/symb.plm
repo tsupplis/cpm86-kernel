@@ -1,0 +1,336 @@
+$title ('SYMBOL TABLE MODULE')
+symb:
+do;
+
+/*
+
+  modified  3/25/81  R. Silberstein
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/15/81  R. Silberstein
+  modified  4/16/81  R. Silberstein
+  modified  4/20/81  R. Silberstein
+  modified  6/16/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/*
+        This is the module to perform all symbol table
+        handling. There are 2 different kinds of symbols,
+        codemacro mnemonics and user defined symbols.
+
+        The codemacro symbols are entered into the
+        symbol table through the hash vector "CODEMACROENTRY",
+        whereas the user symbols uses the hash vector
+        "SYMBENTRY". Each symbol enters the symbol table through
+        hash vector element "i", where i is the hash function of
+        the symbol. The function is defined as:
+
+              H(S) = (C1 + C2 +.... + Ci + ..+ Cn) mod 64
+
+           where Ci is the ascii code of the i'th symbolcharacter.
+
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:equals.lit)
+$include (:f1:struc.lit)
+$INCLUDE (:F1:DEV.LIT)
+$include (:f1:mnem.ext)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$include (:f1:files.ext)
+$INCLUDE (:F1:TEXT.EXT)
+$INCLUDE (:F1:IO.EXT)
+DECLARE SYMBOLDEVICE BYTE EXTERNAL;
+$eject
+
+/*     Global variables:      */
+
+dcl
+codemacroentry (64) addr       /* opcode mnemonic entry */
+        data(
+        .push,.repz,0,.aaa,0,.movs,.pushf,.MOVSB,
+        .adc,.add,.CMPSW,.ja,.dec,.loopne,0,.repnz,
+        .jae,.jg,.clc,.iand,.loopz,.aas,.jl,.in,
+        .cli,.jo,.inc,.lahf,.icall,.jne,.cwd,.jnbe,
+        .cmp,.ior,.callf,.div,.les,0,.sar,.jmp,
+        .hlt,.lock,.xchg,.ret,.idiv,.jmpf,.mul,.pop,
+        .sti,.inot,.mov,.cmps,.iret,.popf,0,.imul,
+        .out,.xlat,.jmps,0,0,0,0,.loope),
+
+symbentry (64) addr,              /* user symbol entry */
+symbtab(1) byte at (.memory),     /* symbol table */
+freept      addr public,          /* adr. of next free symb. tab byte */
+end$of$symbtab      addr PUBLIC,  /* last symbol table byte */
+symbolheadlg        byte,         /* length of head for each symbol */
+attributelg         byte,         /* length of symbol attributes */
+codemacheadlg       byte,         /* length of codemacrohead */
+overflowlimit       addr,         /* used to test overflow */
+col                 byte;         /* current column position */
+
+DECLARE
+  ALPHAROOT ADDRESS,         /* ROOT OF ALPHABETIZED SYMBOL LIST */
+  ALPHASYMPTR ADDRESS,       /* POINTER TO CURRENT SYMBOL IN ALPHA LIST */
+  ALPHASYM BASED ALPHASYMPTR SYMBOLHEAD,    /* SYMBOL TEMPLATE */
+  SORTSYMPTR ADDRESS,        /* POINTER TO SYMBOL BEING INSERTED */
+  SORTSYM BASED SORTSYMPTR SYMBOLHEAD;      /* SYMBOL TEMPLATE */
+
+$eject
+/****************** SUBROUTINES ******************/
+
+outbyt:  proc (ch);   /* print one byte to symbol file */
+  dcl ch byte;
+  if ch=cr then$do    /* update column position */
+    col=0;
+  else$do
+    if ch <> lf then col=col+1;
+  end$if;
+  call outsymbolbyte(ch);
+end outbyt;
+
+hash: proc (lg,pt) byte;
+  dcl (lg,i,h) byte,pt addr,asc based pt (1) byte;
+  i=0ffh; h=0;
+  do while (i:=i+1) < lg;
+    h=h+asc(i);
+  end$while;
+  return h and 3fh;
+end hash;
+
+/*      search for either a user symbol or a codemacro      */
+
+search: proc(lg,pt1,pt2,pt3,headlg) byte;
+  dcl (lg,headlg) byte,(pt1,pt2,pt3) addr,
+      ascii based pt1(1) byte,symbptr based pt2 addr,
+      entrytab based pt3 (64) addr,
+      currentpt addr,next based currentpt addr,
+      symbhead based currentpt symbolhead;
+
+  currentpt=entrytab(hash(lg,.ascii(0)));
+  do while currentpt <> 0;
+    if lg = symbhead.slength then$do
+      if equal(lg,currentpt+headlg,.ascii(0)) then$do
+        symbptr=currentpt+3;
+        return true;
+      end$if;
+    end$if;
+    currentpt=next;
+  end$while;
+  return false;
+end search;
+
+/*  enter either new symbol or new codemacro */
+new: proc(lg,pt1,pt2,headlg,pt3) byte;
+  dcl (lg,headlg) byte,(pt1,pt2,pt3) addr,
+      ascii based pt1 (1) byte,entrytab based pt2 (64) addr,
+      symptr based pt3 addr,
+      current addr,currentcontent based current addr,
+      symb based freept symbolhead;
+  if freept > overflowlimit - (lg+headlg) then$DO
+    CALL OUTTEXT (.SYMBFULLERRTEXT);
+    CALL SYSTEM$RESET;
+  END$IF;
+  current=.entrytab(hash(lg,.ascii(0)));
+  SYMB.NEXT = CURRENTCONTENT;
+  currentcontent=freept;
+  symptr=freept+3;
+  symb.slength=lg;
+  call copy(lg,.ascii(0),freept+headlg);
+  freept=freept+headlg+lg;
+  return true;
+end new;
+
+newsymbol: proc (lg,asciiptr,returnpt) byte public;
+  dcl lg byte,(asciiptr,returnpt) addr;
+  return new(lg,asciiptr,.symbentry,symbolheadlg,returnpt);
+end newsymbol;
+
+newmacro: proc (lg,asciiptr,codmacdefpt) byte public;
+  dcl lg byte,(asciiptr,codmacdefpt,retpt) addr,
+      cmaddr based retpt addr;
+  if new(lg,asciiptr,.codemacroentry,codemacheadlg,.retpt) then$do
+    cmaddr=codmacdefpt;
+    return true;
+  end$if;
+  return false;
+end newmacro;
+
+findsymbol: proc(lg,stradr,result) byte public;
+  dcl lg byte,(stradr,result) addr;
+  return search(lg,stradr,result,.symbentry(0),symbolheadlg);
+end findsymbol;
+
+getattributes: proc(symbadr,dest) public;
+  dcl (symbadr,dest) addr,symb based symbadr symbolstruc;
+  call copy(attributelg,.symb.length,dest);
+end getattributes;
+
+enterattributes: proc(symbadr,source) public;
+  dcl (symbadr,source) addr,symb based symbadr symbolstruc;
+  call copy(attributelg,source,.symb.length);
+end enterattributes;
+
+findcodemacro: proc(lg,stradr,result) byte public;
+  dcl lg byte,(stradr,result) addr;
+  return search(lg,stradr,result,.codemacroentry(0),codemacheadlg);
+end findcodemacro;
+
+new$cm$body: PROC (lg,ptr) byte public;
+  dcl lg byte,ptr addr;
+  if freept > overflowlimit-lg then return false;
+  call copy (lg,ptr,freept);
+  freept=freept+lg;
+  return true;
+end$proc new$cm$body;
+
+new$cm$name: PROC (lg,asciiptr,returnptr) byte public;
+  dcl lg byte,(asciiptr,returnptr) addr;
+  return new(lg,asciiptr,.codemacroentry,5,returnptr);
+end$proc new$cm$name;
+
+SORTSYMBOLS: PROCEDURE;
+  DECLARE
+    CURRENT ADDRESS,
+    CURRENTCONTENT BASED CURRENT ADDRESS,
+    NEXT ADDRESS,
+    I BYTE;
+
+  ALPHALOCFOUND: PROCEDURE BYTE;
+    DECLARE
+      SORTNAMEPTR ADDRESS,
+      SORTNAME BASED SORTNAMEPTR (1) BYTE,
+      ALPHANAMEPTR ADDRESS,
+      ALPHANAME BASED ALPHANAMEPTR (1) BYTE,
+      I BYTE;
+
+    SORTNAMEPTR = SORTSYMPTR + SYMBOLHEADLG;
+    ALPHANAMEPTR = ALPHASYMPTR + SYMBOLHEADLG;
+    DO I = 1 TO SORTSYM.SLENGTH;
+      IF I > ALPHASYM.SLENGTH THEN RETURN FALSE;
+      IF SORTNAME (I-1) > ALPHANAME (I-1) THEN RETURN FALSE;
+      IF SORTNAME (I-1) < ALPHANAME (I-1) THEN RETURN TRUE;
+    END;
+    RETURN TRUE;
+  END ALPHALOCFOUND;
+
+  FIXCHAIN: PROCEDURE;
+    SORTSYM.NEXT = ALPHASYMPTR;
+    CURRENTCONTENT = .SORTSYM;
+  END FIXCHAIN;
+
+  INSERTALPHA: PROCEDURE;
+    CURRENT, ALPHASYMPTR = .ALPHAROOT;
+    DO WHILE (ALPHASYMPTR := ALPHASYM.NEXT) <> 0;
+      IF ALPHALOCFOUND THEN$DO
+        CALL FIXCHAIN;
+        RETURN;
+      END$IF;
+      CURRENT = ALPHASYMPTR;
+    END$WHILE;
+    CALL FIXCHAIN;
+  END INSERTALPHA;
+
+  ALPHAROOT = 0;
+  DO I = 0 TO LAST (SYMBENTRY);
+    SORTSYMPTR = SYMBENTRY (I);
+    DO WHILE SORTSYMPTR <> 0;
+      NEXT = SORTSYM.NEXT;
+      CALL INSERTALPHA;
+      SORTSYMPTR = NEXT;
+    END$WHILE;
+  END;
+END SORTSYMBOLS;
+
+outcrlf: proc;
+  call outbyt(cr);
+  call outbyt(lf);
+end outcrlf;
+
+printsymbols:  proc(typ);       /* print all symbols to file */
+  dcl (typ,i) byte;
+
+  advancetonext: proc; /* advance to next column (16,32,48,64) */
+    dcl (x,y) byte;
+    x=col/16;
+    y=16-(col mod 16);
+    if x >= 4 then$do
+      call outcrlf;
+    else$do
+      IF SYMBOL$DEVICE = PRINTER THEN$DO
+        DO WHILE (Y := Y - 1) <> 255;
+          CALL OUTBYT (SPACE);
+        END$WHILE;
+      ELSE$DO
+        col=col+y;
+        call outsymbolbyte(tab);
+        if y > 8 then call outsymbolbyte(tab);
+      END$IF;
+    end$if;
+  end advancetonext;
+
+  OUTBYTES: proc(lg,p);
+    dcl lg byte,p addr,asc based p byte;
+    DO WHILE (LG := LG - 1) <> 0FFH;
+      call outbyt(asc);
+      P = P + 1;
+    end$while;
+  end OUTBYTES;
+
+  printsymb: proc(p);  /* print single symbol */
+    dcl p addr,x based p symbolhead,
+        a addr,ascii based a (1) byte,help(4) byte;
+    a=p+symbolheadlg;
+    if X.STYPE=typ then$do
+      if col+x.slength+5 > 79 then call outcrlf;
+      call hex2out(x.offset,.help(0));
+      CALL OUTBYTES (4, .HELP);
+      call outbyt(space);
+      CALL OUTBYTES (X.SLENGTH, .ASCII);
+      call advancetonext;
+    end$if;
+  end printsymb;
+
+  /* print symbols main program */
+
+  col=0;
+  CALL OUTBYTES (4, .('0000'));   /* print header */
+  call outbyt(space);
+  if typ=lab then call OUTBYTES(6,.('LABELS'));
+  if typ=variable then call OUTBYTES(9,.('VARIABLES'));
+  if typ=number then call OUTBYTES(7,.('NUMBERS'));
+  call outcrlf;
+  ALPHASYMPTR = ALPHAROOT;
+  DO WHILE ALPHASYMPTR <> 0;
+    CALL PRINTSYMB (ALPHASYMPTR);
+    ALPHASYMPTR = ALPHASYM.NEXT;
+  END;
+  if col <> 0 then call outcrlf;
+
+end printsymbols;
+
+symbterminate: proc public;   /* print symbol table */
+  IF SYMBOLDEVICE = NULL THEN RETURN;   /* no need to sort, etc. */
+  CALL SORTSYMBOLS;
+  CALL OUTSYMBOLBYTE (FORMFEED);
+  call printsymbols(variable);    /* variables */
+  CALL OUTCRLF;
+  call printsymbols(number);      /* numbers */
+  CALL OUTCRLF;
+  call printsymbols(lab);         /* labels */
+end symbterminate;
+
+symbinit: proc public;
+  dcl i byte;
+  dcl symb symbolhead at (.i),codm codemacrohead at (.i);
+  end$of$symbtab=(endbuf/256)*256-1;
+  freept=.symbtab(0);
+  CALL FILL (0, SIZE (SYMBENTRY), .SYMBENTRY);
+  symbolheadlg=.symb.baseindex-.symb.next+1;
+  attributelg=symbolheadlg-3;
+  codemacheadlg=.codm.defptr-.codm.next+2;
+  overflowlimit=end$of$symbtab-symbolheadlg;
+end symbinit;
+
+end$module symb;

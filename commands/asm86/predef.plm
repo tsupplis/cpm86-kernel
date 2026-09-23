@@ -1,0 +1,297 @@
+$title ('Predefined symbols')
+predef:
+do;
+
+/*
+
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/************** Module for predefined symbols ************/
+
+/*
+        This module contains the tables and subroutines
+        for the PREDEFINED symbols of the ASM86 assembler.
+
+        The subroutine
+
+           PFIND (nochar,stringaddr,attributeaddr) byte
+
+        defines the interface to the other modules.
+
+        The routine tests if a given symbol is a predefined
+        symbol. If so the address of the symbol attributes
+        is returned.
+        The format of the symbol attributes is :
+
+                byte
+                      **********************
+                 0    *     symbol type    *
+                      **********************
+                 1    * symbol description *
+                      **********************
+                 2    *                    *
+                 3    *    symbol value    *
+                      **********************
+
+
+/*      Include language macros         */
+/*      and general assembler           */
+/*      definitions (literals).         */
+
+
+$include(:f1:macro.lit)
+$include(:f1:equals.lit)
+
+
+/*      Predefined numbers:     */
+
+dcl
+nbyte   lit     '1',
+nword   lit     '2',
+ndword  lit     '4';
+
+$eject
+/*
+        Here are the predefined symbols of
+        the assembler.
+
+        The symbols are grouped according to
+        the symbol lenghts. Moreover, each group
+        is sorted alphabeticly so that binary
+        search algorithm could be used.
+
+*/
+
+dcl
+tok0(*) byte    data(0),        /* symbollength > 1 only */
+tok1(*) byte    data(0),
+tok2(*) byte    data(34,'AHALAXBHBLBPBXCHCLCSCXDBDDDHDIDL',
+                        'DSDWDXEQESGEGTIFLELTNEORRBRSRWSISPSS'),
+tok3(*) byte    data(11,'ANDENDEQUMODNOTORGPTRSEGSHLSHRXOR'),
+tok4(*) byte    data(13,'BYTECSEGDBITDSEGENDMESEGLASTLISTRELBRELW',
+                        'SSEGTYPEWORD'),
+tok5(*) byte    data(6,'DWORDEJECTENDIFMODRMSHORTTITLE'),
+tok6(*) byte    data(5,'IFLISTLENGTHNOLISTOFFSETSEGFIX'),
+tok7(*) byte    data(2,'INCLUDESIMFORM'),
+tok8(*) byte    data(3,'NOIFLISTNOSEGFIXPAGESIZE'),
+tok9(*) byte    data(2,'CODEMACROPAGEWIDTH');
+
+/*      Pointer table:  */
+
+dcl
+tokpointer(*) address data(.tok0,.tok1,.tok2,.tok3,.tok4,
+                           .tok5,.tok6,.tok7,.tok8,.tok9);
+
+$eject
+/*
+        This is the attribute table for
+        the predefined symbols.
+*/
+
+dcl
+value0          byte,
+value1          byte,
+value2(34)      struc   (type byte,descr byte,value addr) data(
+        reg,byt,rah,    reg,byt,ral,    /* registers AH and AL */
+        reg,wrd,rax,    reg,byt,rbh,    /* registers AX and BH */
+        reg,byt,rbl,    reg,wrd,rbp,    /* registers BL and BP */
+        reg,wrd,rbx,    reg,byt,rch,    /* registers BX and CH */
+        reg,byt,rcl,    reg,dwrd,rcs,   /* registers CL and CS */
+        reg,wrd,rcx,                    /* register CX */
+        pseudo,nil,pdb, pseudo,nil,pdd, /* pseudos DB and DD */
+        reg,byt,rdh,    reg,wrd,rdi,    /* registers DH and DI */
+        reg,byt,rdl,    reg,dwrd,rds,   /* registers DL and DS */
+        pseudo,nil,pdw,                 /* pseudo DW */
+        reg,wrd,rdx,                    /* register DX */
+        operator,nil,oeq,               /* operator EQ */
+        reg,dwrd,res,                   /* register ES */
+        operator,nil,oge,               /* operator GE */
+        operator,nil,ogt,               /* operator GT */
+        pseudo,nil,pif,                 /* pseudo IF */
+        operator,nil,ole,               /* operator LE */
+        operator,nil,olt,               /* operator LT */
+        operator,nil,one,               /* operator NE */
+        operator,nil,oor,               /* operator OR */
+        pseudo,nil,prb,                 /* pseudo RB */
+        pseudo,nil,prs,                 /* pseudo RS */
+        pseudo,nil,prw,                 /* pseudo RW */
+        reg,wrd,rsi,    reg,wrd,rsp,    /* registers SI and SP */
+        reg,dwrd,rss),                  /* register SS */
+value3(11)      struc   (type byte,descr byte,value addr) data(
+        operator,nil,oand,              /* operator AND */
+        pseudo,nil,pend,pseudo,nil,pequ,/* pseudos END and EQU */
+        operator,nil,omod,              /* operator MOD */
+        operator,nil,onot,              /* operator NOT */
+        pseudo,nil,porg,                /* pseudo ORG */
+        operator,nil,optr,              /* operator PTR */
+        operator,nil,oseg,              /* operator SEG */
+        operator,nil,oshl,              /* operator SHL */
+        operator,nil,oshr,              /* operator SHR */
+        operator,nil,oxor),             /* operator XOR */
+value4(13)      struc   (type byte,descr byte,value addr) data(
+        number,byt,nbyte,               /* 8 bit number BYTE (1) */
+        pseudo,nil,pcseg,               /* pseudo CSEG */
+        pseudo,nil,pdbit,               /* pseudo DBIT */
+        pseudo,nil,pdseg,               /* pseudo DSEG */
+        pseudo,nil,pendm,               /* pseudo ENDM */
+        pseudo,nil,peseg,               /* pseudo ESEG */
+        operator,nil,olast,             /* operator LAST */
+        pseudo,nil,plist,               /* pseudo LIST */
+        pseudo,nil,prelb,               /* pseudo RELB */
+        pseudo,nil,prelw,               /* pseudo RELW */
+        pseudo,nil,psseg,               /* pseudo SSEG */
+        operator,nil,otype,             /* operator TYPE */
+        number,wrd,nword),              /* 16 bit number WORD (2) */
+value5(6)       struc   (type byte,descr byte,value addr) data(
+        number,dwrd,ndword,             /* 32 bit number DWORD (4) */
+        pseudo,nil,peject,              /* pseudo EJECT */
+        pseudo,nil,pendif,              /* pseudo ENDIF */
+        pseudo,nil,pmodrm,              /* pseudo MODRM */
+        operator,nil,oshort,            /* operator SHORT */
+        pseudo,nil,ptitle),             /* pseudo TITLE */
+value6(5)       struc   (type byte,descr byte,value addr) data(
+        PSEUDO,NIL,PIFLIST,              /* PSEUDO IFLIST */
+        operator,nil,olength,            /* operator LENGTH */
+        pseudo,nil,pnolist,              /* pseudo NOLIST */
+        operator,nil,ooffset,            /* operator OFFSET */
+        pseudo,nil,psegfix),             /* pseudo SEGFIX */
+value7(2)       struc   (type byte,descr byte,value addr) data(
+        pseudo,nil,pinclude,            /* pseudo INCLUDE */
+        pseudo,nil,psimform),           /* pseudo SIMFORM */
+value8(3)       struc   (type byte,descr byte,value addr) data(
+        PSEUDO,NIL,PNOIFLIST,           /* PSEUDO NOIFLIST */
+        pseudo,nil,pnosegfix,           /* pseudo NOSEGFIX */
+        pseudo,nil,ppagesize),          /* pseudo PAGESIZE */
+value9(2)       struc   (type byte,descr byte,value addr) data(
+        pseudo,nil,pcodemacro,          /* pseudo CODEMACRO */
+        pseudo,nil,ppagewidth);         /* pseudo PAGEWIDTH */
+
+
+
+/*      Pointer table:  */
+
+dcl
+valuepointer(*) address data(.value0,.value1,.value2,.value3,.value4,
+                             .value5,.value6,.value7,.value8,.value9);
+$eject
+
+/*      Global variables and subroutines      */
+
+  dcl
+  nochar                      byte,
+  stringaddr                  address,
+  attributeaddr               address,
+  source based stringaddr (1) byte,
+  dest based attributeaddr (1)byte,
+  value                       address,  /* pointer to attributes */
+  valuebyte based value (1)   byte,
+  tok                         address,  /* pointer to table strings */
+  tokenbyte based tok         byte,
+  t$lookahead                 address,  /* table string pointer */
+  look based t$lookahead (1)  byte,
+  v$lookahead                 address,  /* attribute table pointer */
+  noleft                      byte,     /* no of tablestrings left */
+  half                        byte,     /* noleft/2 */
+  i                           byte,     /* counter */
+  attribute$length      lit   '4',      /* no of bytes pr attribute */
+  equal                 lit   '0',      /* results of stringcompares */
+  greater               lit   '1',
+  less                  lit   '2';
+
+  /* Routine to compare tablestring with given symbolstring */
+
+  compare: proc byte;
+
+    i=0ffh;
+    do while (i:=i+1) < nochar;
+      if source(i) > look(i) then
+        return greater;
+      if source(i) < look(i) then
+        return less;
+    end$while;
+    return equal;
+  end compare;
+
+  /* Recursive routine to perform binary tablesearch */
+
+  binsearch: proc byte reent;
+
+    if noleft = 0 then$do
+      return false;
+    else$do
+      half=noleft/2;
+      t$lookahead=tok+half*nochar;
+      v$lookahead=value+half*attributelength;
+      do case compare;
+
+        /* equal */
+        do;
+        value=v$lookahead;   /* match found,pick up attributes */
+        do i=0 to attributelength-1;
+          dest(i)=valuebyte(i);
+        end$do;
+        return true;
+        end;
+
+        /* greater */
+        do;
+        tok=t$lookahead+nochar; /* test last half of table */
+        value=v$lookahead+attributelength;
+        noleft=noleft-half-1;
+        return binsearch;
+        end;
+
+        /* less */
+        do;
+        noleft=half;    /* test first half of table */
+        return binsearch;
+        end;
+      
+      end$case;
+    end$if;
+  end binsearch;
+
+
+
+/*
+           Interface routine PFIND :
+
+
+********** pfind (nochar,stringaddr,attibuteaddr) byte *********
+
+        Routine to test if a given symbol is a predefined
+        symbol.
+        entry:  nochar        = no of character in symbol
+                stringaddr    = address of symbol string
+                attributeaddr = address to put the symbol-
+                                attributes (if found)
+        exit:   The routine returs TRUE if symbol found,
+                otherwise FALSE.
+*/
+pfind:  proc (n,s,a) byte public;
+  dcl
+  n        byte,
+  (s,a)    address;
+
+      
+  nochar=n;        /* pick up parameters */
+  stringaddr=s;
+  attributeaddr=a;
+
+
+  if nochar < 10 then$do
+    value=valuepointer(nochar);
+    tok=tokpointer(nochar);
+    noleft=tokenbyte;
+    tok=tok+1;
+    return binsearch;
+  else$do
+    return false;
+  end$if;
+
+end pfind;
+
+/***************** end of module ***********************/
+end$module predef;

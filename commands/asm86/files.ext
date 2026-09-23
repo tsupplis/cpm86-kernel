@@ -1,0 +1,70 @@
+$nolist
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  6/16/81  R. Silberstein
+
+*/
+
+outhexbyte: proc(ch) external;
+  dcl ch byte;
+end outhexbyte;
+
+outprintbyte: proc(ch) external;
+  dcl ch byte;
+end outprintbyte;
+
+outsymbolbyte: proc(ch) external;
+  dcl ch byte;
+end outsymbolbyte;
+
+insourcebyte: proc byte external;
+end insourcebyte;
+
+inincludebyte: proc byte external;
+end inincludebyte;
+
+opensource: proc external;
+end opensource;
+
+openinclude: proc external;
+end openinclude;
+
+openhex: proc external;
+end openhex;
+
+openprint: proc external;
+end openprint;
+
+opensymbol: proc external;
+end opensymbol;
+
+close$source: proc external;
+end close$source;
+
+rewindsource: proc external;
+end rewindsource;
+
+close$include: proc external;
+end close$include;
+
+closehex: proc external;
+end closehex;
+
+closeprint: proc external;
+end closeprint;
+
+closesymbol: proc external;
+end closesymbol;
+
+
+i$file$setup: proc(dev,filnam,filtyp) external;
+  dcl dev byte,(filnam,filtyp) addr;
+end i$file$setup;
+
+
+filesetup:      proc    byte external;
+end filesetup;
+
+$list

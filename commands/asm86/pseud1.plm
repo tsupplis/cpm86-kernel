@@ -1,0 +1,354 @@
+$title ('PSEUDO INSTRUCTION MODULE-1')
+pseudom:
+do;
+
+/*
+
+  modified  4/9/81   R. Silberstein
+  modified  4/15/81  R. Silberstein
+  modified  5/7/81   R. Silberstein
+  modified  7/24/81  R. Silberstein
+  modified  8/26/81  R. Silberstein
+  modified  8/19/81  R. Silberstein
+
+*/
+
+/*
+        This is the module to perform the decoding of
+        all legal pseudo instructions of the assembler.
+        There is one subroutine for each corresponding
+        pseudoinstruction.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:equals.lit)
+$include (:f1:pseud1.x86)
+$include (:f1:outp.lit)
+$include (:f1:subr2.ext)
+$include (:f1:print.ext)
+$include (:f1:scan.ext)
+$include (:f1:symb.ext)
+$include (:f1:expr.ext)
+$include (:f1:ermod.ext)
+$include (:f1:outp.ext)
+$include (:f1:global.ext)
+
+$eject
+/*************** COMMON SUBROUTINES *************/
+
+/* routine to test if rest of line is either a comment or empty -
+  if not, print error message - skip rest of line */
+
+test$emptyline: proc;
+  if not emptyline then call errmsg(end$of$line$err);
+  call skip$rest$of$line;
+end test$emptyline;
+
+/* list current address in front of printline */
+
+listcip: proc PUBLIC;
+  if (prefixptr=0) and (pass <> 0) then$do
+    call hex2out(cip,.prefix(1));
+    prefixptr=6;
+  end$if;
+end list$cip;
+
+/* common routine for ORG and RS (reserve storage pseudo) */
+
+orgrs: proc (disp,typ);
+  dcl disp addr,typ byte,oper operandstruc at (.operands(0));
+
+  if noforwardexpr(.oper) then$do  /* evaluate operand */
+    if oper.stype=number then$do
+      currentsymbol.length=oper.offset;
+      cip=disp+oper.offset*typ;  /* compute new instruction pointer */
+      call test$emptyline;
+      return;
+    end$if;
+  end$if;
+
+  /* error in expression */
+
+  call errmsg(pseudooperr);
+  call skip$rest$of$line;
+end orgrs;
+
+
+/* perform handling for CSEG,DSEG,SSEG,ESEG routines */
+
+segmentrout: proc (p1,p2,p3,segr);
+  dcl segr byte,(p1,p2,p3) address,
+      currentseg based p1 addr,
+      segspecified based p2 byte,
+      cipsave based p3 addr,
+      oper operandstruc at (.operands(0)),
+      low byte at (.csegvalue),high byte at (.csegvalue+1);
+
+  emit: proc;
+    dcl datatab(4) byte data (ESvalue,CSvalue,SSvalue,DSvalue);
+    call emitcodebyte(high,datatab(segr));
+    call emitcodebyte(low,datatab(segr));
+    call hex2out(csegvalue,.prefix(3)); /* print value on print line */
+    prefixptr=7;
+  end emit;
+
+
+  do case csegtype;    /* save current segment attributes */
+
+    do; cureseg=csegvalue; espec=csegspec; escip=cip; end;  /* ES */
+    do; curcseg=csegvalue; cspec=csegspec; cscip=cip; end;  /* CS */
+    do; cursseg=csegvalue; sspec=csegspec; sscip=cip; end;  /* SS */
+    do; curdseg=csegvalue; dspec=csegspec; dscip=cip; end;  /* DS */
+  end$case;
+
+  if emptyline then$do  /* allow no parameter */
+    call skip$rest$of$line;
+    csegvalue=0;
+    csegtype=segr;
+    csegspec=false;   /* no segment value specified */
+    cip=0;
+    return;
+  end$if;
+
+  if specialtoken('$') then$do /* allow "$" */
+    csegtype=segr;     /* pick up previous values */
+    csegspec=segspecified;
+    csegvalue=currentseg;
+    cip=cipsave;
+    if csegspec then call emit;
+    call scan;    /* skip $ */
+    call test$emptyline;
+    return;
+  end$if;
+
+  if expression(.oper) then$do /* operand must be expression */
+    if oper.stype=number then$do
+      csegvalue=oper.offset;  /* pick up segment value */
+      csegtype=segr;
+      csegspec=true;    /* value is specified */
+      cip=0;
+      call emit;
+      call test$emptyline;
+      return;
+    end$if;
+  end$if;
+
+  /* must be illegal operand */
+  call skip$rest$of$line;
+  call errmsg(pseudooperr);
+
+end segmentrout;
+
+/* common routine for DB,DW and DD */
+
+DB$DW$DD$common: proc(n);
+  dcl(n,continue) byte,lg addr;
+  DECLARE EP BYTE;
+
+  item: proc(n);   /* find one element of element list */
+    dcl (n,i,errorprinted) byte,
+        oper operandstruc at (.operands(0)),
+        low     byte at (.oper.offset),
+        high    byte at (.oper.offset+1),
+        seglow  byte at (.oper.segment),
+        seghigh byte at (.oper.segment+1);
+    emit: proc (outputbyte);
+      dcl outputbyte byte,
+          datatab(4) byte data (ESdata,CSdata,SSdata,DSdata);
+      call emitcodebyte(outputbyte,datatab(csegtype));
+    end emit;
+
+    locexpr: proc byte;
+      if expression(.oper) then$do
+        i=oper.stype;
+        if (i=number) or (i=variable) or (i=lab) then return true;
+      end$if;
+      return false;
+    end locexpr;
+
+    DBhandle: proc;
+      if (token.type=string) and (acclen > 1) then$do
+        lg=lg+acclen-1;
+        i=0ffh;
+        do while (i:=i+1) < acclen;
+          call emit(accum(i));
+        end$while;
+        oper.stype=number; /* dummy */
+        call scan;  /* skip string */
+      else$do
+        if locexpr then$do
+          call emit(low);
+        else$do
+          call emit(0);
+          call errmsg(illexprelem);
+        end$if;
+      end$if;
+    end DBhandle;
+
+    DWhandle: proc;
+      if locexpr then$do
+        call emit(low);
+        call emit(high);
+      else$do
+        call emit(0);
+        call emit(0);
+        call errmsg(illexprelem);
+      end$if;
+    end DWhandle;
+
+    DDhandle: proc;
+      if locexpr then$do
+        if oper.stype <> number then$do
+          if (oper.sflag and segmbit) <> 0 then$do
+            call emit(low);
+            call emit(high);
+            call emit(seglow);
+            call emit(seghigh);
+            return;
+          else$do
+            call errmsg(misssegminfo);
+          end$if;
+        end$if;
+      end$if;
+      do i=0 to 3; call emit(0); end$do;  /* dummy */
+      call errmsg(illexprelem);
+    end DDhandle;
+
+      /* ITEM main program */
+    lg=lg+1;
+    do case n;
+      call DBhandle;
+      call DWhandle;
+      call DDhandle;
+    end$case;
+    if specialtoken(',') then$do
+      call scan;
+      continue=true;
+    else$do
+      if emptyline then$do
+        call skip$rest$of$line;
+      else$do
+        CALL ERRMSG (ENDOFLINEERR);
+        CALL SKIPRESTOFLINE;
+      end$if;
+    end$if;
+  end item;
+
+  /* DB$DW$DD$common main program */
+
+  CALL LISTCIP;
+  EP = FALSE;
+  lg=0;
+  continue=true;
+  do while continue;
+    errorprinted=false;
+    continue=false;
+    call item(n);
+    EP = EP OR ERRORPRINTED;
+  end$while;
+  currentsymbol.length=lg;
+  ERRORPRINTED = EP;   /* SO SOURCE LINE IS ECHOED IF ERROR */
+end DB$DW$DD$common;
+
+$eject
+
+/***************** PSEUDO SUBROUTINES **************/
+
+DBrout: proc public;
+  call DB$DW$DD$common(0);
+end DBrout;
+
+DWrout: proc public;
+  call DB$DW$DD$common(1);
+end DWrout;
+
+DDrout: proc public;
+  call DB$DW$DD$common(2);
+end DDrout;
+
+RSrout: proc (typ) public;
+  dcl typ byte;
+  call listcip;   /* list current address on printline */
+  call orgrs(cip,typ);   /* cip = cip + typ * expression */
+end RSrout;
+
+CSEGrout: proc public;
+  call segmentrout(.curcseg,.cspec,.cscip,rcs);
+end CSEGrout;
+
+DSEGrout: proc public;
+  call segmentrout(.curdseg,.dspec,.dscip,rds);
+end DSEGrout;
+
+SSEGrout: proc public;
+  call segmentrout(.cursseg,.sspec,.sscip,rss);
+end SSEGrout;
+
+ESEGrout: proc public;
+  call segmentrout(.cureseg,.espec,.escip,res);
+end ESEGrout;
+
+ORGrout: proc public;
+  call orgrs(0,byt);  /* cip = 0 + expression */
+end ORGrout;
+
+EQUrout: proc public;
+  dcl oper operandstruc at (.operands(0)),
+      macdefpt based codemacroptr address;
+  codempossible: proc byte;
+    return (nextch=cr or nextch=';');
+  end codempossible;
+
+  do case pass;
+
+    do;    /* pass 0 */
+    if codempossible and
+       findcodemacro(acclen,.accum(0),.codemacroptr) then$do
+      currentsymbol.stype=code;
+      call enterattributes(symbtabadr,.currentsymbol);
+      if not newmacro(acclensave,.accumsave,macdefpt) then
+             fullsymbtab=true;
+    else$do
+      nooper=0;   /* find normal operand expression */
+      IF NOFORWARDOPER THEN$DO
+        call enterattributes(symbtabadr,.operands(0));
+        call skip$rest$of$line;
+      else$do
+        currentsymbol.stype=udefsymb;
+        call enterattributes(symbtabadr,.currentsymbol);
+        call skip$rest$of$line;
+      end$if;
+    end$if;
+    end;
+
+    do;    /* pass 1 */
+    if currentsymbol.stype <> code then$do  /* update symbol value */
+      nooper=0;
+      IF NOFORWARDOPER THEN$DO
+        call enterattributes(symbtabadr,.operands(0));
+      end$if;
+    end$if;
+    call skip$rest$of$line;
+    end;
+
+    do;    /* pass 2 - scan to produce possible errormessages */
+    if currentsymbol.stype=code then$do
+      call scan;
+    else$do
+      nooper=0;
+      IF NOT NOFORWARDOPER OR (CURRENTSYMBOL.STYPE = ERROR) THEN$DO
+        call errmsg(pseudooperr);
+        call skip$rest$of$line;  /* only one error message */
+      else$do
+        prefixptr=7;
+        call hex2out(oper.offset,.prefix(3));
+      end$if;
+    end$if;
+    call test$emptyline;
+    end;
+
+  end$case;
+end EQUrout;
+
+end$module pseudom;

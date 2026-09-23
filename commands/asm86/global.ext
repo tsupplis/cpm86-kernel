@@ -1,0 +1,113 @@
+$nolist
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  4/16/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+dcl
+pass            byte external,   /* current pass no, 1,2,3 */
+
+        /* address counters */
+
+cip             addr external,   /* current instruction pointer */
+csegtype        byte external,   /* current segment type, code,data,
+                                  stack or extra data */
+csegvalue       addr external,   /* current segment value */
+csegspec        byte external,   /* true if segment value specified */
+
+escip           addr external,   /* current ES instruction pointer */
+cscip           addr external,   /* current CS instruction pointer */
+sscip           addr external,   /* current SS instruction pointer */
+dscip           addr external,   /* current DS instruction pointer */
+curcseg         addr external,   /* current code segment value */
+curdseg         addr external,   /* current data segment value */
+cursseg         addr external,   /* current stack segment value */
+cureseg         addr external,   /* current extra segment value */
+cspec           byte external,   /* true if code segm. value given */
+dspec           byte external,   /* true if data segm. value given */
+sspec           byte external,   /* true if stack segment given */
+espec           byte external,   /* true if extra segment given */
+
+
+        /* print output parameters */
+
+print$on        byte external,   /* on/off flag */
+printswitchoff  byte external,   /* set/reset by NOLIST/LIST */
+IFLIST          BYTE EXTERNAL,   /* SET/RESET BY IFLIST/NOIFLIST */
+maxcol          byte external,   /* pagewidth */
+sourcename (12) byte external,   /* source file name */
+savesource (12) byte external,   /* source file during INLUDE file */
+printdevice     byte external,   /* printfile device */
+SYMBOLDEVICE    BYTE EXTERNAL,    /* SYMBOL FILE DEVICE */
+title (30)      byte external,   /* user specified program title */
+pagesize        byte external,   /* page size */
+simform         byte external,   /* true if formfeed simulation */
+sourcebuf (80)  byte external,   /* source input to be printed */
+sourceptr       byte external,   /* source buffer pointer */
+prefix (240)    byte external,   /* prefix to source line */
+prefixptr       byte external,   /* pointer to prefix buffer */
+ABSADDR (4)     BYTE EXTERNAL,   /* ABSOLUTE ADDRESS FIELD */
+
+        /* io error status */
+
+errors          addr external,       /* counts no of errors */
+
+        /* scanner variables: */
+
+token   struc(                  /* actual token scanned */
+        type    byte,              /* token type, legal values :
+                                        reg       - register
+                                        pseudo    - pseudo code
+                                        string    - text string
+                                        spec      - special character
+                                        number    - number
+                                        operator  - aritmetic operator
+                                        ident     - identifier  */
+
+        descr   byte,              /* token description, legal values:
+                                        nil       - no specification
+                                        byte      - 8 bit type
+                                        word      - 16 bit type
+                                        dword     - 32 bit type  */
+
+        value   addr) external,      /* token value  */
+nextch          byte external,    /* next input character */
+acclen         byte external,     /* accumulator length */
+accum(80)       byte external,    /* actual token scanned */
+accumsave(80)   byte external,
+acclensave      byte external,
+eofset          byte external,    /* true if end-of-file found */
+
+      /* Mischellaneous variables: */
+
+intel$hex$on    byte external,    /* true if INTEL hex format */
+noerror         byte external,    /* codemacro decoding errorflag */
+errorprinted    byte external,    /* true if an error is printed */
+firstmacroptr   address external, /* pointer at first codemacro */
+macroptr        address external, /* current pointer within macros */
+fullsymbtab     byte external,    /* full if symboltable is full */
+include$on      byte external,    /* true if INCLUDEfile input */
+IFLEVEL         BYTE EXTERNAL,    /* IF-ENDIF NESTING LEVEL */
+currentsymbol   symbolstruc       /* current scanned symbol */
+                external,
+symbtabadr      address external, /* pointer at symbol in table */
+nooper          byte    external, /* no of instruction operands */
+operands(4)     operandstruc      /* instruction operands,max 4 */
+                        external,
+codemacroptr    address external, /* pointer to found codemacro */
+help(5)         byte    external, /* ascii number scratch area */
+i               byte    external, /* scratch variable */
+default$drive   byte    external, /* default disk drive */
+include$default byte    external, /* default drive for include file */
+codemacro$flag  byte    external; /* true if building a codemacro */
+
+globalinit: procedure external;  /* initiate some globals */
+end globalinit;
+
+
+$list

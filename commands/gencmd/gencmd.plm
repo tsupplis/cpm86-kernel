@@ -1,0 +1,771 @@
+GENCMD:
+DO;
+/*   CP/M 8086 CMD file generator  
+
+    COPYRIGHT (C) 1983
+    DIGITAL RESEARCH
+    BOX 579 PACIFIC GROVE
+    CALIFORNIA 93950
+
+    */
+
+/**** The following commands were used on the VAX to compile GENCMD:
+
+	$ util := GENCMD
+	$ ccpmsetup	! set up environment
+	$ plm86 'util'.plm xref 'p1' optimize(3) debug
+	$ link86 f1:scd.obj, 'util'.obj  to 'util'.lnk
+	$ loc86 'util'.lnk od(sm(code,dats,data,stack,const)) -
+		  ad(sm(code(0),dats(10000h))) ss(stack(+32)) to 'util'.
+	$ h86 'util'
+
+**** Followed on the micro by:
+	A>vax gencmd.h86 $fans
+	A>gencmd gencmd data[b1000 m86 xfff]
+
+****/
+
+DECLARE
+    digital$code literally '0081h',  /*DR code record */
+    digital$data literally '0082h',  /* DR data record */
+    digital02 literally '0085h',   /* DR 02 records */
+    paragraph literally '16',
+    ex literally '12',         /* extent */
+    nr literally '32',         /* current record */
+    maxb address external,
+    fcba(33) byte external,    /* DEFAULT FILE CONTROL BLOCK */
+    buffa(128) byte external; /* DEFAULT BUFFER ADDRESS */
+
+
+DECLARE COPYRIGHT(*) BYTE DATA
+    (' COPYRIGHT (C) 1983, DIGITAL RESEARCH ');
+
+MON1: PROCEDURE(F,A) EXTERNAL;
+    DECLARE F BYTE, A ADDRESS;
+    END MON1;
+
+MON2: PROCEDURE(F,A) BYTE EXTERNAL;
+    DECLARE F BYTE, A ADDRESS;
+    END MON2;
+
+DECLARE SP ADDRESS;
+
+BOOT: PROCEDURE;
+    call mon1 (0,0);
+    END BOOT;
+
+declare segmts(11) structure (name(5) byte,begin$add address)
+    initial ('CODE ',00h,'DATA ',0ffffh,'EXTRA',0ffffh,'STACK',0,
+      'X1   ',0,'X2   ',0,'X3   ',0,'X4   ',0,'8080 ',0,'NZERO',0,
+      'NHEAD',0);
+  
+  
+   
+declare header (15) structure
+   (typseg byte,file$length address,absolute$add address,
+     minimum$mem address,
+     maximum$mem address) initial (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,00,0,0,0,0,0,0,0,0,0,
+     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+   
+
+plmstart: PROCEDURE public;
+    DECLARE FCB (33) BYTE AT (.FCBA),
+       DFCBA LITERALLY 'FCBA';
+    DECLARE BUFFER (128) BYTE AT (.BUFFA),
+        DBUFF LITERALLY 'BUFFA';
+    DECLARE SFCB(33) BYTE,  /* SOURCE FILE CONTROL BLOCK */
+        BSIZE LITERALLY '1024',
+        EOFILE LITERALLY '1AH',
+        SBUFF(BSIZE) BYTE,  /* SOURCE FILE BUFFER */
+        RFLAG BYTE,         /* READER FLAG */
+        SBP ADDRESS;        /* SOURCE FILE BUFFER POINTER */
+    declare tbp address;     /* pointer to command tail  */
+    declare count$command$tail byte at (.buffa);
+    declare (t8080,nozero) byte;
+  
+  
+
+DECLARE
+    TRUE LITERALLY '1',
+    FALSE LITERALLY '0',
+    FOREVER LITERALLY 'WHILE TRUE',
+    CR LITERALLY '13',
+    LF LITERALLY '10',
+    WHAT LITERALLY '63';
+
+PRINTCHAR: PROCEDURE(CHAR);
+    DECLARE CHAR BYTE;
+    CALL MON1(2,CHAR);
+    END PRINTCHAR;
+
+CRLF: PROCEDURE;
+    CALL PRINTCHAR(CR);
+    CALL PRINTCHAR(LF);
+    END CRLF;
+
+PRINTNIB: PROCEDURE(N);
+    DECLARE N BYTE;
+        IF N > 9 THEN CALL PRINTCHAR(N+'A'-10); ELSE
+        CALL PRINTCHAR(N+'0');
+    END PRINTNIB;
+
+PRINTHEX: PROCEDURE(B);
+    DECLARE B BYTE;
+        CALL PRINTNIB(SHR(B,4)); CALL PRINTNIB(B AND 0FH);
+    END PRINTHEX;
+
+PRINTADDR: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL PRINTHEX(HIGH(A)); CALL PRINTHEX(LOW(A));
+    END PRINTADDR;
+
+PRINTM: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL MON1(9,A);
+    END PRINTM;
+
+PRINT: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    /* PRINT THE STRING STARTING AT ADDRESS A UNTIL THE
+    NEXT DOLLAR SIGN IS ENCOUNTERED WITH PRECEDING CRLF */
+    CALL CRLF;
+    CALL PRINTM(A);
+    END PRINT;
+
+declare    mbuffadr address,
+     LA ADDRESS;  /* CURRENT LOAD ADDRESS */
+     declare head byte;
+
+PERROR: PROCEDURE(A);
+    /* PRINT ERROR MESSAGE */
+    DECLARE A ADDRESS;
+    CALL PRINT(.('ERROR: $'));
+    CALL PRINTM(A);
+    CALL PRINTM(.(', LOAD ADDRESS $'));
+    CALL PRINTADDR(LA);
+    CALL BOOT;
+    END PERROR;
+
+  
+diskerror: procedure;
+         call perror(.('DISK WRITE$'));
+    end diskerror;
+  
+DECLARE DCNT BYTE;
+
+  
+setdma: procedure(a);
+    declare a address;
+    call mon1 (26,a);
+    end setdma;
+   
+OPEN: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(15,FCB);
+    END OPEN;
+
+CLOSE: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(16,FCB);
+    END CLOSE;
+
+SEARCH: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(17,FCB);
+    END SEARCH;
+
+SEARCHN: PROCEDURE;
+    DCNT = MON2(18,0);
+    END SEARCHN;
+
+DELETE: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    CALL MON1(19,FCB);
+    END DELETE;
+
+DISKREAD: PROCEDURE(FCB) BYTE;
+    DECLARE FCB ADDRESS;
+    RETURN MON2(20,FCB);
+    END DISKREAD;
+
+DISKWRITE: PROCEDURE(FCB) BYTE;
+    DECLARE FCB ADDRESS;
+    RETURN MON2(21,FCB);
+    END DISKWRITE;
+
+MAKE: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(22,FCB);
+    END MAKE;
+
+RENAME: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    CALL MON1(23,FCB);
+    END RENAME;
+
+    MOVE: PROCEDURE(S,D,N);
+        DECLARE (S,D) ADDRESS, N BYTE,
+        A BASED S BYTE, B BASED D BYTE;
+            DO WHILE (N:=N-1) <> 255;
+            B = A; S=S+1; D=D+1;
+            END;
+        END MOVE;
+  
+  
+    declare char byte;
+  
+   
+   
+   
+comline$error: procedure;
+    declare i byte;
+    call crlf;
+    do i = 1 to tbp;
+       call printchar (buffer(i));
+       end;
+    call printchar ('?');
+    call crlf;
+    call boot;
+    end comline$error;
+  
+  
+   
+  
+retchar: procedure byte;
+   /*  get another character from command tail */
+      if (tbp :=tbp+1) <= count$command$tail then
+         return buffer(tbp);
+      else return (0dh);
+      end retchar;
+  
+tran: procedure(b) byte;
+      declare b byte;
+      if b < ' ' then return 0dh;  /* non-graphic */
+      if b - 'a' < ('z' - 'a') then
+         b = b and 101$1111b;    /* upper case */
+      return b;
+      end tran;
+  
+  
+next$non$blank: procedure;
+      char=tran(retchar);
+      do while char= ' ';
+      char= tran(retchar);
+      end;
+    end next$non$blank;
+  
+   
+    CHECK$ONE$HEX: PROCEDURE (h) BYTE;
+        /* READ ONE HEX CHARACTER FROM THE INPUT */
+        DECLARE H BYTE;
+        IF H  - '0' <= 9 THEN RETURN H - '0';
+        IF H - 'A' > 5 THEN
+	    return (0ffh);
+        RETURN H - 'A' + 10;
+        END CHECK$ONE$HEX;
+  
+   
+   
+    MAKE$DOUBLE: PROCEDURE(H,L) ADDRESS;
+        /* CREATE A BOUBLE BYTE VALUE FROM TWO SINGLE BYTES */
+        DECLARE (H,L) BYTE;
+        RETURN SHL(DOUBLE(H),8) OR L;
+        END MAKE$DOUBLE;
+
+
+  
+delimiter:  procedure byte;    /*   logical     */
+    declare i byte;
+    declare del (*) byte data (0dh,'[], ');
+    do i = 0 to last(del);
+        if char = del(i) then return true;
+    end;
+    return false;
+    end delimiter;
+  
+    
+get$num:  procedure address;
+    declare paradd address;
+    paradd = 0;
+    char = retchar;
+    do while not delimiter ;
+       if (char:=check$one$hex(char)) = 0ffh then
+       call comline$error;   else
+       paradd = paradd * 16 + char;
+       char = retchar;
+       end;
+  
+     return paradd;
+    end get$num;
+  
+ 
+ 
+ 
+    GETCHAR: PROCEDURE BYTE;
+        /* GET NEXT CHARACTER FROM DISK BUFFER */
+        DECLARE I BYTE;
+        IF (SBP := SBP+1) <= LAST(SBUFF) THEN
+            RETURN SBUFF(SBP);
+        /* OTHERWISE READ ANOTHER BUFFER FULL */
+            DO SBP = 0 TO LAST(SBUFF) BY 128;
+            IF (I:=DISKREAD(.SFCB)) = 0 THEN
+                CALL MOVE(.buffer,.SBUFF(SBP),80H); ELSE
+                DO;
+                IF I<>1 THEN CALL PERROR(.('DISK READ$'));
+                SBUFF(SBP) = EOFILE;
+                SBP = LAST(SBUFF);
+                END;
+            END;
+        SBP = 0; RETURN SBUFF(0);
+        END GETCHAR;
+DECLARE
+    STACKPOINTER LITERALLY 'STACKPTR';
+
+ /* INTEL HEX FORMAT LOADER */
+
+RELOC: PROCEDURE;
+    DECLARE (RL, CS, RT,K) BYTE;
+    declare multi$segments byte;
+    DECLARE
+        tabs address,   /* temporary value */
+        TA ADDRESS,     /* TEMP ADDRESS */
+        SA ADDRESS,     /* PARAGRAPH LOAD ADDRESS */
+        FA ADDRESS,     /* FINAL ADDRESS */
+        NB ADDRESS,     /* NUMBER OF BYTES LOADED */
+        nxb byte,       /*  next byte in stream   */
+        segadjst address,  /* segment adjust  */
+        seg$length (8) address,    /* length of each segment  */
+        write$add address,
+
+        MBUFF based mbuffadr (256) BYTE,
+        P BYTE;
+    declare high$add address;
+
+    SETMEM: PROCEDURE(B);
+       /* set mbuff to b at location la */
+        DECLARE (B) BYTE;
+        if ((.memory+la) < 0) or ((.memory+la) > maxb) then 
+        do;
+          call print (.('INSUFFICIENT MEMORY TO CREATE CMD FILE $'));
+          call boot;
+          end;
+        MBUFF(LA) = B;
+        END SETMEM;
+  
+  
+    zero$mem: procedure;
+       do while (.memory +la) <maxb and not nozero;
+          mbuff(la) = 0;
+          la = la +1;
+          end;
+    end zero$mem;
+  
+   
+
+    DIAGNOSE: PROCEDURE;
+
+    DECLARE M BASED TA BYTE;
+
+    NEWLINE: PROCEDURE;
+        CALL CRLF; CALL PRINTADDR(TA); CALL PRINTCHAR(':');
+        CALL PRINTCHAR(' ');
+        END NEWLINE;
+
+    /* PRINT DIAGNOSTIC INFORMATION AT THE CONSOLE */
+        CALL PRINT(.('LOAD  ADDRESS $')); CALL PRINTADDR(TA);
+        CALL PRINT(.('ERROR ADDRESS $')); CALL PRINTADDR(LA);
+
+        CALL PRINT(.('BYTES READ:$')); CALL NEWLINE;
+        DO WHILE TA < LA;
+        IF (LOW(TA) AND 0FH) = 0  THEN CALL NEWLINE;
+        CALL PRINTHEX(MBUFF(TA)); TA=TA+1;
+        CALL PRINTCHAR(' ');
+        END;
+    CALL CRLF;
+    CALL BOOT;
+    END DIAGNOSE;
+ write$record: procedure;
+  
+   call setdma(write$add);
+   if diskwrite(.fcba) <> 0 then call diskerror;
+   p = p+1;
+   end write$record;
+   
+  
+   
+empty$buffers:  procedure;
+     write$add = .memory;
+     do while write$add+127 <= (.memory+fa);
+        call write$record;
+        write$add = write$add+128;
+        end;
+     if not multi$segments then
+     do;
+        call write$record;
+        return;
+     end;
+     call move (write$add,.memory,(la:=.memory+fa+1-write$add));
+     end empty$buffers;
+  
+   
+
+    READHEX: PROCEDURE BYTE;
+        /* READ ONE HEX CHARACTER FROM THE INPUT */
+        declare khex byte;
+	if  (khex := check$one$hex(getchar)) <> 0ffh then return khex;
+      else
+            DO; CALL PRINT(.('INVALID HEX DIGIT$'));
+            CALL DIAGNOSE;
+           end;
+     end readhex;
+
+    READBYTE: PROCEDURE BYTE;
+        /* READ TWO HEX DIGITS */
+        RETURN SHL(READHEX,4) OR READHEX;
+        END READBYTE;
+
+    READCS: PROCEDURE BYTE;
+        /* READ BYTE WHILE COMPUTING CHECKSUM */
+        DECLARE B BYTE;
+        CS = CS + (B := READBYTE);
+        RETURN B;
+        END READCS;
+ 
+  
+hex$input: procedure;
+     if rt = 2 or rt > 84h then
+     segadjst = make$double(readcs,readcs); else
+  
+        do;
+                        /* PROCESS EACH BYTE */
+            DO WHILE (RL := RL - 1) <> 255;
+            CALL SETMEM(READCS); LA = LA+1;
+            END;
+        IF LA > FA THEN FA = LA - 1;
+        end;
+  
+  
+
+                  /* NOW READ CHECKSUM AND COMPARE */
+                  IF CS + READBYTE <> 0 THEN
+                  DO; CALL PRINT(.('CHECK SUM ERROR $'));
+                      CALL DIAGNOSE;
+                      END;
+        end hex$input;
+   
+  
+get$buffer$len: procedure;
+    multi$segments = true;
+    if rt = 84h then rt = 83h;
+    else if rt = 83h then rt = 84h;
+    if seg$length (rt-81h) <= (high$add:=la+rl-1) then
+        do;
+        if high$add=0 then high$add = 1;
+        seg$length (rt-81h) = high$add;
+        header(rt-81h).typseg = rt-80h;
+        end;
+    end get$buffer$len;
+  
+compute$la:  procedure (j) address;
+    declare j byte;
+    return (la and 000Fh)+shl((sa-segmts(j).begin$add),4);
+    end compute$la;
+  
+  
+   
+
+    /* INITIALIZE */
+    SA, FA, NB = 0;
+    P = 0; /* PARAGRAPH COUNT */
+    SBUFF(0) = EOFILE;
+    fcb(nr) = 0;
+    if head then fcb(nr) = 1;
+    multi$segments = false;
+    segadjst = 0;
+    do k= 0 to 7;
+       seglength(k) = 0;
+       end;
+  
+    call zero$mem;
+  
+    ta=0;
+    la=1;
+    /* READ RECORDS UNTIL :00XXXX IS ENCOUNTERED */
+
+        DO FOREVER;
+        /* SCAN THE : */
+            DO WHILE (nxb:=getchar) <> ':';
+              if nxb = eofile then go to second;
+              /* MAY BE THE END OF TAPE */
+            END;
+
+        /* SET CHECK SUM TO ZERO, AND SAVE THE RECORD LENGTH */
+        CS = 0;
+    	       nb = nb +(rl:=readcs);
+
+               TA, LA = MAKE$DOUBLE(READCS,READCS) ;
+               sa = segadjst + shr(la,4);
+
+
+               /* READ THE RECORD TYPE  */
+   
+               /*   skip all records except type 0 2 81  */
+               if (rt:=readcs) > digital$code and rt < digital02 then
+                  do;
+                  if not t8080 then
+                    call get$buffer$len;  else
+                    call hex$input;
+                  end;    else
+                      do;
+                      if (rt = digital$code) then
+                          do;
+                          call hex$input;
+                          header(0).typseg = 1;
+                          end;   else
+                              do;
+                                if (rt = 0 and sa < segmts(1).begin$add and sa >= segmts(0).begin$add) 
+                                or rt = 2 then
+                                    do;
+                                    la = compute$la(0);
+                                    call hex$input;
+                                    header(0).typseg = 1;
+                                    end;
+                                    if (rt = 0 and sa >= segmts(1).begin$add) then
+                                         do;
+                                         multi$segments = true;
+                                         if seg$length(1) <
+                                         (high$add:=compute$la(1) +rl-1) then
+                                             do;
+                                             seg$length(1) = high$add;
+                                             header(1).typseg=2;
+                                             end;
+                                         end;
+                              end;
+                     end;
+            end;
+   
+  
+
+second:
+        call empty$buffers;
+        ta = (la+paragraph-1) and 0fff0h;
+        header(0).file$length=fa/16+1;
+        if header(0).minimum$mem = 0 then header(0).minimum$mem = fa/16+1;
+        fa=ta;
+        if not multi$segments then go to fin;
+        call zero$mem;
+        multi$segments = false;
+        sfcb(ex),sfcb(nr) = 0;
+        call open(.sfcb);
+        call setdma(.buffer);
+  
+        do k = 1 to 7;
+           if seg$length(k) <> 0 then
+           do;
+             seg$length(k) = seg$length(k)+paragraph and 0fff0h;
+             header(k).file$length = seg$length(k)/16;
+             if header(k).minimum$mem=0 then
+             header(k).minimum$mem=seg$length(k)/16;
+             end;
+           end;
+        segadjst = 0;
+        seg$length(0) = ta;
+        sbp=length(sbuff);
+  
+  
+        DO FOREVER;
+        /* SCAN THE : */
+            DO WHILE (nxb:=getchar) <> ':';
+              if nxb = eofile then go to afin;
+            END;
+
+        cs = 0;
+        rl = readcs;
+ 
+        la = make$double(readcs,readcs);
+        sa = segadjst + shr(la,4);
+  
+        if (rt := readcs) = eofile then go to afin;
+    if rt = 84h then rt = 83h;
+    else if rt = 83h then rt = 84h;
+        if rt > digital$code and rt < digital02 then
+        do;
+          do k = 0 to (rt-82h);
+          la = la + seg$length(k);
+          end;
+        call hex$input;
+        end;
+         if (rt = 0 and sa >= segmts(1).begin$add) or rt = 2 then
+         do;
+            la = compute$la(1) + seg$length(0);
+            call hex$input;
+            end;
+  
+
+        END;
+
+  
+afin:
+    call empty$buffers;
+ 
+  
+    FIN:
+    /* PRINT FINAL STATISTICS */
+    CALL PRINT(.('BYTES READ    $')); CALL PRINTADDR(NB);
+    CALL PRINT(.('RECORDS WRITTEN $')); CALL PRINTHEX(P+1);
+    CALL CRLF;
+  
+    /*   write the header record   */
+	call close(.fcba);
+        if head then
+        do;
+           fcb(ex),fcb(nr) = 0;
+           call open(.fcba);
+           call move (.header,.buffer,128);
+           call setdma(.buffer);
+           if diskwrite(.fcba) <> 0 then call diskerror;
+   
+        end;
+    END RELOC;
+  
+ 
+declare seg$number byte;
+
+ignore$filename: procedure;
+     tbp = 0;
+     char = buffer(tbp);
+     call next$non$blank;
+     do while (char:=buffer(tbp)) <> ' ';
+     tbp = tbp +1;
+     end;
+  
+end ignore$filename;
+  
+  
+  
+parse$tail: procedure;
+   declare seg$index byte;
+  
+   get$segmt: procedure byte;
+   /*   get the segment name   */
+      declare ( kentry, match$flag,j, no$match) byte;
+      declare user$segmt(5)  byte;
+   
+      do j = 0 to last (user$segmt);
+         if delimiter then
+         user$segmt(j) = ' ';  else
+           do;
+           user$segmt(j) = char;
+           char = tran(retchar);
+           end;
+         end;
+  
+   
+      seg$index = 0;
+      no$match, matchflag = true;
+    
+      do while no$match and seg$index < 11;
+   
+          match$flag=true;
+          kentry = 0;
+          do while match$flag and kentry <= last (segmts.name);
+             if usersegmt(kentry) <> segmts(seg$index).name(kentry) then
+                matchflag = false;  else
+                kentry = kentry +1;
+                end;
+          if matchflag then no$match = false; else
+             seg$index = seg$index +1;
+          end;
+          if no$match then seg$index = 0ffh;
+          return seg$index;
+      end get$segmt;
+  
+get$switches: procedure;
+   do while char <> ']' and char <> cr;
+       call next$non$blank;
+      if char= 'A' then header(seg$index).absolute$add = (get$num);
+      else if
+      char= 'M' then 
+          do;
+          header(seg$index).minimum$mem = (get$num);
+          header(seg$index).typseg = seg$index+1;
+          end;
+      else if
+      char= 'X' then header(seg$index).maximum$mem = (get$num);
+      else if
+      char= 'B' then segmts(seg$index).begin$add = (get$num);
+      else do;
+         call comline$error;
+         call boot;
+       end ;
+     end;
+   
+   
+ end get$switches;
+  
+   
+   
+    do forever;
+       call next$non$blank;
+       if char = cr then return;
+       if  get$segmt = 0ffh then
+       do;
+         call comline$error;
+       end;
+       if seg$index < 8 then
+       do;
+          if char = ']' or char = cr then call comline$error;
+          call get$switches;
+       end;
+       else
+       do;
+          if seg$index = 8 then t8080 = true; else
+          do;
+             if seg$index = 9 then nozero = true; else
+              head = false;
+          end;
+       end;
+    end;
+  
+    end parse$tail;
+  
+
+   
+ /* ARRIVE HERE FROM THE SYSTEM MONITOR, READY TO READ THE HEX TAPE */
+
+ /* SET UP STACKPOINTER IN THE LOCAL AREA */
+DECLARE STACK(64) ADDRESS;
+SP = STACKPOINTER; STACKPOINTER = .STACK(LENGTH(STACK));
+LA = 0h;
+mbuffadr = .memory;
+t8080 = false;
+nozero = false;
+head = true;
+
+SBP = LENGTH(SBUFF);
+   /* SET UP THE SOURCE FILE */
+    CALL MOVE(.FCBA,.SFCB,33);
+    CALL MOVE(.('H86',0),.SFCB(9),4);
+    CALL OPEN(.SFCB);
+    IF DCNT = 255 THEN CALL PERROR(.('CANNOT OPEN SOURCE$'));
+
+    CALL MOVE(.('CMD'),.FCBA+9,3);
+
+ /* REMOVE ANY EXISTING FILE BY THIS NAME */
+ CALL DELETE(.FCBA);
+ /* THEN OPEN A NEW FILE */
+ CALL MAKE(.FCBA); CALL OPEN(.FCBA);
+ IF DCNT = 255 THEN CALL PERROR(.('NO MORE DIRECTORY SPACE$')); ELSE
+        DO;
+        call ignore$filename;
+        call parse$tail;
+        CALL RELOC;
+        CALL CLOSE(.FCBA);
+        IF DCNT = 255 THEN CALL PERROR(.('CANNOT CLOSE FILE$'));
+        END;
+ CALL CRLF;
+
+ CALL BOOT;
+END plmstart;
+END;

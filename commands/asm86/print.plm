@@ -1,0 +1,217 @@
+$title ('PRINT MODULE')
+print:
+do;
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/7/81   R. Silberstein
+  modified  4/9/81   R. Silberstein
+  modified  4/16/81  R. Silberstein
+  modified  4/20/81  R. Silberstein
+  modified  5/5/81   R. Silberstein
+  modified  7/24/81  R. Silberstein
+  modified  7/27/81  R. Silberstein
+  modified  8/19/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+  modified  9/19/81  R. Silberstein
+
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$INCLUDE (:F1:DEV.LIT)
+$include (:f1:files.ext)
+$include (:f1:subr2.ext)
+$include (:f1:global.ext)
+$include (:f1:text.ext)
+
+dcl
+pageno          byte,   /* current page no */
+lineno          byte,   /* current line no */
+col             byte,   /* column counter */
+field1start lit '6',    /* start of hexoutput print */
+FIELD15START LIT '19',  /* START OF ABSOLUTE ADDRESS FIELD */
+field2start lit '24';   /* start of source output print */
+
+printbyt: proc(ch);
+  dcl ch byte;
+  if not asciichar(ch) then ch='#';
+  if ch <> lf then col=col+1;
+  if ch = cr then col=0;
+  call outprintbyte(ch);
+end printbyt;
+
+advance: proc(n);       /* advance to column "n" */
+  dcl n byte;
+  do while n > col;
+    call printbyt(space);
+  end$while;
+end advance;
+
+printtext: proc(s);
+  dcl s address,ch based s byte;
+  DO WHILE CH <> 0;
+    CALL PRINTBYT (CH);
+    S = S + 1;
+  END;
+end printtext;
+
+printheader: proc;
+  COL = 0;
+  pageno=pageno+1;
+  call printtext(.initials);
+  call printtext(.sourcename);
+  call printtext(.('  ',0));
+  call printtext(.title);
+  call advance(maxcol-11);
+  call printtext(.pagetext);
+  call decout(pageno,.help(0));
+  call printtext(.help(1));
+  call printtext(.(cr,lf,cr,lf,cr,lf,0));
+  lineno=4;
+end printheader;
+
+/* Public routine to perform page eject */
+
+eject: proc public;
+  if simform then$do
+    do while (lineno:=lineno+1) <= pagesize;
+      call printbyt(cr);
+      call printbyt(lf);
+    end$while;
+  else$do
+    call outprintbyte(formfeed);
+  end$if;
+  lineno=0;
+end eject;
+
+printnewpage: proc public;
+  IF LINENO > 4 THEN$DO
+    call eject;
+    call printheader;
+  END$IF;
+end printnewpage;
+
+incrementline: proc;
+  lineno = lineno + 1;
+  if lineno >= pagesize - 10 then call printnewpage;
+end incrementline;
+
+/* Print single byte,update column counter,
+   expand tabs (each 8.th column)  */
+
+print$single$byte: proc(ch) public;
+  dcl ch byte;
+  if ch=tab then$do
+    ch=8-((col-field2start) mod 8);
+    do while (ch:=ch-1) <> 0ffh;
+      call printbyt(space);
+    end$while;
+  else$do
+    call printbyt(ch);
+    if ch = lf then call incrementline;
+  end$if;
+end print$single$byte;
+
+print$crlf: proc public;
+  call print$single$byte(cr);
+  call print$single$byte(lf);
+end print$crlf;
+
+/* Print a field given by last column of field,source-
+   array containing ascii bytes,index of this array, and
+   index of last byte of source array. Before entry, the
+   current column position must be start of this field. */
+
+print$field: proc (sourceindex,s,lastindex,stopcol);
+  dcl (sourceindex,s,lastindex) address,
+      stopcol byte,
+      source based s (1) byte,
+      k based sourceindex byte,
+      last based lastindex byte;
+
+  do while col < stopcol and k < last;
+    call print$single$byte(source(k));
+    k=k+1;
+  end$while;
+end print$field;
+
+print$sl: proc;
+  dcl (i,j) byte;
+  DECLARE K BYTE;
+
+  IF (PRINTDEVICE = NULL) AND NOT ERRORPRINTED THEN RETURN;   /* NO NEED TO WASTE TIME HERE */
+  if include$on then$do
+    prefix(0)='=';
+    if prefixptr=0 then prefixptr=1;
+  end$if;
+  i,j,col=0;
+                /* print first field of line prefix */
+  call printfield(.i,.prefix(0),.prefixptr,field1start);
+
+                        /* Print rest of prefix and source.
+                           If line overflow, print rest on
+                           following lines. */
+
+  if prefixptr-i+sourceptr > 0 then$do
+    do while (prefixptr-i) + (sourceptr-j) >0;
+      call advance(field1start);
+      call printfield(
+           .i,.prefix(0),.prefixptr,((field15start-1)/3)*3);
+      IF ABSADDR (0) <> SPACE THEN$DO
+        CALL ADVANCE (FIELD15START);
+        DO K = 0 TO 3;
+          CALL PRINTSINGLEBYTE (ABSADDR (K));
+        END;
+      END$IF;
+      if sourceptr-j >0 then$do
+        call advance(field2start);
+        call printfield(.j,.sourcebuf(0),.sourceptr,maxcol-1);
+      end$if;
+      call printcrlf;
+    end$while;
+  else$do
+    call printcrlf;
+  end$if;
+end print$sl;
+
+/* Public routine to print prefix and source line on printfile. */
+
+print$source$line: proc public;
+  IF PRINT$ON OR ERRORPRINTED THEN CALL PRINT$SL;
+  CALL FILL (SPACE, PREFIXPTR, .PREFIX);
+  CALL FILL (SPACE, LENGTH (ABSADDR), .ABSADDR);
+  prefixptr,sourceptr=0;
+end print$source$line;
+
+/* Public routine to initiate print module */
+
+printinit: proc public;
+  if print$on then$do
+    pageno=0;
+    LINENO = 0FFH;
+    CALL PRINTNEWPAGE;
+  end$if;
+end printinit;
+
+
+/* Public routine to print module information on printfile */
+
+printterminate: proc (USEFACT) public;
+  DECLARE USEFACT BYTE;
+  if print$on then$do
+    CALL PRINTCRLF;
+    CALL PRINTCRLF;
+    call printtext(.endtext);  /* END OF ASSEMBLY. NO OF ERRORS: */
+    call decout(errors,.help(0));
+    call printtext(.help(2));
+    CALL PRINTTEXT (.USEFACTOR);
+    CALL DECOUT (USEFACT, .HELP (0));
+    CALL PRINTTEXT (.HELP (3));
+    CALL PRINTTEXT (.(25H,CR,LF,0));   /* % */
+  end$if;
+end printterminate;
+
+end$module print;

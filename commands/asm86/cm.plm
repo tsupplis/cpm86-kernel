@@ -1,0 +1,350 @@
+$title ('codemacro module 1')
+cm1:
+do;
+
+/*
+
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/*    This is the module to build new instructions
+      which is not present in the already existing
+      system. */
+
+$include (:f1:macro.lit)
+$include (:f1:equals.lit)
+$include (:f1:struc.lit)
+$include (:f1:cmacd.lit)
+$include (:f1:ermod.lit)
+$include (:f1:scan.ext)
+$include (:f1:ermod.ext)
+$include (:f1:cm2.ext)
+$include (:f1:cm.lit)
+$include (:f1:global.ext)
+
+$eject
+
+/* Subroutines: */
+
+more$left$on$line: PROC byte;
+  if accum(0) <> cr then return true;
+                    else return false;
+end$proc more$left$on$line;
+
+modrm$rout: PROC;
+dcl nopar byte;
+  if token.type = number then$do
+    call put$b(mmodrm1);
+    if token.value > 7 then$do
+      cm$error=true; /* legal values are 0,1,..  .,7   */
+      return;
+    else$do
+      call put$b(token.value);
+    end$if;
+  else$do
+    if token.type = ident then$do
+      if legal$parameter(acclen,.accum(0),.nopar) then$do
+        call put$b(mmodrm2);
+        call put$b(nopar);
+      else$do /* error, parameter mismatch */
+        cm$error=true;
+        return;
+      end$if;
+    else$do /* error, expected parameter */
+      cm$error=true;
+      return;
+    end$if;
+  end$if;
+  call scan;
+  if accum(0) <> comma then$do
+    /* error, expected comma */
+    cm$error=true;
+    return;
+  end$if;
+  call scan;
+  if token.type = ident then$do
+    if legal$parameter(acclen,.accum(0),.nopar) then$do
+      call put$b(nopar);
+      call scan;
+      return;
+    else$do /* error, parameter mismatch */
+      cm$error=true;
+      return;
+    end$if;
+  else$do /* error, expected parameter */
+    cm$error=true;
+    return;
+  end$if;
+end$proc modrm$rout;
+
+db$dw$common$rout: PROC(directive);
+  dcl (directive,nopar) byte;
+  if token.type = number then$do
+    call put$b(directive);
+    if directive = mdwn then$do
+      call put$w(token.value);
+    else$do
+      if token.value > 0ffh then cm$error=true;
+                            else call put$b(token.value);
+    end$if;
+    call scan;
+    return;
+  else$do
+    if token.type = ident then$do
+      if legal$parameter(acclen,.accum(0),.nopar) then$do
+        call put$b(directive+1); 
+        call put$b(nopar);
+        call scan;
+        return;
+      else$do /* error, parameter mismatch */
+        cm$error=true;
+        return;
+      end$if;
+    else$do /* error, expected parameter */
+      cm$error=true;
+      return;
+    end$if;
+  end$if;
+end$proc db$dw$common$rout;
+
+d$s$rb$rw$rout: PROC(directive);
+  dcl (directive,nopar) byte;
+  if token.type = ident then$do
+    if legal$parameter(acclen,.accum(0),.nopar) then$do
+      call put$b(directive);
+      call put$b(nopar);
+      call scan;
+      return;
+    else$do /* error, parameter mismatch */
+      cm$error=true;
+      return;
+    end$if;
+  else$do /* error, expected parameter */
+    cm$error=true;
+    return;
+  end$if;
+end$proc d$s$rb$rw$rout;
+
+nosegfix$rout: PROC;
+  dcl nopar byte;
+  call put$b(mnosegfix);
+  do case legal$seg$reg;
+    do; /* error, no segment register specified */
+      cm$error=true;
+      return;
+    end;
+    call put$b(res);
+    call put$b(rcs);
+    call put$b(rss);
+    call put$b(rds);
+  end$case;
+  call scan;
+  if accum(0) <> comma then$do
+   /* error, expected comma */
+   cm$error=true;
+   return;
+  end$if;
+  call scan; /* skip comma */
+  if legal$parameter(acclen,.accum(0),.nopar) then$do
+    call put$b(nopar);
+    call scan;
+  else$do
+    cm$error=true;
+    return;
+  end$if;
+end$proc nosegfix$rout;
+
+dbit$rout: PROC;
+  call put$b(mdbit);
+end$proc dbit$rout;
+
+field$descr$rout: PROC;
+dcl nopar byte,cm$b$var based cmpt byte;
+do forever;
+  if token.type <> number or token.value > 0fh then$do
+    /* error, expected numberdef. */
+    cm$error=true;
+    return;
+  end$if;
+  call put$b(mnumberbits);
+  call put$b(token.value);
+  call scan;
+  if accum(0) <> leftpar then$do
+    /* error, expected left paranthesis */
+    cm$error=true;
+    return;
+  end$if;
+  call scan; /* skip left paranthesis */
+  if token.type = ident then$do
+    if not legal$parameter(acclen,.accum(0),.nopar) then$do
+      /* error, parameter mismatch */
+      cm$error=true;
+      return;
+    end$if;
+    cmpt=cmpt-2;
+    cm$b$var=cm$b$var-1; /* it was a parameter, not a number */
+    cmpt=cmpt+2;
+    call put$b(nopar);
+    call scan;
+    if accum(0) <> leftpar then$do
+      /* error, expected left paranthesis */
+      cm$error=true;
+      return;
+    end$if;
+    call scan; /* skip left paranthesis */
+  end$if;
+  if token.type <> number or token.value > 0ffh then$do
+    /* error, expected numberdef.(byte) or parameter */
+    cm$error=true;
+    return;
+  end$if;
+  call put$b(token.value);
+  call scan;
+  if accum(0) <> rightpar then$do
+    /* error,expected right paranthesis */
+    cm$error=true;
+    return;
+  end$if;
+  call scan; /* skip right paranthesis */
+  cmpt=cmpt-4;
+  if cm$b$var = mformalbits and
+     accum(0) = rightpar then call scan;
+  cmpt=cmpt+4;
+  if accum(0) <> comma then return;
+  call scan;
+end$forever;
+end$proc field$descr$rout;
+
+enddbit$rout: PROC;
+  call put$b(mendbit);
+end$proc enddbit$rout;
+
+endm$rout: PROC;
+  call put$b(mendm);
+end$proc endm$rout;
+
+$eject
+
+/* level 1 in the syntax-tree of codemacrobuilding */
+
+COMMON$CM$ROUT: PROC (TYPE);
+  DECLARE TYPE BYTE;
+  if pass = 1 then$do
+    call skip$rest$of$line;
+    return;
+  end$if;
+  cm$error=false;
+  if not codemacro$flag then$do
+    /* error, codemacro directive outside codemacrobodydef. */
+    cm$error=true;
+  end$if;
+  DO CASE TYPE;
+    call db$dw$common$rout(mdbn);
+    call db$dw$common$rout(mdwn);
+    call d$s$rb$rw$rout(mddf);
+    call d$s$rb$rw$rout(msegfix);
+    call nosegfix$rout;
+    call modrm$rout;
+    call d$s$rb$rw$rout(mrelb);
+    call d$s$rb$rw$rout(mrelw);
+    DO;
+      call dbit$rout;
+      call field$descr$rout;
+      call enddbit$rout;
+    END;
+  END$CASE;
+  if cm$error or more$left$on$line then$do
+    /* error */
+    global$cm$error=true;
+    call errmsg(codemacroerr);
+  end$if;
+  call skip$rest$of$line;
+END COMMON$CM$ROUT;
+
+codemacro$rout: PROC public;
+  if pass = 1 then$do
+    codemacro$flag=true;
+    call skip$rest$of$line;
+    return;
+  end$if;
+  cm$error=false;
+  global$cm$error=false;
+  if codemacro$flag then$do
+    /* error, nested codemacrodefinition */
+    cm$error=true;
+  end$if;
+  call init$cm$rout; /* clearing all temp. working storages */
+  codemacro$flag=true;
+  if not name$rout then$do
+    /* error, expected codemacroname */
+    cm$error=true;
+  end$if;
+  call formal$list$rout;
+  if cm$error or more$left$on$line$ then$do
+    /* error */
+    global$cm$error=true;
+    call errmsg(codemacroerr);
+  end$if;
+  call skip$rest$of$line;
+end$proc codemacro$rout;
+
+db$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (0);
+end$proc db$cm$rout;
+
+dw$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (1);
+end$proc dw$cm$rout;
+
+dd$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (2);
+end$proc dd$cm$rout;
+
+segfix$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (3);
+end$proc segfix$cm$rout;
+
+nosegfix$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (4);
+end$proc nosegfix$cm$rout;
+
+modrm$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (5);
+end$proc modrm$cm$rout;
+
+relb$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (6);
+end$proc relb$cm$rout;
+
+relw$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (7);
+end$proc relw$cm$rout;
+
+dbit$cm$rout: PROC public;
+  CALL COMMON$CM$ROUT (8);
+end$proc dbit$cm$rout;
+
+end$cm$rout: PROC public;
+  if pass = 1 then$do
+    call skip$rest$of$line;
+    codemacro$flag=false;
+    return;
+  end$if;
+  cm$error=false;
+  if not codemacro$flag then$do
+    /* error, terminating a not yet started codemacro */
+    cm$error=true;
+  end$if;
+  call endm$rout;
+  if pass = 0 then  call terminate$cm$rout;
+  if cm$error or more$left$on$line or cm$list$overflow then$do
+    /* error */
+    call errmsg(codemacroerr);
+  end$if;
+  call skip$rest$of$line;
+  global$cm$error=false;
+  codemacro$flag=false;
+end$proc end$cm$rout;
+
+end$module cm1;

@@ -1,0 +1,354 @@
+$title ('DECODE LINE MODULE')
+decodel:
+do;
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/9/81   R. Silberstein
+  modified  4/10/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/*
+
+        This is the module to decode each logical sourceline.
+        The module takes care of all symbol definitions, and
+        activates the PSEUDO-module and the INSTRUCTION-module
+        to perform the assembly of the current non-empty source-
+        line.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:equals.lit)
+$include (:f1:ermod.lit)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$include (:f1:scan.ext)
+$include (:f1:print.ext)
+$include (:f1:instr.ext)
+$include (:f1:pseud1.ext)
+$include (:f1:pseud2.ext)
+$include (:f1:ermod.ext)
+$include (:f1:symb.ext)
+$include (:f1:exglob.ext)
+$include (:f1:dline.x86)
+$include (:f1:cm.ext)
+
+
+
+
+saveaccum: proc;
+  acclensave=acclen;
+  call copy(acclen,.accum(0),.accumsave(0));
+end saveaccum;
+
+
+exchangeaccum: proc;
+  dcl locacclen byte,locaccum(80) byte;
+  locacclen=acclensave;
+  call copy(acclensave,.accumsave(0),.locaccum(0));
+  call saveaccum;
+  acclen=locacclen;
+  call copy(locacclen,.locaccum(0),.accum(0));
+end exchangeaccum;
+
+clearsymbol: proc;
+  CALL FILL (0, .CURRENTSYMBOL.BASEINDEX-.CURRENTSYMBOL+1, .CURRENTSYMBOL);
+end clearsymbol;
+
+
+
+pseudotype: proc(lg,ptr) byte;
+  dcl (lg,i,lvalue) byte,ptr address,pstable based ptr (1) byte;
+  if token.type <> pseudo then return lg+1;
+  i=0ffh;
+  do while (i:=i+1) < lg;
+    lvalue=token.value;
+    if lvalue=pstable(i) then$do
+      call scan;       /* skip found pseudo */
+      return i;
+    end$if;
+  end$while;
+  return i;
+end pseudotype;
+
+
+/* test if symbol if double defined or "neglected" symbol */
+
+not$doub$negl: proc(errno) byte;
+  dcl (errno,errfl) byte;
+  if pass = 0 then$do
+    if findsymbol(acclensave,.accumsave,.symbtabadr) then$do
+      call getattributes(symbtabadr,.currentsymbol);
+      if currentsymbol.stype <> neglected then$do
+        currentsymbol.stype=doubledefined;
+        call enterattributes(symbtabadr,.currentsymbol);
+      end$if;
+      return false;
+    end$if;
+  else$do
+     /* pass 1 and pass 2 */
+
+    if not findsymbol(acclensave,.accumsave,.symbtabadr) then
+                                                      return false;
+    call getattributes(symbtabadr,.currentsymbol);
+    errfl=true;
+    if currentsymbol.stype=neglected then$do
+      errno=neglecterr;
+    else$do
+      if currentsymbol.stype<>doubledefined then errfl=false;
+    end$if;
+    if errfl then$do
+      call exchangeaccum;
+      call errmsg(errno);
+      call exchangeaccum;
+      return false;
+    end$if;
+  end$if;
+  return true;
+end not$doub$negl;
+
+newsym: proc byte;   /* enter new symbol into table */
+  if pass=0 then$do
+    if not newsymbol(acclensave,.accumsave,.symbtabadr) then$do
+      fullsymbtab=true;
+      return false;
+    end$if;
+  end$if;
+  return true;
+end newsym;
+
+/* set up symbol attributes for label,DB,DW,DD,RS */
+
+setupattr: proc (styp,sfla);
+  dcl (styp,sfla,segtyp) byte;
+  segtyp=shl(csegtype,segtypecount) and segtypebit;
+  currentsymbol.stype=styp;
+  if csegspec then sfla=sfla or segmbit;
+  currentsymbol.sflag=sfla or segtyp;
+  currentsymbol.segment=csegvalue;
+  currentsymbol.offset=cip;
+end setupattr;
+
+entatr: proc;   /* enter attributes of current symbol into table */
+  if pass <> 2 then$do
+    call enter$attributes(symbtabadr,.currentsymbol);
+  end$if;
+end entatr;
+
+           /* decode instruction */
+decodeinstr: proc;
+  if csegtype <> rcs then$do
+    call errmsg(instrerr);
+    call skip$rest$of$line;
+  else$do
+    CALL LISTCIP;
+    call instruction;  /* decode instruction */
+  end$if;
+end decodeinstr;
+
+
+labinstruction:  proc;  /* scan labelled instruction */
+  dcl symb based codemacroptr symbolstruc;
+
+  call saveaccum;
+                          /* enter label into symbol table */
+  if not$doub$negl(doubledeflab) then$do
+    if newsym then$do
+      call setupattr(lab,wrd);
+      call entatr;
+    end$if;
+  end$if;
+  call scan;                /* skip ":" */
+  call scan;      /* allow empty instruction */
+  if emptyline then$do
+    call skip$rest$of$line;
+  else$do
+    if findcodemacro(acclen,.accum(0),.codemacroptr) then$do
+      call scan;   /* skip codemacro */
+      call decode$instr;
+    else$do
+      call errmsg(illegalmacro);
+    end$if;
+  end$if;
+end labinstruction;
+
+
+
+no$ident$pseudo: proc;  /* branch to correct pseudo routine */
+  dcl ptable(*) byte data(    /* define legal unnamed pseudos */
+    pif,pendif,pinclude,pcseg,pdseg,psseg,peseg,porg,pdb,
+    pdw,pdd,prb,prs,prw,pend,ppagesize,ppagewidth,
+    ptitle,peject,psimform,pcodemacro,plist,pnolist,PIFLIST,PNOIFLIST,
+    psegfix,pnosegfix,pmodrm,prelb,prelw,pdbit,pendm);
+
+  do case pseudotype(length(ptable),.ptable); /* branch */
+    call IFrout;
+    call ENDIFrout;
+    call INCLUDErout;
+    call CSEGrout;
+    call DSEGrout;
+    call SSEGrout;
+    call ESEGrout;
+    call ORGrout;
+    if codemacro$flag then call db$cm$rout;
+                      else call DBrout;
+    if codemacro$flag then call dw$cm$rout;
+                      else call DWrout;
+    if codemacro$flag then call dd$cm$rout;
+                      else call DDrout;
+    call RSrout(byt);   /* RB */
+    call RSrout(byt);   /* RS */
+    call RSrout(wrd);   /* RW */
+    call ENDrout;
+    call PAGESIZErout;
+    call PAGEWIDTHrout;
+    call TITLErout;
+    call EJECTrout;
+    call SIMFORMrout;
+    call CODEMACROrout;
+    call LISTrout;
+    call NOLISTrout;
+    CALL IFLISTROUT;
+    CALL NOIFLISTROUT;
+    call segfix$cm$rout; /* cm */
+    call nosegfix$cm$rout; /* cm */
+    call modrm$cm$rout; /* cm */
+    call relb$cm$rout; /* cm */
+    call relw$cm$rout; /* cm */
+    call dbit$cm$rout; /* cm */
+    call end$cm$rout; /* cm */
+    do;         /* error, illegal pseudo */
+    call errmsg(illegalpseudo);
+    call skip$rest$of$line;
+    end;
+  end$case;
+end no$ident$pseudo;
+
+
+identpseudo: proc(normal);   /* scan a named pseudo instruction */
+  dcl (noerr,normal) byte,symb based codemacroptr symbolstruc;
+
+  entervar: proc(typ);
+    dcl typ byte;
+    noerr=false;
+    if not$doub$negl(doubledefvar) then$do
+      if newsym then$do
+        call setupattr(variable,typ);
+        noerr=true;
+      end$if;
+    end$if;
+  end entervar;
+
+  enter: proc;
+    if noerr then call entatr;
+  end enter;
+
+                       /* legal pseudos: DB,DW,DD,RB,RS,RW,EQU */
+  dcl pseudotable(7) byte data(pdb,pdw,pdd,prb,prs,prw,pequ);
+
+  call clearsymbol;  /* clear attributes of current symbol */
+  if normal then$do  /* unormal if EQU with instruction parameter */
+    call saveaccum;
+    call scan;         /* scan actual pseudo */
+  end$if;
+  do case pseudotype(length(pseudotable),.pseudotable);
+    do;              /* DB */
+    call entervar(byt);
+    call DBrout;
+    call enter;
+    end;
+
+    do;              /* DW */
+    call entervar(wrd);
+    call DWrout;
+    call enter;
+    end;
+
+    do;              /* DD */
+    call entervar(dwrd);
+    call DDrout;
+    call enter;
+    end;
+
+    do;              /* RB */
+    call entervar(byt);
+    call RSrout(byt);
+    call enter;
+    end;
+
+    do;              /* RS */
+    call entervar(byt);
+    call RSrout(byt);
+    call enter;
+    end;
+
+    do;              /* RW */
+    call entervar(wrd);
+    call RSrout(wrd);
+    call enter;
+    end;
+
+    do;              /* EQU */
+    if not$doub$negl(doubledefsymb) then$do
+      if newsym then$do
+        call EQUrout;
+      else$do
+        call skip$rest$of$line;
+      end$if;
+    else$do
+      call skip$rest$of$line;
+    end$if;
+    end;
+
+    do;              /* illegal pseudo instruction */
+    call errmsg(illegalpseudo);
+    call skip$rest$of$line;
+    end;
+
+    do;              /* missing pseudo instruction */
+    call errmsg(missingpseudo);
+    call skip$rest$of$line;
+    end;
+  end$case;
+end identpseudo;
+
+decodeline: proc public;
+  first$item$type: proc byte;
+    dcl typ byte;
+    typ=token.type;
+    if typ=pseudo then return 3;
+    if typ=ident and nextch=':' then return 2;
+    if (typ=ident) or (typ=operator) then$do
+      if findcodemacro(acclen,.accum(0),.codemacroptr) then$do
+        call saveaccum;
+        call scan;      /* skip found codemacro */
+        typ=token.value;
+        if (token.type=pseudo) and (typ=pequ) then return 5;
+        return 4;
+      end$if;
+    end$if;
+    if typ <> ident then return 0;  /* error */
+    return 1;
+  end first$item$type;
+
+  if accum(0) <> cr then$do    /* skip blank lines */
+    do case first$item$type;
+      do;                       /* error,skip rest of line */
+      call errmsg(first$item);   /* error handler */
+      call skip$rest$of$line;
+      end;
+      call ident$pseudo(true);  /* named pseudo instruction */
+      call lab$instruction;     /* label (followed by instruction) */
+      call no$ident$pseudo;     /* pseudo instruction */
+      call decodeinstr;         /* code instruction */
+      call identpseudo(false);  /* EQU with instruction parameter */
+    end$case;
+  end$if;
+end decodeline;
+
+end$module decodel;

@@ -1,0 +1,68 @@
+$title ('BRACKET EXPRESSION')
+brexpr:
+
+/*
+
+  modified  4/13/81  R. Silberstein
+
+*/
+
+do;
+$include (:f1:macro.lit)
+$include (:f1:brexpr.x86)
+$include (:f1:ermod.ext)
+$include (:f1:exglob.ext)
+$eject
+
+/* compute index expression within brackets */
+
+bracketexpr: proc(pt) byte public;
+  dcl pt address,oper based pt operandstruc,
+     (firsttype,firstreg,lasttype,lastreg) byte,
+     baseregi lit '0',indexregi lit'1';
+
+  regtyp: proc(pt1,pt2) byte;
+    dcl (pt1,pt2) address,(typ based pt1,regi based pt2) byte;
+    if (token.type=reg) and (token.descr=wrd) then$do
+      typ=baseregi;
+      regi=token.value;
+      if (regi=rbp) or (regi=rbx) then return true;
+      typ=indexregi;
+      if (regi=rsi) or (regi=rdi) then return true;
+    end$if;
+    return false;
+  end regtyp;
+
+  setoperflags: proc (pt1,pt2);
+    dcl (pt1,pt2) address,(typ based pt1,regi based pt2) byte;
+    if typ=indexregi then$do
+      oper.sflag=oper.sflag or iregbit;
+      IF REGI = RDI THEN OPER.BASEINDEX = OPER.BASEINDEX OR INDEXREGBIT;
+    else$do
+      oper.sflag=oper.sflag or bregbit;
+      IF REGI = RBP THEN OPER.BASEINDEX = OPER.BASEINDEX OR BASEREGBIT;
+    end$if;
+  end setoperflags;
+
+  if not regtyp(.firsttype,.firstreg) then return false;
+  call setoperflags(.firsttype,.firstreg);
+  call scan;
+  if specialtoken('+') then$do
+    call scan;
+    if not regtyp(.lasttype,.lastreg) then return false;
+    if firsttype=lasttype then return false;
+    call setoperflags(.lasttype,.lastreg);
+    call scan;
+  end$if;
+  if not specialtoken(rightbracket) then return false;
+  call scan;
+  if (oper.sflag and segmbit) = 0 then$do
+    if oper.stype=number then$do
+      oper.baseindex=oper.baseindex or nooverridebit;
+    end$if;
+  end$if;
+  oper.stype=variable;
+  return true;
+end bracketexpr;
+
+end$module brexpr;

@@ -1,0 +1,45 @@
+$nolist
+
+/*
+
+  modified  3/28/81  R. Silberstein
+
+*/
+
+dcl
+pass            byte external,   /* current pass no, 1,2,3 */
+
+        /* address counters */
+
+cip             addr external,   /* current instruction pointer */
+csegtype        byte external,   /* current segment type, code,data,
+                                  stack or extra data */
+
+        /* print output parameters */
+
+print$on        byte external,   /* on/off flag */
+printswitchoff  byte external,   /* set/reset by NOLIST/LIST */
+IFLIST          BYTE EXTERNAL,   /* SET/RESET BY IFLIST/NOIFLIST */
+maxcol          byte external,   /* pagewidth */
+printdevice     byte external,   /* printfile device */
+simform         byte external,   /* true if formfeed simulation */
+
+        /* io error status */
+
+errors          addr external,       /* counts no of errors */
+eofset          byte external,    /* true if end-of-file found */
+
+      /* Mischellaneous variables: */
+
+errorprinted    byte external,    /* true if an error is printed */
+fullsymbtab     byte external,    /* full if symboltable is full */
+include$on      byte external,    /* true if INCLUDEfile input */
+IFLEVEL         BYTE EXTERNAL,    /* IF-ENDIF NESTING LEVEL */
+help(5)         byte    external, /* ascii number scratch area */
+i               byte    external; /* scratch variable */
+
+globalinit: procedure external;  /* initiate some globals */
+end globalinit;
+
+
+$list

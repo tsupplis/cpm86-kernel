@@ -1,0 +1,78 @@
+$title ('INSTRUCTION MNEMONICS MODULE - PART 3')
+mnem3:
+do;
+
+/*
+
+  modified  6/16/81  R. Silberstein
+
+*/
+
+/***************** INSTRUCTION MNEMONICS *****************/
+/*
+
+        This is all the instruction mnemonics for
+        the assembler. The mnemonics are grouped
+        according to the 6-bit hash value of the
+        mnemonics - values range from 20H to 2FH.
+
+        For each instruction, there is a pointer to
+        its codemacro definition.
+*/
+
+$include (:f1:mnem.lit)
+$include (:f1:cmlink.ext)
+
+    /********* MNEMONICS TABLE ********/
+
+declare
+
+/*
+                                            * HASH VALUE (HEX)  *
+                                            ---------------------
+*/
+isal    opcod3        data (0,3,.sal4,'SAL'),       /* 20 */
+STOSW   OPCOD5        DATA (.ISAL,5,.STOSW1,'STOSW'),
+cmp     opcod3 public data (.STOSW,3,.cmp11,'CMP'),
+rcl     opcod3        data (0,3,.rcl4,'RCL'),       /* 21 */
+ior     opcod2 public data (.rcl,2,.or10,'OR'),
+loopnz  opcod6        data (0,6,.loopne1,'LOOPNZ'), /* 22 */
+sahf    opcod4        data (.loopnz,4,.sahf1,'SAHF'),
+callf   opcod5 public data (.sahf,5,.callf2,'CALLF'),
+lds     opcod3        data (0,3,.lds1,'LDS'),       /* 23 */
+div     opcod3 public data (.lds,3,.div2,'DIV'),
+jnge    opcod4        data (0,4,.jl1,'JNGE'),       /* 24 */
+jnl     opcod3        data (.jnge,3,.jge1,'JNL'),
+jz      opcod2        data (.jnl,2,.je1,'JZ'),
+les     opcod3 public data (.jz,3,.les1,'LES'),
+                                                    /* 25 */
+sar     opcod3 public data (0,3,.sar4,'SAR'),       /* 26 */
+jno     opcod3        data (0,3,.jno1,'JNO'),       /* 27 */
+rcr     opcod3        data (.jno,3,.rcr4,'RCR'),
+rep     opcod3        data (.rcr,3,.rep1,'REP'),
+ishl    opcod3        data (.rep,3,.sal4,'SHL'),
+jmp     opcod3 public data (.ishl,3,.jmp2,'JMP'),
+jnp     opcod3        data (0,3,.jnp1,'JNP'),       /* 28 */
+hlt     opcod3 public data (.jnp,3,.hlt1,'HLT'),
+jnle    opcod4        data (0,4,.jg1,'JNLE'),       /* 29 */
+jpo     opcod3        data (.jnle,3,.jnp1,'JPO'),
+lock    opcod4 public data (.jpo,4,.lock1,'LOCK'),
+scas    opcod4        data (0,4,.scas2,'SCAS'),     /* 2a */
+stc     opcod3        data (.scas,3,.stc1,'STC'),
+sub     opcod3        data (.stc,3,.sub11,'SUB'),
+xchg    opcod4 public data (.sub,4,.xchg6,'XCHG'),
+jns     opcod3        data (0,3,.jns1,'JNS'),       /* 2b */
+std     opcod3        data (.jns,3,.std1,'STD'),
+int     opcod3        data (.std,3,.int2,'INT'),
+ret     opcod3 public data (.int,3,.ret3,'RET'),
+repe    opcod4        data (0,4,.repe1,'REPE'),     /* 2c */
+SCASB   OPCOD5        DATA (.REPE,5,.SCASB1,'SCASB'),
+idiv    opcod4 public data (.SCASB,4,.idiv2,'IDIV'),
+nop     opcod3        data (0,3,.nop1,'NOP'),       /* 2d */
+rol     opcod3        data (.nop,3,.rol4,'ROL'),
+ishr    opcod3        data (.rol,3,.shr4,'SHR'),
+jmpf    opcod4 public data (.ishr,4,.jmpf2,'JMPF'),
+mul     opcod3 public data (0,3,.mul2,'MUL'),       /* 2e */
+pop     opcod3 public data (0,3,.pop4,'POP');       /* 2f */
+
+end mnem3;

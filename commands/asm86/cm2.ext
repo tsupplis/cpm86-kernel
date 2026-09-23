@@ -1,0 +1,46 @@
+$nolist
+
+/*    D E C L A R A T I O N   F O R   "C O D E M A C R O"   P A R T
+
+      Extended version of ASM86 */
+
+dcl      cm$error          byte          external,
+         global$cm$error   byte          external,
+         cm$list$overflow  byte          external,
+         cmpt              address       external;
+
+
+/* level 2 in the syntax-tree of codemacro building */
+
+/* Procedure to initialize temporary storage and pointers
+   conserning the building of codemacro */
+
+init$cm$rout: PROC external;
+end$proc init$cm$rout;
+
+name$rout: PROC byte external;
+end$proc name$rout;
+
+formal$list$rout: PROC external;
+end$proc formal$list$rout;
+
+terminate$cm$rout: PROC external;
+end$proc terminate$cm$rout;
+
+legal$parameter: PROC(lg,ptr,ptr2) byte external;
+  dcl lg byte,
+      (ptr,ptr2) address;
+end$proc legal$parameter;
+
+legal$seg$reg: PROC byte external;
+end$proc legal$seg$reg;
+
+put$b: PROC(b) external;
+  dcl b byte;
+end$proc put$b;
+
+put$w: PROC(w) external;
+  dcl w address;
+end$proc put$w;
+
+$list

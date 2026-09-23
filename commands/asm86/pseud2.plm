@@ -1,0 +1,290 @@
+$title ('PSEUDO INSTRUCTION MODULE-2')
+pseudom:
+do;
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  4/1/81   R. Silberstein
+  modified  4/9/81   R. Silberstein
+  modified  4/15/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+/*
+        This is the module to perform the decoding of
+        all legal pseudo instructions of the assembler.
+        There is one subroutine for each corresponding
+        pseudoinstruction.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:equals.lit)
+$include (:f1:ermod.lit)
+$include (:f1:files.ext)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$include (:f1:scan.ext)
+$include (:f1:print.ext)
+$include (:f1:expr.ext)
+$include (:f1:ermod.ext)
+$include (:f1:pseud2.x86)
+
+$eject
+/*************** COMMON SUBROUTINES *************/
+
+/* routine to test if rest of line is either a comment or empty -
+  if not, print error message - skip rest of line */
+
+test$emptyline: proc;
+  if not emptyline then call errmsg(end$of$line$err);
+  call skip$rest$of$line;
+end test$emptyline;
+
+/* perform handling for PAGEWIDTH- and PAGESIZE-routine */
+
+sizewidth: proc(p);
+  dcl oper operandstruc at (.operands(0)),p address,dest based p byte;
+  if pass=0 then$do
+    call skip$rest$of$line;   /* do nothing in pass 0 */
+  else$do
+    if expression(.oper) then$do
+      if oper.stype = number then$do
+        dest=oper.offset;
+        call test$emptyline;
+        return;
+      end$if;
+    end$if;
+    call errmsg(pseudooperr);
+    call skip$rest$of$line;
+  end$if;
+end sizewidth;
+
+$eject
+
+/***************** PSEUDO SUBROUTINES **************/
+
+IFrout: proc public;
+  DECLARE IFNESTMAX LIT '5';   /* MAX LEVEL OF IF NEXTING */
+  dcl oper operandstruc at (.operands(0)),bool byte;
+
+  IFerr: proc;
+    call errmsg(ifparerr);
+    call skip$rest$of$line;
+  end IFerr;
+
+  skip$until$ENDIF: proc;
+    dcl pseudotype byte at (.token.value);
+    DECLARE LOCIFLEVEL BYTE;
+    DECLARE TEMP BYTE;
+/*    LOCIFLEVEL = IFLEVEL + 1;  */
+    LOCIFLEVEL = 1;	/* REPLACES ABOVE LINE SEE GLP(O.S.) */
+    IF PRINTON AND NOT IFLIST THEN$DO
+      CALL PRINTSOURCELINE;
+      PRINTON = FALSE;
+      TEMP = TRUE;
+    ELSE$DO
+      TEMP = FALSE;
+    END$IF;
+    do while not eofset;  /* (forever) */
+      call scan;
+      IF TOKEN.TYPE = PSEUDO THEN$DO
+        IF PSEUDOTYPE = PENDIF THEN$DO
+          LOCIFLEVEL = LOCIFLEVEL - 1;
+          IF LOCIFLEVEL = 0 THEN$DO
+            CALL SCAN;
+            CALL TESTEMPTYLINE;
+            IF TEMP THEN PRINTON = TRUE;
+            RETURN;
+          END$IF;
+        ELSE$DO
+          IF PSEUDOTYPE = PIF THEN$DO
+            LOCIFLEVEL = LOCIFLEVEL + 1;
+          END$IF;
+        END$IF;
+      END$IF;
+      call skip$rest$of$line;
+    end$while;
+  end skip$until$ENDIF;
+
+  IF IFLEVEL = IFNESTMAX THEN$DO
+    call errmsg(nestediferr);
+    call skip$rest$of$line;
+  else$do
+    if not noforwardexpr(.oper) then$do
+      call IFerr;
+    else$do
+      if oper.stype <> number then$do
+        call IFerr;
+      else$do
+        bool=oper.offset;
+        if bool <> 0 then$do
+          IFLEVEL = IFLEVEL + 1;
+          call test$emptyline;
+        else$do
+          call skip$rest$of$line;
+          call skip$until$ENDIF;
+        end$if;
+      end$if;
+    end$if;
+  end$if;
+end IFrout;
+
+ENDIFrout: proc public;
+  IF IFLEVEL > 0 THEN$DO
+    IFLEVEL = IFLEVEL - 1;
+    call test$emptyline;
+  else$do
+    call errmsg(missiferr);
+    call skip$rest$of$line;
+  end$if;
+end ENDIFrout;
+
+INCLUDErout: proc public;
+  dcl (disk,i,errflag) byte,filname(11) byte,filtype(3) byte at (.filname (8));
+
+  syntaxerr: proc;
+    call errmsg(filesynterr);
+    errflag=true;
+  end syntaxerr;
+
+  accum$not$alpha: proc byte;
+    i=0ffh;
+    do while (i:=i+1) < acclen;
+      if not alphanumeric(accum(i)) then return true;
+    end$while;
+    return false;
+  end accum$not$alpha;
+
+  if include$on then$do
+    call errmsg(nestedincludeerr);
+    call skip$rest$of$line;
+    return;
+  end$if;
+
+  errflag=false;
+  disk=include$default;  /* default disk is current one */
+  CALL FILL (SPACE, SIZE (FILNAME), .FILNAME);
+
+  if (acclen=1) and (nextch=':') and (letter(accum(0))) then$do
+
+    /* disk name found */
+    disk=accum(0)-'A';
+    call scan;          /* skip : */
+    call scan;          /* get filename */
+  end$if;
+
+  /* test syntax of filename */
+  if (acclen > 8) or accum$not$alpha then$do
+    call syntaxerr;      /* illegal filename */
+  else$do
+    call copy(acclen,.accum(0),.filname); /* pick up filename */
+    call scan;                            /* skip filename */
+
+    /* test if filetype - if so, pick it up */
+    if specialtoken('.') then$do
+      call scan;           /* skip . */
+      if (acclen > 3) or accum$not$alpha then$do
+        call syntaxerr;
+      else$do
+        call copy(acclen,.accum(0),.filtype(0));
+        call scan;
+      end$if;
+    ELSE$DO
+      CALL COPY (3, .('A86'), .FILTYPE);   /* DEFAULT FILE TYPE */
+    end$if;
+  end$if;
+
+  if errflag then$do
+    call skip$rest$of$line;
+  else$do
+    /* try to open include file */
+    call i$file$setup(disk,.filname,.filtype);
+    CALL OPEN$INCLUDE;
+    call test$emptyline;
+    include$on=true;
+  end$if;
+end INCLUDErout;
+
+ENDrout: proc public;
+  call test$emptyline;
+  eofset=true;
+end ENDrout;
+
+PAGESIZErout: proc public;
+  call sizewidth(.pagesize);
+end PAGESIZErout;
+
+PAGEWIDTHrout: proc public;
+  call sizewidth(.maxcol);
+end PAGEWIDTHrout;
+
+TITLErout: proc public;
+  do case pass;
+    do;          /* pass 0 */
+    if token.type=string then$do
+      call fill(0,length(title),.title(0));
+      if acclen > length(title) then acclen=length(title);
+      call copy(acclen,.accum(0),.title(0));
+    end$if;
+    call skip$rest$of$line;
+    end;
+    do;          /* do nothing in pass 1 */
+    call skip$rest$of$line;
+    end;
+    do;          /* pass 2 */
+    if token.type=string then$do
+      call scan;
+      call test$emptyline;
+    else$do
+      call errmsg(pseudooperr);
+      call skip$rest$of$line;
+    end$if;
+    end;
+  end$case;
+end TITLErout;
+
+EJECTrout: proc public;
+  if print$on then call printnewpage;
+  call test$emptyline;
+end EJECTrout;
+
+SIMFORMrout: proc public;
+  simform=true;
+  call test$emptyline;
+end SIMFORMrout;
+
+LISTrout: proc public;
+  call test$emptyline;
+  if printswitchoff then$do
+    printswitchoff=false;
+    print$on=true;
+    sourceptr=0;
+  end$if;
+end LISTrout;
+
+NOLISTrout: proc public;
+  if print$on then$do
+    call test$emptyline;
+    call printsourceline;
+    printswitchoff=true;
+    print$on=false;
+  else$do
+    call test$emptyline;
+  end$if;
+end NOLISTrout;
+
+IFLISTROUT: PROC PUBLIC;
+  CALL TESTEMPTYLINE;
+  IFLIST = TRUE;
+END IFLISTROUT;
+
+NOIFLISTROUT: PROC PUBLIC;
+  CALL TESTEMPTYLINE;
+  IFLIST = FALSE;
+END NOIFLISTROUT;
+
+end$module pseudom;

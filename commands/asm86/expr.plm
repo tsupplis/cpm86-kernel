@@ -1,0 +1,515 @@
+$title ('EXPRESSION MODULE')
+expres:
+do;
+
+/*
+
+  modified  4/8/81   R. Silberstein
+  modified  4/24/81  R. Silberstein
+  modified  8/19/81  R. Silberstein
+
+*/
+
+/*
+        This is the module to evaluate expressions and
+        instruction operands. The entry subroutines are:
+
+                EXPRESSION (resultfield) byte
+                OPERAND                  byte
+
+         The expression subroutine evaluates a numeric or
+         memory expression. The "operand" routine evalates
+         a single instruction operand. Both routines return
+         FALSE if an error is found,otherwise true.
+*/
+$include (:f1:macro.lit)
+$include (:f1:expr.x86)
+$include (:f1:ermod.ext)
+$include (:f1:exglob.ext)
+$INCLUDE (:F1:SUBR2.EXT)
+$eject
+/************** global variables: ************/
+
+dcl
+maxlev       lit '5', /* max no of nested parenthesis */
+parlevel     byte,    /* current no of parenthesis level */
+stck(600)    byte,    /* local stack within module */
+savestack    addr,    /* save of initial entry stack */
+expresserr   byte,    /* error flag */
+noforward    byte,    /* true if undefined symbols to be neglected */
+bracketlegal byte,    /* true if bracket expression is legal */
+udefflag     byte;    /* true if an udefined element found */
+$eject
+$include (:f1:bnf.tex)
+$eject
+/************  michellaneous subroutines: ***********/
+
+exprexit: proc (dummy);
+  dcl dummy byte;
+  stackptr=savestack;
+end exprexit;
+
+errorexit: proc;      /* return if wrong syntax */
+  dcl dummy byte at (.udefflag);
+  expresserr=false;
+  call exprexit(dummy);
+end errorexit;
+
+clearoperand: proc(p);
+  dcl p address,oper based p operandstruc;
+  CALL FILL (0, .OPER.BASEINDEX - .OPER + 1, P);
+  OPER.BASEINDEX = NOOVERRIDEBIT;
+end clearoperand;
+
+/* routine to test if current token is member of a given
+   set of special characters.
+   Entry parameters: base   = exitvalue if token is 1. member of set
+                     numbel = no of elements in set
+                     pt     = pointer to list of elements
+   Exit value:       routine= 0ffh if token not member of list
+                     routine= base+i if token is element i,
+                                        token is skipped */
+
+specmember: proc (base,numbel,pt) byte;
+  dcl (base,numbel,i) byte,pt address,list based pt (1) byte;
+  i=0ffh;
+  do while (i:=i+1) < numbel;
+    if specialtoken(list(i)) then$do call scan; return base+i; end$if;
+  end$while;
+  return 0ffh;
+end specmember;
+
+/* Routine to test if current token is member of a given set of
+   operators.
+   Entry/exit : see "specmember" header */
+
+opmember: proc(base,numbel,pt) byte;
+  dcl (base,numbel,i,byteval) byte,pt address,list based pt (1) byte;
+  if token.type = operator then$do
+    i=0ffh;
+    do while (i:=i+1) < numbel;
+      byteval=token.value;
+      if byteval=list(i) then$do call scan; return base+i; end$if;
+    end$while;
+  end$if;
+  return 0ffh;
+end opmember;
+
+/* test if both operands are numbers, if not, error */
+
+numbtest: proc (ptl,ptr);
+  dcl (ptl,ptr) address,(left based ptl,rigth based ptr) operandstruc;
+  if (left.stype <> number) or (rigth.stype <> number) then
+    call errorexit;
+end numbtest;
+
+/* find resulting symbol type as result of an addition or a
+   subtraction, test if illegal types */
+typefind: proc (ptl,ptr);
+  dcl (ptl,ptr) address,stype byte,
+      (left based ptl,rigth based ptr) operandstruc;
+  dcl err lit '07fh',
+      crosstab(9) byte data(number,variable,lab,variable,err,err,
+                            lab,err,err);
+  typeno: proc(typ) byte;
+    dcl typ byte;
+    if typ=number then return 0;
+    if typ=variable then return 1;
+    if typ=lab then return 2;
+    call errorexit;   /* illegal member of expression */
+  end typeno;
+
+  stype=crosstab(typeno(left.stype)*3+typeno(rigth.stype));
+  if stype=err then call errorexit;
+  left.length=left.length+rigth.length;
+  left.stype=stype;
+end typefind;
+
+/* take care of segment specification in front of variables
+   syntax:  <over>: variable, <over>=ES/SS/DS/CS          */
+segover: proc(pt) byte;
+  dcl pt address,segreg based pt byte;
+  if (token.type=reg) and (token.descr=dwrd) then$do
+    if nextch=':' then$do
+      segreg=token.value;
+      segreg=(shl(segreg,segtypecount) and segtypebit) or segmbit;
+      call scan;   /* skip segment register */
+      call scan;   /* skip : */
+      return 0;
+    end$if;
+  end$if;
+  return 0ffh;
+end segover;
+
+/*  create a number operator  */
+createnumber: proc(p,n);
+  dcl p address,n addr,oper based p operandstruc;
+  call clearoperand(.oper);
+  oper.stype=number;
+  oper.offset=n;
+end createnumber;
+
+/* get current identificator, perform symboltable lookup
+   set undefined-symbol-flag if symbol not defined,
+   treat undefined symbols as numbers              */
+
+finditem: proc (pt);
+  dcl pt address,left based pt operandstruc,symbptr address,i byte;
+  if token.type <> ident then$do
+    call clearoperand(.left);
+    left.stype=token.type;
+    left.sflag=token.descr;
+    left.offset=token.value;
+  else$do
+    if findsymbol(acclen,.accum(0),.symbptr) then$do
+      call getattributes(symbptr,.left);
+      i=left.stype;
+      if (i=neglected) or (i=doubledefined) or (i=udefsymb) then$do
+        udefflag=true;
+        left.stype=number;
+        expresserr=false;
+        call errmsg(udefsymbol);
+      end$if;
+    else$do
+
+      /* symbol undefined - test if it is to be "neglected" */
+      expresserr=false;
+      if noforward then$do
+        if not newsymbol(acclen,.accum,.symbptr) then$do
+          call errorexit;
+        end$if;
+        left.stype=neglected;
+        call enterattributes(symbptr,.left);
+      end$if;
+
+      call errmsg(udefsymbol);
+      udefflag=true;
+    end$if;
+  end$if;
+  call scan;
+end finditem;
+
+/*  recognize the different symboltypes for the II (identicator)
+    subroutine  */
+symtyp: proc(pt) byte;
+  dcl pt address, left based pt operandstruc,i byte;
+  if specialtoken('$') then return 0;
+  if specialtoken('.') then return 1;
+  if token.type=string then$do
+    if (acclen > 0) and (acclen < 3 ) then return 2;
+    return 4;      /* error */
+  end$if;
+  call finditem(.left);
+  i=left.stype;
+  if (i=pseudo) or (i=operator) or (i=spec) then return 4; /* error */
+  return 3;
+end symtyp;
+$eject
+
+/********** subroutines for each "NON-TERMINAL" **********/
+/**********         in "BNF" syntax             **********/
+
+II: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,
+      doublebyt addr at (.accum(0)),saveb byte;
+  do case symtyp(.left);
+
+    do;       /* $ */
+    left.stype=lab;
+    left.sflag=wrd;
+    left.offset=cip;
+    if csegspec then$do  /* pick up current segment specification */
+     left.sflag=shl(csegtype,segtypecount) or segmbit or wrd;
+     left.segment=csegvalue;
+    end$if;
+    call scan;     /* skip $ */
+    end;
+
+    do;       /* . number */
+    call scan;   /* skip . */
+    call finditem(.left);
+    if left.stype <> number then call errorexit;
+    left.stype=variable;
+    left.segment=curdseg;
+    left.sflag=shl(rds,segtypecount) and segtypebit;
+    if dspec then left.sflag=left.sflag or segmbit;
+    end;
+
+    do;       /* string */
+    if acclen=1 then$do
+      call createnumber(.left,accum(0));
+    else$do
+      saveb=accum(0);
+      accum(0)=accum(1);
+      accum(1)=saveb;
+      call createnumber(.left,doublebyt);
+    end$if;
+    call scan;   /* skip string */
+    end;
+
+    do; end;   /* number,label,variable,register */
+    call errorexit;
+  end$case;
+end II;
+
+BB: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc;
+  if specialtoken('(') then$do
+    if (parlevel:=parlevel+1) > maxlev-1 then call errorexit;
+    call scan;
+    call EE(.left);
+    if not specialtoken(')') then call errorexit;
+    parlevel=parlevel-1;
+    call scan;
+    return;
+  end$if;
+  if specialtoken(leftbracket) then$do
+    if not bracketlegal then call errorexit;
+    bracketlegal=false;
+    call scan;   /* skip leftbracket */
+    call clearoperand(.left);
+    left.stype=number;
+    if not bracketexpr(.left) then call errorexit;
+    return;
+  end$if;
+  call II(.left);
+end BB;
+
+FF: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,rigth operandstruc,
+      opertyp byte,val addr;
+  if (opertyp:=opmember(0,5,.(oseg,ooffset,otype,olength,olast)))
+                                                    <> 0ffh then$do
+    call BB(.left);
+    do case opertyp;
+
+      do;    /* SEG */
+      if (left.sflag and segmbit) = 0 then call errorexit;
+      call createnumber(.left,left.segment);
+      end;
+
+      do;    /* OFFSET */
+      call createnumber(.left,left.offset);
+      end;
+
+      do;      /* TYPE */
+      call createnumber(.left,left.sflag and typebit);
+      end;
+
+      do;      /* LENGTH */
+      call createnumber(.left,left.length);
+      end;
+
+      do;      /* LAST */
+      if (val:=left.length) = 0 then val=1;
+      call createnumber(.left,val-1);
+      end;
+
+    end$case;
+  else$do
+    call BB(.left);
+    do while opmember(0,1,.(optr)) <> 0ffh;
+      call BB(.rigth);
+      left.stype=rigth.stype;
+      left.segment=rigth.segment;
+      left.offset=rigth.offset;
+      left.baseindex=rigth.baseindex;
+      left.sflag=(left.sflag and typebit) or (rigth.sflag and
+                                              (not typebit));
+    end$while;
+  end$if;
+end FF;
+
+SS: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,segreg byte;
+  if segover(.segreg) <> 0ffh then$do
+    call FF(.left);
+    left.sflag=(left.sflag and (not segtypebit)) or segreg;
+    left.baseindex=left.baseindex and (not nooverridebit);
+  else$do
+    call FF(.left);
+  end$if;
+end SS;
+
+MM: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,opertyp byte;
+  if (opertyp:=specmember(0,2,.('+-'))) <> 0ffh then$do
+    call MM(.left);
+    call numbtest(.left,.left);
+    if opertyp=1 then$do
+      left.offset=-left.offset;
+    end$if;
+  else$do
+    call SS(.left);
+  end$if;
+end MM;
+
+TT: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,rigth operandstruc,
+      opertyp byte,(leftval,rigthval) addr;
+  call MM(.left);
+  do while (opertyp:=specmember(0,2,.('*/')) and
+                     opmember(2,3,.(omod,oshl,oshr))) <> 0ffh;
+    call MM(.rigth);
+    call numbtest(.left,.rigth);
+    leftval=left.offset;
+    rigthval=rigth.offset;
+    do case opertyp;
+      leftval=leftval*rigthval;
+      leftval=leftval/rigthval;
+      leftval=leftval mod rigthval;
+      if rigthval>0 and rigthval<16 then leftval=shl(leftval,rigthval);
+      if rigthval>0 and rigthval<16 then leftval=shr(leftval,rigthval);
+    end$case;
+    left.offset=leftval;
+  end$while;
+end TT;
+
+PP: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,rigth operandstruc,
+      opertyp byte;
+  call TT(.left);
+  do while (opertyp:=specmember(0,2,.('+-'))) <> 0ffh;
+    call TT(.rigth);
+    call typefind(.left,.rigth);
+    if opertyp=0 then$do
+      left.offset=left.offset+rigth.offset;
+    else$do
+      left.offset=left.offset-rigth.offset;
+    end$if;
+  end$while;
+end PP;
+
+RR: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,rigth operandstruc,
+      opertyp byte,(leftval,rigthval) addr;
+  call PP(.left);
+  if (opertyp:=opmember(0,6,.(oeq,olt,ole,ogt,oge,one))) <> 0ffh
+                                                              then$do
+    call PP(.rigth);
+    call numbtest(.left,.rigth);
+    leftval=left.offset;
+    rigthval=rigth.offset;
+    do case opertyp;
+      leftval = (leftval = rigthval);
+      leftval = (leftval < rigthval);
+      leftval = (leftval <= rigthval);
+      leftval = (leftval > rigthval);
+      leftval = (leftval >= rigthval);
+      leftval = (leftval <> rigthval);
+    end$case;
+    IF LEFTVAL = 0FFH THEN LEFTVAL = 0FFFFH;
+    left.offset=leftval;
+  end$if;
+end RR;
+
+NN: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc;
+  if opmember(0,1,.(onot)) <> 0ffh then$do
+    call NN(.left);
+    call numbtest(.left,.left);
+    left.offset=not left.offset;
+  else$do
+    call RR(.left);
+  end$if;
+end NN;
+
+AA: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,rigth operandstruc;
+  call NN(.left);
+  do while opmember(0,1,.(oand)) <> 0ffh;
+    call NN(.rigth);
+    call numbtest(.left,.rigth);
+    left.offset=left.offset and rigth.offset;
+  end$while;
+end AA;
+
+EE: proc (pt) reentrant;
+  dcl pt address,left based pt operandstruc,right operandstruc,
+      opertype byte;
+
+  call AA(.left);
+  do while (opertype:=opmember(0,2,.(oor,oxor))) <> 0ffh;
+    call AA(.right);
+    call numbtest(.left,.right);
+    if opertype=0 then$do
+      left.offset=left.offset or right.offset;
+    else$do
+      left.offset=left.offset xor right.offset;
+    end$if;
+  end$while;
+end EE;
+
+$eject
+/*************** MAIN SUBROUTINES ***************/
+
+realexpress: proc(pt);
+  dcl pt address,oper based pt operandstruc,
+      dummy byte at(.udefflag);
+  savestack=stackptr;   /* use local stack for reentrant routines */
+  stackptr=.stck(length(stck));
+  call EE(.oper);
+  call exprexit(dummy);
+end realexpress;
+
+express: proc(pt) byte;
+  dcl pt address,oper based pt operandstruc;
+  expresserr=true;
+  udefflag=false;
+  parlevel=0;
+  call realexpress(.oper);
+  if udefflag then$do
+    oper.stype=number;
+    oper.sflag=byt;
+    oper.offset=0;
+  end$if;
+  return expresserr;
+end express;
+
+/* normal expression */
+
+expression: proc (pt) byte public;
+  dcl pt address;
+  noforward=false;
+  bracketlegal=false;
+  return express(pt);
+end expression;
+
+/* special expression - mark all undefined symbols as "neglected" */
+
+noforwardexpr: proc(pt) byte public;
+  dcl pt address;
+  noforward=true;
+  bracketlegal=false;
+  return express(pt);
+end noforwardexpr;
+
+OPERND: PROC BYTE;
+  dcl exitvalue byte,pt address,oper based pt operandstruc;
+
+  pt=.operands(nooper);
+  exitvalue=true;
+  bracketlegal=true;
+  exitvalue=express(pt);
+  if specialtoken(leftbracket) then$do
+    if bracketlegal then$do
+      call scan;
+      exitvalue=exitvalue and bracketexpr(pt);
+    else$do
+      exitvalue=false;
+    end$if;
+  end$if;
+  return exitvalue;
+END OPERND;
+
+OPERAND: PROC BYTE PUBLIC;
+  NOFORWARD = FALSE;
+  RETURN OPERND;
+END OPERAND;
+
+NOFORWARDOPER: PROC BYTE PUBLIC;
+  NOFORWARD = TRUE;
+  RETURN OPERND;
+END NOFORWARDOPER;
+
+end$module expres;

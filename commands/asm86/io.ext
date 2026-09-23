@@ -1,0 +1,112 @@
+$nolist
+
+/* Template for all BDOS calls */
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  9/14/81  R. Silberstein
+
+ */
+
+mon1: procedure(func,info) external;
+  declare func byte,
+          info address;
+end mon1;
+
+mon2: procedure(func,info) byte external;
+  declare func byte,
+          info address;
+end mon2;
+
+declare fcb(1) byte external;
+declare fcb16(1) byte external;
+declare tbuff(1) byte external;
+declare endbuf address external;
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   Externals          *
+   *                                    *
+   **************************************/
+
+
+  system$reset:
+    procedure external;
+    end system$reset;
+
+  read$console:
+    procedure byte external;
+    end read$console;
+
+  write$console:
+    procedure (char) external;
+      declare char byte;
+    end write$console;
+
+  write$list:
+    procedure (char) external;
+      declare char byte;
+    end write$list;
+
+  constat:
+    procedure byte external;
+  end constat;
+
+  VERSION: PROCEDURE ADDRESS EXTERNAL;
+  END VERSION;
+
+  select$disk:
+    procedure (disk$number) external;
+      declare disk$number byte;
+    end select$disk;
+
+  open$file:
+    procedure (fcb$address) byte external;
+      declare fcb$address address;
+    end open$file;
+
+  OPEN$RO$FILE: PROCEDURE (FCB$ADDRESS) BYTE EXTERNAL;
+    DECLARE FCB$ADDRESS ADDRESS;
+  END OPEN$RO$FILE;
+
+  close$file:
+    procedure (fcb$address) byte external;
+      declare fcb$address address;
+    end close$file;
+
+  delete$file:
+    procedure (fcb$address) external;
+      declare fcb$address address;
+    end delete$file;
+
+  read$record:
+    procedure (fcb$address) byte external;
+      declare fcb$address address;
+    end read$record;
+
+  write$record:
+    procedure (fcb$address) byte external;
+      declare fcb$address address;
+    end write$record;
+
+  create$file:
+    procedure (fcb$address) byte external;
+      declare fcb$address address;
+    end create$file;
+
+  interrogate$disk:
+    procedure byte external;
+    end interrogate$disk;
+
+  set$DMA$address:
+    procedure (DMA$address) external;
+      declare DMA$address address;
+    end set$DMA$address;
+  
+
+  crlf: procedure external;
+  end crlf;
+
+$list

@@ -1,0 +1,32 @@
+$nolist
+
+/*
+
+  modified  7/27/81  R. Silberstein
+
+*/
+
+printsinglebyte: proc(ch) external;
+  dcl ch byte;
+end printsinglebyte;
+
+printcrlf: proc external;
+end printcrlf;
+
+printnewpage: proc external;
+end printnewpage;
+
+printsourceline: proc external;
+end printsourceline;
+
+printinit: proc external;
+end printinit;
+
+printterminate: proc (USEFACT) external;
+  DECLARE USEFACT BYTE;
+end printterminate;
+
+eject: proc external;
+end eject;
+
+$list

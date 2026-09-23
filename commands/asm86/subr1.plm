@@ -1,0 +1,46 @@
+$title ('SUBROUTINE MODULE - PART 1')
+subr1:
+do;
+
+$include (:f1:macro.lit)
+
+/*
+
+  modified  3/26/81  R. Silberstein
+
+*/
+
+    /* compute if number is in range (-128,127) */
+    /* exit 1 if in range, 2 otherwise */
+
+typecalc: procedure(val) byte public;
+  declare val address,
+      lowb byte at (.val),
+      highb byte at (.val+1);
+  lowb=lowb and 80h;
+  if highb=0 then
+    if lowb=0 then return 1;
+  if highb=0ffh then
+    if lowb <> 0 then return 1;
+  return 2;
+end typecalc;
+
+/* test if number is a "word" (>255 and <-256) */
+wrdtest: procedure(n) byte public;
+  declare n address;
+  return ((n < 0ff00h) and (n > 0ffh));
+end wrdtest;
+
+copy: procedure(n,s,d) public;
+  declare n byte,
+      (s,d) address,
+      sch based s byte,
+      dch based d byte;
+  DO WHILE (N := N - 1) <> 0FFH;
+    DCH = SCH;
+    D = D + 1;
+    S = S + 1;
+  END;
+end copy;
+
+end subr1;

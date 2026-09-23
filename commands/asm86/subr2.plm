@@ -1,0 +1,147 @@
+$title ('SUBROUTINE MODULE - PART 2')
+subr2:
+do;
+$include(:f1:macro.lit)
+$INCLUDE (:F1:STRUC.LIT)
+$include(:f1:io.ext)
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+
+*/
+
+outtext: procedure (t) public;
+  dcl t addr,
+      ch based t byte;
+  do while ch <> 0;
+    call write$console(ch);
+    t=t+1;
+  end$while;
+end outtext;
+
+OUTFILENAME: PROCEDURE (PTR);
+  DECLARE PTR ADDRESS, X BASED PTR FILEOSTRUCTURE, I BYTE;
+  CALL WRITE$CONSOLE (X.DISK + 'A');
+  CALL WRITE$CONSOLE (':');
+  DO I = 1 TO 8;
+    IF (X.FCBBLOCK (I) AND 7FH) = SPACE THEN I = 8;
+    ELSE CALL WRITE$CONSOLE (X.FCBBLOCK (I) AND 7FH);
+  END;
+  CALL WRITE$CONSOLE ('.');
+  DO I = 9 TO 11;
+    CALL WRITE$CONSOLE (X.FCBBLOCK (I) AND 7FH);
+  END;
+  CALL SYSTEMRESET;
+END OUTFILENAME;
+
+FILEABORT: PROCEDURE (PTR, TEXTADR) PUBLIC;
+  DECLARE (PTR, TEXTADR) ADDRESS;
+  CALL OUTTEXT (TEXTADR);
+  CALL WRITE$CONSOLE (':');
+  CALL WRITE$CONSOLE (SPACE);
+  CALL OUTFILENAME (PTR);
+END FILEABORT;
+
+fill: procedure (ch,n,pt) public;
+  dcl (ch,n) byte,pt address,buffer based pt byte;
+  DO WHILE (N := N - 1) <> 0FFH;
+    buffer=ch;
+    pt = pt + 1;
+  end$while;
+end fill;
+
+digit: procedure(ch) byte public;
+  dcl ch byte;
+  IF CH < '0' THEN RETURN FALSE;
+  return (ch <= '9');
+end digit;
+
+letter: procedure(ch) byte public;
+  dcl ch byte;
+  IF CH < 'A' THEN RETURN FALSE;
+  return (ch <= 'Z');
+end letter;
+
+alphanumeric: proc(ch) byte public;
+  dcl ch byte;
+  if letter(ch) then return true;
+  return digit(ch);
+end alphanumeric;
+
+asciichar: proc (ch) byte public;
+  dcl ch byte;
+  if ch=cr then return true;
+  IF CH = LF THEN RETURN TRUE;
+  IF CH < SPACE THEN RETURN FALSE;
+  return (ch <= 7eh);
+end asciichar;
+
+
+upper: procedure(ch) byte public;
+  dcl ch byte;
+  if ch >= 61h THEN IF ch <= 7eh then ch=ch-20h;
+  return ch;
+end upper;
+
+equal: procedure(n,s,d) byte public;
+  dcl n byte,
+      (s,d) address,
+      sch based s byte,
+      dch based d byte;
+  DO WHILE (N := N - 1) <> 0FFH;
+    IF SCH <> DCH THEN RETURN FALSE;
+    S = S + 1;
+    D = D + 1;
+  END$WHILE;
+  return true;
+end equal;
+
+
+hex1out: procedure(n,d) public;
+  dcl n byte,d addr,
+      dest based d (1) byte;
+  hexdigit: procedure(digit) byte;
+    dcl digit byte;
+    digit=digit+'0';
+    if digit > '9' then digit=digit+7;
+    return digit;
+  end hexdigit;
+
+  dest(0)=hexdigit(SHR (N, 4));
+  dest(1)=hexdigit(n and 0fh);
+end hex1out;
+
+hex2out: proc (n,d) public;
+  dcl n addr,
+      d addr;
+  call hex1out(HIGH (N),d);
+  call hex1out(LOW (N),d+2);
+end hex2out;
+
+
+decout: proc (n,d) public;
+  dcl
+  n       addr,
+  d       address,
+  dest based d (1) byte,
+  (i,space$or$zero,digit) byte,
+  divis(5) addr data (10000,1000,100,10,1);
+
+  space$or$zero=space;
+  do i=0 to 4;
+    if i=4 then space$or$zero='0';
+    digit=n/divis(i);
+    n=n mod divis(i);
+    if digit=0 then$do
+      dest(i)=space$or$zero;
+    else$do
+      dest(i)=digit+'0';
+      space$or$zero='0';
+    end$if;
+  end$do;
+end decout;
+
+end subr2;

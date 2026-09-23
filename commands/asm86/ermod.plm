@@ -1,0 +1,147 @@
+$title ('ERROR MESSAGE MODULE')
+errorm:
+do;
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  4/7/81   R. Silberstein
+  modified  4/24/81  R. Silberstein
+
+*/
+
+/*
+        This is the module to perform error message
+        printout to the print file. The interface from
+        other modules goes through the subroutine
+
+                ERRMSG ( errornumber )
+
+        This routine also increments the global variable
+        "ERRORS" which contains the accumulated number
+        of errors throughout the assembly.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:ermod.lit)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$include (:f1:print.ext)
+$include (:f1:global.ext)
+
+
+/*       Error messages :       */
+
+dcl
+nulltext(1) byte data (0),       /* dummy text */
+tex00(*)    byte data ('ILLEGAL FIRST ITEM',0),
+tex01(*)    byte data ('MISSING PSEUDO INSTRUCTION',0),
+tex02(*)    byte data ('ILLEGAL PSEUDO INSTRUCTION',0),
+tex03(*)    byte data ('DOUBLE DEFINED VARIABLE',0),
+tex04(*)    byte data ('DOUBLE DEFINED LABEL',0),
+tex05(*)    byte data ('UNDEFINED INSTRUCTION',0),
+tex06(*)    byte data ('GARBAGE AT END OF LINE - IGNORED',0),
+tex07(*)    byte data ('OPERAND(S) MISMATCH INSTRUCTION',0),
+tex08(*)    byte data ('ILLEGAL INSTRUCTION OPERANDS',0),
+tex09(*)     byte data ('MISSING INSTRUCTION',0),
+tex10(*)    byte data ('UNDEFINED ELEMENT OF EXPRESSION',0),
+tex11(*)    byte data ('ILLEGAL PSEUDO OPERAND',0),
+tex12(*)    byte data ('NESTED "IF" ILLEGAL - "IF" IGNORED',0),
+tex13(*)    byte data ('ILLEGAL "IF" OPERAND - "IF" IGNORED',0),
+tex14(*)    byte data ('NO MATCHING "IF" FOR "ENDIF"',0),
+tex15(*)    byte data ('SYMBOL ILLEGALLY FORWARD REFERENCED - ',
+                       'NEGLECTED',0),
+tex16(*)    byte data ('DOUBLE DEFINED SYMBOL - ',
+                       'TREATED AS UNDEFINED',0),
+tex17(*)    byte data ('INSTRUCTION NOT IN CODE SEGMENT',0),
+tex18(*)    byte data ('FILE NAME SYNTAX ERROR',0),
+tex19(*)    byte data ('NESTED INCLUDE NOT ALLOWED',0),
+tex20(*)    byte data ('ILLEGAL EXPRESSION ELEMENT',0),
+tex21(*)    byte data ('MISSING TYPE INFORMATION IN OPERAND(S)',0),
+tex22(*)    byte data ('LABEL OUT OF RANGE',0),
+tex23(*)    byte data ('MISSING SEGMENT INFORMATION IN OPERAND',0),
+tex24(*)    byte data ('ERROR IN CODEMACROBUILDING',0),
+
+/*       Error-message pointer table:       */
+
+texttab(*) address data (.tex00,.tex01,.tex02,.tex03,.tex04,
+                         .tex05,.tex06,.tex07,.tex08,
+                         .tex09,.tex10,.tex11,.tex12,.tex13,
+                         .tex14,.tex15,.tex16,.tex17,.tex18,
+                         .tex19,.tex20,.tex21,.tex22,.tex23,
+                         .tex24,.nulltext);
+
+/*       Additional text strings:       */
+
+dcl
+errnotext(*)   byte data ('** ERROR NO:',0),
+neartext(*)    byte data (' **  NEAR: "',0),
+spacetext(*)   byte data ('   ',0);
+
+/*       Table of defined error numbers:      */
+
+dcl
+errtab (*) byte data (firstitem,missingpseudo,
+                      illegalpseudo,doubledefvar,doubledeflab,
+                      illegalmacro,end$of$line$err,opmismatch,
+                      illioper,missinstr,udefsymbol,
+                      pseudooperr,nestediferr,ifparerr,
+                      missiferr,neglecterr,doubledefsymb,
+                      instrerr,filesynterr,
+                      nestedincludeerr,illexprelem,misstypeinfo,
+                      laboutofrange,misssegminfo,codemacroerr);
+
+/*          Subroutines:        */
+
+printtext: proc(txt);
+  dcl txt address,ch based txt (1) byte,i byte;
+  i=0ffh;
+  do while ch(i:=i+1) <> 0;
+    call printsinglebyte(ch(i));
+  end$while;
+end printtext;
+
+locerrmsg: proc(erno);
+  dcl t address,help(5) byte,(helpstop,erno,i) byte;
+
+  errortype: proc byte;
+    i=0ffh;
+    do while (i:=i+1) < length(errtab);
+      if erno = errtab(i) then return i;
+    end$while;
+    return length(errtab);
+  end errortype;
+
+  helpstop,accum(acclen)=0;
+  call decout(erno,.help(0));
+
+  t=texttab(errortype);    /* pick up correct error text */
+
+  call printtext(.errnotext); /* print error message line */
+  call printtext(.help(2));
+  if accum(0) <> cr then$do
+    call printtext(.neartext);
+    call printtext(.accum(0));  /* (print current token) */
+    CALL PRINTSINGLEBYTE ('"');
+  end$if;
+  call printtext(.spacetext);
+  call printtext(t);
+  call printcrlf;
+end locerrmsg;
+
+/*      Public routine:      */
+
+errmsg: proc(erno) public;
+  dcl erno byte;
+  if print$on OR PRINTSWITCHOFF then$do
+    if not errorprinted then$do
+      errorprinted=true;
+      call locerrmsg(erno);
+      errors=errors+1;
+    end$if;
+  end$if;
+end errmsg;
+
+end$module errorm;

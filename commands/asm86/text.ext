@@ -1,0 +1,32 @@
+$nolist
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  3/30/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/* Text strings: */
+
+dcl
+yes            byte external,
+no             byte external,
+initials(1)    byte external,
+pagetext(1)    byte external,
+endtext(1)     byte external,
+USEFACTOR (1)  BYTE EXTERNAL,
+asm86text(1)   byte external,
+parerrtext(1)  byte external,
+openerrtext(1) byte external,
+DISKREADERRTEXT (1) BYTE EXTERNAL,
+DISKWRITEERRTXT (1) BYTE EXTERNAL,
+MAKEERRTEXT (1) BYTE EXTERNAL,
+CLOSEERRTEXT (1) BYTE EXTERNAL,
+SYMBFULLERRTEXT (1) BYTE EXTERNAL,
+usbreaktext(1) byte external,
+pass0text  (1) byte external,
+pass1text  (1) byte external;
+
+$list

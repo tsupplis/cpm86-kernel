@@ -1,0 +1,343 @@
+$title ('codemacro module 2')
+cm2:
+do;
+
+/*
+
+  modified  3/26/81  R. Silberstein
+
+*/
+
+/*    This is the module to build new instructions
+      which is not present in the already existing
+      system. */
+
+$include (:f1:macro.lit)
+$include (:f1:equals.lit)
+$include (:f1:struc.lit)
+$include (:f1:cmacd.lit)
+$include (:f1:cm.lit)
+$include (:f1:symb.ext)
+$include (:f1:subr1.ext)
+$include (:f1:subr2.ext)
+$include (:f1:scan.ext)
+$include (:f1:files.ext)
+$include (:f1:exglob.ext)
+
+$eject
+
+/*    D E C L A R A T I O N   F O R   "C O D E M A C R O"   P A R T
+
+      Extended version of ASM86 */
+
+dcl      cm$name(80)       byte                      ,
+         codemacro$found   byte                      ,
+         cm$n$pt           address                   ,
+         cm$n$var          based       cm$n$pt   byte,
+         cm$n$lg           byte                      ,
+         par$name(80)      byte                      ,
+         pmpt              address                   ,
+         cm$pm$var         based       pmpt      byte,
+         cm$error          byte        public        ,
+         cm$body(100)      byte                      ,
+         cmpt              address     public        ,
+         cm$b$var          based       cmpt      byte,
+         cm$w$var          based       cmpt      addr,
+         cm$counter        addr                      ,
+         global$cm$error   byte        public        ,
+         cm$body$full      byte                      ,
+         ant$par           byte                      ,
+         cm$list$overflow  byte        public;
+
+$eject
+
+/*   VARIOUS SUBROUTINES */
+
+legal$parameter: PROC(lg,ptr,ptr2) byte public;
+  dcl (lg,i) byte,
+      (ptr,ptr2) address,
+       no based ptr2 byte;
+  i=0;
+  do no=0 to cm$body(2)-1;
+    if parname(i+lg) = 0 and
+    equal(lg,ptr,.par$name(i)) then return true;
+    do while par$name(i:=i+1) <> 0;
+    end$while;
+    i=i+1;
+  end;
+  return false;
+end$proc legal$parameter;
+
+legal$spec$letter: PROC(l) byte;
+  dcl (l,i) byte;
+  dcl table(8) byte data ('ACDEMRSX');
+  do i=0 to last(table);
+    if table(i) = l then return i;
+  end;
+  return i;
+end$proc legal$spec$letter;
+
+legal$mod$letter: PROC(l) byte;
+  dcl (l,i) byte;
+  dcl table(4) byte data ('BWDS');
+  do i=0 to last(table);
+    if table(i) = l and i < 3 then return i;
+    if table(i) = l and i = 3 then$do
+      if accum(2) = 'B' then return 3;
+    end$if;
+  end;
+  return i;
+end$proc legal$mod$letter;
+
+legal$register: PROC byte;
+  declare disp byte;
+  if token.type <> reg then return 0;
+  disp=0;
+  if token.descr=byt then disp=8;
+  if token.descr=dwrd then disp=16;
+  return token.value + disp + 1;
+end$proc legal$register;
+
+legal$seg$reg: PROC byte public;
+  if token.type <> reg then return 0;
+  if token.descr <> dwrd then return 0;
+  return token.value + 1;
+end$proc legal$seg$reg;
+
+put$b: PROC(b) public;
+  dcl b byte;
+  cm$counter=cm$counter+1;
+  if cm$counter > 99 then$do
+    cm$error=true;
+    cm$body$full=true;
+    return;
+  end$if;
+  cm$b$var=b;
+  cmpt=cmpt+1;
+end$proc put$b;
+
+put$w: PROC(w) public;
+  dcl w addr;
+  cm$counter=cm$counter+2;
+  if cm$counter > 99 then$do
+    cm$error=true;
+    cm$body$full=true;
+    return;
+  end$if;
+  cm$w$var=w;
+  cmpt=cmpt+2;
+end$proc put$w;
+
+update$cm$lists: PROC byte;
+  dcl listptr address,next based listptr address;
+  dcl ptr address;
+  ptr=.listptr;
+  if findcodemacro(cm$n$lg,.cm$name(0),ptr)
+  then$do
+    do while next <> 0;
+      listptr=next;
+    end$while;
+  else$do
+    if not new$cm$name(cm$n$lg,.cm$name(0),ptr)
+    then return false;
+  end$if;
+  next=freept;
+  if not new$cm$body(cm$counter,.cm$body(0))
+  then return false;
+  return true;
+end$proc update$cm$lists;
+
+$eject
+
+/* level 4 in the syntax-tree of coeemacro building */
+
+register$rout: PROC (l);
+  dcl l byte;
+  call put$b(l);
+end$proc register$rout;
+
+range$rout: PROC;
+
+  put$range: PROC(time);
+    dcl time byte;
+    if token.type = number then$do
+      if time = first then$do
+        cm$b$var=cm$b$var+numberrange;
+        cmpt=cmpt+1;
+      end$if;
+      if token.value > 0ffh then$do
+        cm$error=true; /* too large number */
+        return;
+      else$do
+        call put$b(token.value);
+      end$if;
+    else$do
+      if time = first then$do
+        cm$b$var=cm$b$var+registerrange;
+        cmpt=cmpt+1;
+      end$if;
+      do case legal$register;
+        do; /* error, expecting a register spec. */
+          cm$error=true;
+          return;
+        end;
+        call register$rout(rax);
+        call register$rout(rcx);
+        call register$rout(rdx);
+        call register$rout(rbx);
+        call register$rout(rsp);
+        call register$rout(rbp);
+        call register$rout(rsi);
+        call register$rout(rdi);
+        call register$rout(ral);
+        call register$rout(rcl);
+        call register$rout(rdl);
+        call register$rout(rbl);
+        call register$rout(rah);
+        call register$rout(rch);
+        call register$rout(rdh);
+        call register$rout(rbh);
+        call register$rout(res);
+        call register$rout(rcs);
+        call register$rout(rss);
+        call register$rout(rds);
+      end$case;
+    end$if;
+    call scan;
+  end$proc put$range;
+
+
+  s$range: PROC;
+    cmpt=cmpt-1;
+    cm$b$var=cm$b$var+singlerange;
+    call put$range(first);
+  end$proc s$range;
+
+
+  d$range: PROC;
+    cmpt=cmpt-1;
+    cm$b$var=cm$b$var+doublerange;
+    call put$range(first);
+    if accum(0) <> comma then$do
+      cm$error=true;
+      return;
+    end$if;
+    call scan;
+    call put$range(second);
+    if accum(0) <> rightpar then$do
+      cm$error=true;
+      return;
+    end$if;
+  end$proc d$range;
+
+/* mainpart of range routine */
+
+  call scan; /* skip left paranthesis */
+  if nextch = comma then call d$range;
+                    else call s$range;
+  call scan;
+end$proc range$rout;
+
+spec$letter$rout: PROC(l);
+  dcl l byte;
+  call put$b(l);
+end$proc spec$letter$rout;
+
+mod$letter$rout: PROC(l);
+  dcl l byte;
+  call put$b(l);
+end$proc mod$letter$rout;
+
+$eject
+
+/* level 3 in the syntax-tree of codemacro building */
+
+par$descr$rout: PROC;
+  call copy(acclen,.accum(0),.cm$pm$var);
+  pmpt=pmpt+acclen;
+  cm$pm$var=0; /* end of par.name */
+  pmpt=pmpt+1;
+  call scan;
+  if accum(0) <> colon then$do
+    /* error, expected colon in parameterdecl */
+    cm$error=true;
+  end$if;
+  call scan;
+  do case legal$spec$letter(accum(0));
+    call spec$letter$rout(speca);
+    call spec$letter$rout(specc);
+    call spec$letter$rout(specd);
+    call spec$letter$rout(spece);
+    call spec$letter$rout(specm);
+    call spec$letter$rout(specr);
+    call spec$letter$rout(specs);
+    call spec$letter$rout(specx);
+    do; /* error, expected specifier letter */
+      cm$error=true;
+      return;
+    end;
+  end$case;
+
+  do case legal$mod$letter(accum(1));
+    call mod$letter$rout(modb);
+    call mod$letter$rout(modw);
+    call mod$letter$rout(modd);
+    call mod$letter$rout(modsb);
+    call mod$letter$rout(nomod); /* no modletter */
+  end$case;
+  call scan;
+  if accum(0) = leftpar then call range$rout;
+  cm$body(2)=cm$body(2)+1;
+end$proc par$descr$rout;
+
+$eject
+
+/* level 2 in the syntax-tree of codemacro building */
+
+/* Procedure to initialize temporary storage and pointers
+   conserning the building of codemacro */
+init$cm$rout: PROC public;
+  cm$n$pt=.cm$name(0);
+  cmpt=.cm$body(0)+3; /* correcting for the head */
+  pmpt=.par$name(0);
+  CALL FILL (0, LENGTH (CM$NAME), .CM$NAME);
+  CALL FILL (0, LENGTH (CM$BODY), .CM$BODY);
+  CALL FILL (0, LENGTH (PAR$NAME), .PAR$NAME);
+  ant$par=0;
+  cm$counter=3;
+  cm$body$full=false;
+  cm$list$overflow=false;
+end$proc init$cm$rout;
+
+name$rout: PROC byte public;
+  if token.type <> ident then return false;
+  call copy(acclen,.accum(0),.cm$name(0));
+  cm$n$lg=acclen;
+  call scan;
+  return true;
+end$proc name$rout;
+
+formal$list$rout: PROC public;
+  do while token.type = ident;
+    call par$descr$rout;
+    if accum(0) <> ',' then return;  /* end of parameters */
+    call scan;
+  end$while;
+end$proc formal$list$rout;
+
+terminate$cm$rout: PROC public;
+  if global$cm$error then$do
+    /* error present in codemacrodef, */
+    /* no updating of codemacrolist   */
+    return;
+  end$if;
+  if not update$cm$lists
+  then$do
+    cm$error=true; /* overflow, no more vacant memory */
+    cm$list$overflow=true;
+    return;
+  end$if;
+end$proc terminate$cm$rout;
+
+
+end$module cm2;

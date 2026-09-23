@@ -1,0 +1,30 @@
+$nolist
+
+/*  Output hex-record types: */
+
+dcl
+eoftype      lit '01h',         /* Common to both hex formats */
+starttype    lit '03h',
+
+INTELdata    lit '00h',         /* INTEL hex format */
+INTELsegment lit '02h',
+
+DRcodedata   lit '81h',         /* Digital Research hex format */
+DRdatadata   lit '82h',
+DRstackdata  lit '83h',
+DRextradata  lit '84h',
+DRcodesegm   lit '85h',
+DRdatasegm   lit '86h',
+DRstacksegm  lit '87h',
+DRextrasegm  lit '88h',
+
+CSdata       lit '04h',         /* Data types used inside assembler */
+DSdata       lit '05h',
+SSdata       lit '06h',
+ESdata       lit '07h',
+CSvalue      lit '08h',
+DSvalue      lit '09h',
+SSvalue      lit '0ah',
+ESvalue      lit '0bh';
+
+$list

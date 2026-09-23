@@ -1,0 +1,43 @@
+$nolist
+
+/*
+
+  modified  4/24/81  R. Silberstein
+
+*/
+
+/*
+        This is all assembler error numbers.
+        For each error number there is a
+        corresponding error TEXT. The texts are
+        defined in the module ERMOD.PLM.
+*/
+
+dcl
+firstitem              lit '0',   /* error in first item */
+missingpseudo          lit '1',
+illegalpseudo          lit '2',
+doubledefvar           lit '3',   /* doubled defined errors: */
+doubledeflab           lit '4',
+illegalmacro           lit '5',   /* illegal instruction name */
+end$of$line$err        lit '6',   /* garabage at end of line */
+opmismatch             lit '7',   /* operands mismatch instruction */
+illioper               lit '8',   /* illegal instruction operand */
+missinstr              lit '9',   /* missing instruction */
+udefsymbol             lit '10',  /* undefined element of expression */
+pseudooperr            lit '11',  /* illegal pseudo operand */
+nestediferr            lit '12',  /* nested IF illegal - ignored */
+ifparerr               lit '13',  /* illegal IF operand - IF ignored */
+missiferr              lit '14',  /* no matching "IF" for "ENDIF" */
+neglecterr             lit '15',  /* neglected symbol */
+doubledefsymb          lit '16',  /* doubled defined symbol */
+instrerr               lit '17',  /* instruction not in code segm. */
+filesynterr            lit '18',  /* file name syntax error */
+nestedincludeerr       lit '19',  /* nested INCLUDE not legal */
+illexprelem            lit '20',  /* illegal expression element */
+misstypeinfo           lit '21',  /* missing type info in operands */
+laboutofrange          lit '22',  /* label out of range */
+misssegminfo           lit '23',  /* missing segment info in operand */
+codemacroerr           lit '24';  /* error in codemacrobuilding */
+
+$list

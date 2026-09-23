@@ -1,0 +1,16 @@
+$nolist
+
+typecalc: proc(val) byte external;
+  dcl val addr;
+end typecalc;
+
+wrdtest: proc(n) byte external;
+  dcl n addr;
+end wrdtest;
+
+copy: procedure(n,s,d) external;
+  dcl n byte,
+      (s,d) addr;
+end copy;
+
+$list

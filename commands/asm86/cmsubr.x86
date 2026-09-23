@@ -1,0 +1,74 @@
+$nolist
+
+/*
+
+  modified  4/13/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+        /* Error numbers: */
+
+dcl
+laboutofrange          lit '22',  /* label out of range */
+misssegminfo           lit '23';  /* missing segment info in operand */
+
+        /* Structures: */
+
+dcl
+
+symbolstruc      lit     'struc(
+ length       addr,
+ stype        byte,
+ sflag        byte,
+ segment      addr,
+ offset       addr,
+ baseindex    byte)',
+
+operandstruc     lit     'symbolstruc';
+
+
+/* define bits of SFLAG of structures above */
+
+dcl
+type$bit      lit '7h',  /* bit 0-2 */
+segtypebit    lit '18h', /* bit 3-4 */
+segmbit       lit '20h', /* bit 5 */
+iregbit       lit '40h', /* bit 6 */
+bregbit       lit '80h', /* bit 7 */
+
+         /* left-shift counters */
+typecount     lit '0',
+segtypecount  lit '3',
+segmcount     lit '5',
+iregcount     lit '6',
+bregcount     lit '7',
+
+/* define bits of BASEINDEX byte of structures above */
+
+indexregbit   lit '01h', /* bit 0 */
+baseregbit    lit '02h', /* bit 1 */
+nooverridebit lit '40h', /* bit 6 */
+
+         /* left shift counters */
+
+indexregcount lit '0',
+baseregcount  lit '1',
+noovercount   lit '6';
+
+        /*  Mischellaneous global variables: */
+
+dcl
+ABSADDR (4)     BYTE EXTERNAL,   /* ABSOLUTE ADDRESS FIELD */
+cip             addr external,   /* current instruction pointer */
+csegvalue       addr external,   /* current segment value */
+noerror         byte external,   /* errorflag in codemacro decoding */
+firstmacroptr   address external, /* pointer at first codemacro */
+macroptr        address external, /* current pointer within macros */
+fullsymbtab     byte external,    /* full if symboltable is full */
+nooper          byte    external, /* no of instruction operands */
+operands(4)     operandstruc      /* instruction operands,max 4 */
+                        external;
+
+$list
+

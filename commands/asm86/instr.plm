@@ -1,0 +1,161 @@
+$title ('INSTRUCTION MODULE')
+instruc:
+do;
+/*
+        This is the module to decode and produce code-
+        output of a single instruction, possibly preceded
+        by a number of PREFIX-instructions.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$include (:f1:cmacd.lit)
+$include (:f1:equals.lit)
+$include (:f1:ermod.lit)
+$include (:f1:subr1.ext)
+$include (:f1:expr.ext)
+$include (:f1:symb.ext)
+$include (:f1:scan.ext)
+$include (:f1:ermod.ext)
+$include (:f1:cmsubr.ext)
+$include (:f1:instr.x86)
+$eject
+dcl                   /* global variables */
+bytevar based macroptr byte,   /* byte within codemacro */
+comtab(12)         byte  data  /* legal codemacro commands */
+  (mdbn,mdbf,mdwn,mdwf,mddf,mrelb,mrelw,mmodrm1,mmodrm2,msegfix,
+   mnosegfix,mdbit);
+$eject
+
+
+/* generate instruction output code */
+makecode: proc byte;
+  if (noerror:=searchformatch) then$do
+    /* matching operands, comput code */
+    do while (bytevar <> mendm) and noerror;
+      do case commandtype(bytevar,length(comtab),.comtab);
+        call mDBNrout;
+        call mDBFrout;
+        call mDWNrout;
+        call mDWFrout;  /* typed during earthquake */
+        call mDDFrout;
+        call mRELBrout;
+        call mRELWrout;
+        call mMODRM1rout;
+        call mMODRM2rout;
+        call mSEGFIXrout;
+        call mNOSEGFIXrout;
+        call mDBITrout;
+        do; end;       /* dummy, should not happen */
+      end$case;
+    end$while;
+  end$if;
+  if noerror then call emit; else call emitdummies;
+  return noerror;
+end makecode;
+
+/* scan all PREFIX instructions */
+prefixscan: proc byte;
+                       /* compute address of first codemacro */
+  findmacroaddr: proc;
+    dcl macrop based codemacroptr address;
+    firstmacroptr=macrop;
+  end findmacroaddr;
+/* test if instruction is of PREFIX type */
+  prefixinstr: proc byte;
+    dcl ptr address,flag based ptr byte;
+    ptr=firstmacroptr+2;
+    return ((flag and prefix$on) <> 0);
+  end prefixinstr;
+
+  call findmacroaddr;  /* compute pointer to first macro */
+  do while prefixinstr;
+    if makecode then;   /* generate output code,always succed */
+    call clearcmindex;
+    if findcodemacro(acclen,.accum(0),.codemacroptr) then$do
+      call scan;
+      call findmacroaddr;
+    else$do
+      call errmsg(missinstr); /* missing instruction */
+      call skip$rest$of$line;
+      return false;
+    end$if;
+  end$while;
+  return true;
+end prefixscan;
+
+/* get all instruction operands */
+getoperands: proc byte;
+  dcl moreoperands byte,pt address,oper based pt operandstruc,
+      exitvalue byte;
+
+  exitvalue=true;
+  nooper=0;   /* clear no of operands */
+  moreoperands=not emptyline;
+  do while moreoperands;
+    moreoperands=false;
+    pt=.operands(nooper);
+    if not operand then$do
+      if oper.stype <> udefsymb then call errmsg(illioper);
+      exitvalue=false;
+      if skip$until(',') then moreoperands=true;
+    else$do
+      if specialtoken(',') then$do
+        call scan;  /* skip "," */
+        if nooper < 3 then moreoperands=true;
+      end$if;
+    end$if;
+    nooper=nooper+1;
+  end$while;
+  return exitvalue;
+end getoperands;
+
+/* test if operands contain enough type information */
+
+enough$type$info: proc byte;
+  dcl pt address,oper based pt operandstruc,(i,flag) byte;
+  flag=true;
+  i=0ffh;
+  do while (i:=i+1) < nooper;
+    pt=.operands(i);
+    if oper.stype=variable then$do
+      if (oper.sflag and typebit) = 0 then flag=false;
+    end$if;
+  end$while;
+  if flag then return true;
+  i=0ffh;    /* one of operands lacks type info,check others */
+  do while (i:=i+1) < nooper;
+    pt=.operands(i);
+    if (oper.sflag and typebit) <> 0 then return true;
+    if (oper.stype=number) and (wrdtest(oper.offset)) then return true;
+  end$while;
+  return false;
+end enough$type$info;
+
+/*  Module entry point:  */
+
+
+instruction: proc public;   /* decode line in pass 1 and pass 2 */
+  call clearcmindex;      /* clear buffer for output codes */
+  if prefixscan then$do
+    if getoperands then$do
+      if enough$type$info then$do
+        if makecode then$do
+          if not emptyline then$do
+            call errmsg(end$of$line$err);
+          end$if;
+        else$do
+          call errmsg(opmismatch);
+        end$if;
+      else$do
+        call errmsg(misstypeinfo);
+        call emitdummies;
+      end$if;
+    else$do
+      if makecode then;  /* try to make code with bad operands */
+    end$if;
+  end$if;
+  call skip$rest$of$line;
+end instruction;
+
+end$module instruc;

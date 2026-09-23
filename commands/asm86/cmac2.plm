@@ -1,0 +1,549 @@
+$title ('CODEMACRO DEFINITIONS - PART 2')
+cmac2:
+do;
+
+/*
+
+  modified  6/16/81  R. Silberstein
+
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:cmacd.lit)
+$include (:f1:equals.lit)
+$include (:f1:cmac.lit)
+
+dcl
+
+        /* CMPS dst:Eb,src:Eb */
+cmps1   cmac12struc data(
+        nil,2,
+        specE,modb,specE,modb,
+        mnosegfix,res,dst,   /* NOSEGFIX ES,dst */
+        msegfix,src,         /* SEGFIX src */
+        mdbn,0a6h,           /* DB 0A6H */
+        mendm),              /* ENDM */
+
+        /* CMPS dst:Ew,src:Ew */
+cmps2   cmac12struc public data(
+        .cmps1,2,
+        specE,modw,specE,modw,
+        mnosegfix,res,dst,   /* NOSEGFIX ES,dst */
+        msegfix,src,         /* SEGFIX src */
+        mdbn,0a7h,           /* DB 0A7H */
+        mendm),              /* ENDM */
+
+        /* CMPSB */
+CMPSB1  CMAC3STRUC PUBLIC DATA(
+        NIL,0,
+        MDBN,0A6H,
+        MENDM),
+
+        /* CMPSW */
+CMPSW1  CMAC3STRUC PUBLIC DATA(
+        NIL,0,
+        MDBN,0A7H,
+        MENDM),
+
+        /* CWD */
+cwd1    cmac3struc public data(
+        nil,0,
+        mdbn,99h,            /* DB 99H */
+        mendm),              /* ENDM */
+
+        /* DAA */
+daa1    cmac3struc public data(
+        nil,0,
+        mdbn,27h,            /* DB 27H */
+        mendm),              /* ENDM */
+
+        /* DAS */
+das1    cmac3struc public data(
+        nil,0,
+        mdbn,2fh,            /* DB 2FH */
+        mendm),              /* ENDM */
+
+        /* DEC dst:Eb */
+dec1    cmac10struc data(
+        nil,1,
+        specE,modb,
+        msegfix,dst,         /* SEGFIX dst */
+        mdbn,0feh,           /* DB 0FEH */
+        mmodrm1,1,dst,       /* MODRM 1,dst */
+        mendm),              /* ENDM */
+
+        /* DEC dst:Ew */
+dec2    cmac10struc data(
+        .dec1,1,
+        specE,modw,
+        msegfix,dst,         /* SEGFIX dst */
+        mdbn,0ffh,           /* DB 0FFH */
+        mmodrm1,1,dst,       /* MODRM 1,dst */
+        mendm),              /* ENDM */
+
+        /* DEC dst:Rw */
+dec3    cmac12struc public data(
+        .dec2,1,
+        specR,modw,
+        mdbit,               /* DBIT 5(9H),3(dst) */
+        mnumberbits,5,9h,
+        mformalbits,3,dst,0,
+        mendbit,
+        mendm),
+
+        /* DIV divisor:Eb */
+div1    cmac10struc data(
+        nil,1,
+        specE,modb,
+        msegfix,divisor,     /* SEGFIX divisor */
+        mdbn,0f6h,           /* DB 6FH */
+        mmodrm1,6,divisor,   /* MODRM divisor */
+        mendm),              /* ENDM */
+
+        /* DIV divisor:Ew */
+div2    cmac10struc public data(
+        .div1,1,
+        specE,modw,
+        msegfix,divisor,     /* SEGFIX divisor */
+        mdbn,0f7h,           /* DB 0F7H */
+        mmodrm1,6,divisor,   /* MODRM 6,divisor */
+        mendm),              /* ENDM */
+
+        /* ESC opcode:Db(0,63),src:Eb */
+esc1    cmac21struc data(
+        nil,2,
+        specD,modb+doublerange+numberrange,0,63,
+        specE,modb,
+        msegfix,src,         /* SEGFIX src */
+        mdbit,               /* DBIT 5(1BH),3(opcode(3)) */
+        mnumberbits,5,1bh,
+        mformalbits,3,opcode,3,
+        mendbit,
+        mmodrm2,opcode,src,  /* MODRM opcode,src */
+        mendm),              /* ENDM */
+
+        /* ESC opcode:Db(0,63),src:Ew */
+esc2    cmac21struc data(
+        .esc1,2,
+        specD,modb+doublerange+numberrange,0,63,
+        specE,modw,
+        msegfix,src,         /* SEGFIX src */
+        mdbit,               /* DBIT 5(1BH),3(opcode(3)) */
+        mnumberbits,5,1bh,
+        mformalbits,3,opcode,3,
+        mendbit,
+        mmodrm2,opcode,src,  /* MODRM opcode,src */
+        mendm),              /* ENDM */
+
+        /* ESC opcode:Db(0,63),src:Ed */
+esc3    cmac21struc public data(
+        .esc2,2,
+        specD,modb+doublerange+numberrange,0,63,
+        specE,modd,
+        msegfix,src,         /* SEGFIX src */
+        mdbit,               /* DBIT 5(1BH),3(opcode(3)) */
+        mnumberbits,5,1bh,
+        mformalbits,3,opcode,3,
+        mendbit,
+        mmodrm2,opcode,src,  /* MODRM opcode,src */
+        mendm),              /* ENDM */
+
+        /* HLT */
+hlt1    cmac3struc public data(
+        nil,0,
+        mdbn,0f4h,           /* DB 0F4H */
+        mendm),              /* ENDM */
+
+        /* IDIV divisor:Eb */
+idiv1   cmac10struc data(
+        nil,1,
+        specE,modb,
+        msegfix,divisor,     /* SEGFIX divisor */
+        mdbn,0f6h,           /* DB 0F6H */
+        mmodrm1,7,divisor,   /* MODRM 7,divisor */
+        mendm),              /* ENDM */
+
+        /* IDIV divisor:Ew */
+idiv2   cmac10struc public data(
+        .idiv1,1,
+        specE,modw,
+        msegfix,divisor,     /* SEGFIX divisor */
+        mdbn,0f7h,           /* DB 0F7H */
+        mmodrm1,7,divisor,   /* MODRM 7,divisor */
+        mendm),
+
+        /* IMUL mplier:Eb */
+imul1   cmac10struc data(
+        nil,1,
+        specE,modb,
+        msegfix,mplier,      /* SEGFIX mplier */
+        mdbn,0f6h,           /* DB 0F6H */
+        mmodrm1,5,mplier,    /* MODRM 5,mplier */
+        mendm),              /* ENDM */
+
+        /* IMUL mplier:Ew */
+imul2   cmac10struc public data(
+        .imul1,1,
+        specE,modw,
+        msegfix,mplier,      /* SEGFIX mplier */
+        mdbn,0f7h,           /* DB 0F7H */
+        mmodrm1,5,mplier,    /* MODRM 5,mplier */
+        mendm),              /* ENDM */
+
+        /* IN dst:Ab,port:Db */
+in1     cmac9struc data(
+        nil,2,
+        specA,modb,specD,modb,
+        mdbn,0e4h,           /* DB 0E4H */
+        mdbf,port,           /* DB port */
+        mendm),              /* ENDM */
+
+        /* IN dst:Aw,port:Db */
+in2     cmac9struc data(
+        .in1,2,
+        specA,modw,specD,modb,
+        mdbn,0e5h,           /* DB 0E5H */
+        mdbf,port,           /* DB port */
+        mendm),              /* ENDM */
+
+        /* IN dst:Ab,port:Rw(DX) */
+in3     cmac8struc data(
+        .in2,2,
+        specA,modb,
+        specR,modw+singlerange+register$range,rdx,
+        mdbn,0ech,           /* DB 0ECH */
+        mendm),
+
+        /* IN dst:Aw,port:Rw(DX) */
+in4     cmac8struc public data(
+        .in3,2,
+        specA,modw,
+        specR,modw+singlerange+register$range,rdx,
+        mdbn,0edh,           /* DB 0EDH */
+        mendm),              /* ENDM */
+
+        /* INC dst:Eb */
+inc1    cmac10struc data(
+        nil,1,
+        specE,modb,
+        msegfix,dst,         /* SEGFIX dst */
+        mdbn,0feh,           /* DB 0FEH */
+        mmodrm1,0,dst,       /* MODRM 0,dst */
+        mendm),              /* ENDM */
+
+        /* INC dst:Ew */
+inc2    cmac10struc data(
+        .inc1,1,
+        specE,modw,
+        msegfix,dst,         /* SEGFIX dst */
+        mdbn,0ffh,           /* DB 0FFH */
+        mmodrm1,0,dst,       /* MODRM 0,dst */
+        mendm),              /* ENDM */
+
+        /* INC dst:Rw */
+inc3    cmac12struc public data(
+        .inc2,1,
+        specR,modw,
+        mdbit,               /* DBIT 5(08H),3(dst(0)) */
+        mnumberbits,5,08h,
+        mformalbits,3,dst,0,
+        mendbit,
+        mendm),              /* ENDM */
+
+        /* INT itype:Db */
+int1    cmac7struc data(
+        nil,1,
+        specD,modb,
+        mdbn,0cdh,          /* DB 0CDH */
+        mdbf,itype,         /* DB itype */
+        mendm),             /* ENDM */
+
+        /* INT itype:Db(3) */
+int2    cmac6struc public data(
+        .int1,1,
+        specD,modb+singlerange,3,
+        mdbn,0cch,          /* DB 0CCH */
+        mendm),             /* ENDM */
+
+        /* INTO */
+into1   cmac3struc public data(
+        nil,0,
+        mdbn,0ceh,          /* DB 0CEH */
+        mendm),             /* ENDM */
+
+
+        /* IRET */
+iret1   cmac3struc public data(
+        nil,0,
+        mdbn,0cfh,          /* DB 0CFH */
+        mendm),             /* ENDM */
+
+        /* JA place:Cb */
+ja1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,77h,           /* DB 77H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JAE place:Cb */
+jae1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,73h,           /* DB 73H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JB place:Cb */
+jb1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,72h,           /* DB 72H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JBE place:Cb */
+jbe1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,76h,           /* DB 76H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JCXZ place:Cb */
+jcxz1   cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,0e3h,          /* DB 0E3H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JE place:Cb */
+je1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,74h,           /* DB 74H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JG place:Cb */
+jg1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7fh,           /* DB 7FH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JGE place:Cb */
+jge1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7dh,           /* DB 7DH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JL place:Cb */
+jl1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7ch,           /* DB 7CH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JLE place:Cb */
+jle1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7eh,           /* DB 7EH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JMP place:Ew */
+jmp1    cmac10struc data(
+        nil,1,
+        specE,modw,
+        msegfix,place,      /* SEGFIX place */
+        mdbn,0ffh,          /* DB 0FFH */
+        mmodrm1,4,place,    /* MODRM 4,place */
+        mendm),             /* ENDM */
+
+        /* JMP place:Cw */
+jmp2    cmac7struc public data(
+        .jmp1,1,
+        specC,modw,
+        mdbn,0e9h,          /* DB 0E9H */
+        mrelw,place,        /* RELW place */
+        mendm),             /* ENDM */
+
+        /* JMPF place:Md */
+jmpf1   cmac10struc data(
+        nil,1,
+        specM,modd,
+        msegfix,place,      /* SEGFIX place */
+        mdbn,0ffh,          /* DB 0FFH */
+        mmodrm1,5,place,    /* MODRM 5,place */
+        mendm),             /* ENDM */
+
+        /* JMPF place:Cd */
+jmpf2   cmac7struc public data(
+        .jmpf1,1,
+        specC,modd,
+        mdbn,0eah,          /* DB 0EAH */
+        mddf,place,         /* DD place */
+        mendm),             /* ENDM */
+
+        /* JMPS place:Cb */
+jmps1   cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,0ebh,          /* DB 0EBH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JNE place:Cb */
+jne1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,75h,           /* DB 75H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JNO place:Cb */
+jno1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,71h,           /* DB 71H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JNP place:Cb */
+jnp1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7bh,           /* DB 7BH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JNS place:Cb */
+jns1    cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,79h,           /* DB 79H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JO place:Cb */
+jo1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,70h,           /* DB 70H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JP place:Cb */
+jp1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,7ah,           /* DB 7AH */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* JS place:Cb */
+js1     cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,78h,           /* DB 78H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* LAHF */
+lahf1   cmac3struc public data(
+        nil,0,
+        mdbn,9fh,           /* DB 9FH */
+        mendm),             /* ENDM */
+
+        /* LDS dst:Rw,src:Ed */
+lds1    cmac12struc public data(
+        nil,2,
+        specR,modw,specE,modd,
+        msegfix,src,        /* SEGFIX src */
+        mdbn,0c5h,          /* DB 0C5H */
+        mmodrm2,dst,src,    /* MODRM dst,src */
+        mendm),             /* ENDM */
+
+        /* LES dst:Rw,src:Ed */
+les1    cmac12struc public data(
+        nil,2,
+        specR,modw,specE,modd,
+        msegfix,src,        /* SEGFIX src */
+        mdbn,0c4h,          /* DB 0C4H */
+        mmodrm2,dst,src,    /* MODRM dst,src */
+        mendm),             /* ENDM */
+
+        /* LEA dst:Rw,src:M */
+lea1    cmac10struc public data(
+        nil,2,
+        specR,modw,specM,nomod,
+        mdbn,8dh,           /* DB 8DH */
+        mmodrm2,dst,src,    /* MODRM dst,src */
+        mendm),             /* ENDM */
+
+        /* LOCK prefx */
+lock1   cmac3struc public data(
+        nil,0+prefix$on,
+        mdbn,0f0h,          /* DB 0F0H */
+        mendm),             /* ENDM */
+
+        /* LODS SI$ptr:Eb */
+lods1   cmac7struc data(
+        nil,1,
+        specE,modb,
+        msegfix,si$ptr,     /* SEGFIX SI$ptr */
+        mdbn,0ach,          /* DB 0ACH */
+        mendm),             /* ENDM */
+
+        /* LODS SI$ptr:Ew */
+lods2   cmac7struc public data(
+        .lods1,1,
+        specE,modw,
+        msegfix,si$ptr,     /* SEGFIX SI$ptr */
+        mdbn,0adh,          /* DB 0AdH */
+        mendm),             /* ENDM */
+
+        /* LODSB */
+LODSB1  CMAC3STRUC PUBLIC DATA(
+        NIL,0,
+        MDBN,0ACH,
+        MENDM),
+
+        /* LODSW */
+LODSW1  CMAC3STRUC PUBLIC DATA(
+        NIL,0,
+        MDBN,0ADH,
+        MENDM),
+
+        /* LOOP place:Cb */
+loop1   cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,0e2h,          /* DB 0E2H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* LOOPE place:Cb */
+loope1  cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,0e1h,          /* DB 0E1H */
+        mrelb,place,        /* RELB place */
+        mendm),             /* ENDM */
+
+        /* LOOPNE place:Cb */
+loopne1 cmac7struc public data(
+        nil,1,
+        specC,modb,
+        mdbn,0e0h,          /* DB 0E0H */
+        mrelb,place,        /* RELB place */
+        mendm);             /* ENDM */
+
+end$module cmac2;

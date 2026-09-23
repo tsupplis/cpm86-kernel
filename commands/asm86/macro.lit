@@ -1,0 +1,34 @@
+$nolist
+$eject
+
+/*      PL/M language text macros:      */
+
+declare
+lit             literally 'literally',
+dcl             lit     'declare',
+init            lit     'initial',
+true            lit     '0ffh',
+false           lit     '0',
+addr            lit     'address',
+struc           lit     'structure',
+proc            lit     'procedure',
+reent           lit     'reentrant',
+then$do         lit     'then do;',
+else$do         lit     'end; else do;',
+end$if          lit     'end',
+forever         lit     'while true',
+end$forever     lit     'end',
+end$while       lit     'end',
+end$case        lit     'end',
+end$do          lit     'end',
+end$module      lit     'end',
+end$proc        lit     'end',
+cr              lit     '0dh',
+lf              lit     '0ah',
+tab             lit     '09h',
+formfeed        lit     '0ch',
+end$of$file     lit     '1ah',
+space           lit     '20h';
+
+
+$list

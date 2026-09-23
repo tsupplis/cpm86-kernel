@@ -1,0 +1,57 @@
+$nolist
+
+/*
+
+  modified  7/24/81  R. Silberstein
+
+*/
+
+dcl
+pass            byte external,   /* current pass no, 1,2,3 */
+
+
+        /* print output parameters */
+
+print$on        byte external,   /* on/off flag */
+printswitchoff  byte external,   /* set/reset by NOLIST/LIST */
+IFLIST          BYTE EXTERNAL,   /* SET/RESET BY IFLIST/NOIFLIST */
+maxcol          byte external,   /* pagewidth */
+title (30)      byte external,   /* user specified program title */
+pagesize        byte external,   /* page size */
+simform         byte external,   /* true if formfeed simulation */
+sourceptr       byte external,   /* source buffer pointer */
+
+        /* scanner variables: */
+
+token   struc(                  /* actual token scanned */
+        type    byte,              /* token type, legal values :
+                                        reg       - register
+                                        pseudo    - pseudo code
+                                        string    - text string
+                                        spec      - special character
+                                        number    - number
+                                        operator  - aritmetic operator
+                                        ident     - identifier  */
+
+        descr   byte,              /* token description, legal values:
+                                        nil       - no specification
+                                        byte      - 8 bit type
+                                        word      - 16 bit type
+                                        dword     - 32 bit type  */
+
+        value   addr) external,      /* token value  */
+nextch          byte external,    /* next input character */
+acclen         byte external,     /* accumulator length */
+accum(80)       byte external,    /* actual token scanned */
+eofset          byte external,    /* true if end-of-file found */
+
+      /* Mischellaneous variables: */
+
+include$on      byte external,    /* true if INCLUDEfile input */
+IFLEVEL         BYTE EXTERNAL,    /* IF-ENDIF NESTING LEVEL */
+operands(4)     operandstruc      /* instruction operands,max 4 */
+                        external,
+include$default byte    external; /* default drive for include file */
+
+$list
+

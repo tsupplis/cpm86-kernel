@@ -1,0 +1,36 @@
+$nolist
+
+codemacro$rout: PROC external;
+end$proc codemacro$rout;
+
+db$cm$rout: PROC external;
+end$proc db$cm$rout;
+
+dw$cm$rout: PROC external;
+end$proc dw$cm$rout;
+
+dd$cm$rout: PROC external;
+end$proc dd$cm$rout;
+
+segfix$cm$rout: PROC external;
+end$proc segfix$cm$rout;
+
+nosegfix$cm$rout: PROC external;
+end$proc nosegfix$cm$rout;
+
+modrm$cm$rout: PROC external;
+end$proc modrm$cm$rout;
+
+relb$cm$rout: PROC external;
+end$proc relb$cm$rout;
+
+relw$cm$rout: PROC external;
+end$proc relw$cm$rout;
+
+dbit$cm$rout: PROC external;
+end$proc dbit$cm$rout;
+
+end$cm$rout: PROC external;
+end$proc end$cm$rout;
+
+$list

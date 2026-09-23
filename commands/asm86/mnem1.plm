@@ -1,0 +1,64 @@
+$title ('INSTRUCTION MNEMONICS MODULE - PART 1')
+mnem1:
+do;
+
+/*
+
+  modified  4/10/81  R. Silberstein
+  modified  6/16/81  R. Silberstein
+
+*/
+
+/***************** INSTRUCTION MNEMONICS *****************/
+/*
+
+        This is all the instruction mnemonics for
+        the assembler. The mnemonics are grouped
+        according to the 6-bit hash value of the
+        mnemonics - values range from 0 to 0FH.
+
+        For each instruction, there is a pointer to
+        its codemacro definition.
+*/
+
+$include (:f1:mnem.lit)
+$include (:f1:cmlink.ext)
+
+
+    /********* MNEMONICS TABLE ********/
+
+declare
+
+/*
+                                            * HASH VALUE (HEX)  *
+                                            ---------------------
+*/
+test    opcod4        data (0,4,.test10,'TEST'),     /* 0 */
+push    opcod4 public data (.test,4,.push3,'PUSH'),
+SCASW   OPCOD5        DATA (0,5,.SCASW1,'SCASW'),    /* 1 */
+repz    opcod4 public data (.SCASW,4,.repe1,'REPZ'),
+                                                     /* 2 */
+aaa     opcod3 public data (0,3,.aaa1,'AAA'),        /* 3 */
+                                                     /* 4 */
+movs    opcod4 public data (0,4,.movs2,'MOVS'),      /* 5 */
+daa     opcod3        data (0,3,.daa1,'DAA'),        /* 6 */
+aad     opcod3        data (.daa,3,.aad1,'AAD'),
+pushf   opcod5 public data (.aad,5,.pushf1,'PUSHF'), 
+MOVSB   OPCOD5 PUBLIC DATA (0,5,.MOVSB1,'MOVSB'),    /* 7 */
+adc     opcod3 public data (0,3,.adc11,'ADC'),       /* 8 */
+stos    opcod4        data (0,4,.stos2,'STOS'),      /* 9 */
+LODSW   OPCOD5        DATA (.STOS,5,.LODSW1,'LODSW'),
+add     opcod3 public data (.LODSW,3,.add11,'ADD'),
+CMPSW   OPCOD5 PUBLIC DATA (0,5,.CMPSW1,'CMPSW'),    /* 0a */
+STOSB   OPCOD5        DATA (0,5,.STOSB1,'STOSB'),    /* 0b */
+ja      opcod2 public data (.STOSB,2,.ja1,'JA'),
+jb      opcod2        data (0,2,.jb1,'JB'),          /* 0c */
+dec     opcod3 public data (.jb,3,.dec3,'DEC'),
+JC      OPCOD2        DATA (0,2,.JB1,'JC'),          /* 0D */
+loopne  opcod6 public data (.JC,6,.loopne1,'LOOPNE'),
+                                                     /* 0e */
+aam     opcod3        data (0,3,.aam1,'AAM'),        /* 0f */
+je      opcod2        data (.aam,2,.je1,'JE'),
+repnz   opcod5 public data (.je,5,.repne1,'REPNZ');
+
+end mnem1;

@@ -1,0 +1,19 @@
+
+/*********** "BNF"-expression syntax ************/
+/*
+E::= E xor A !! E or A !! A
+A::= A and N !! N
+N::= not N !! R
+R::= P eq P !! P lt P !! P le P !! P gt P !! P ge P !! P ne P !! P
+P::= P + T !! P - T !! T
+T::= T * M !! T / M !! T mod M !! T shl M !! T shr M !! M
+M::= - M !! + M !! S
+S::= <over>: F !! F
+F::= F ptr B !! seg B !! offset B !! type B !!
+     length B !! last B !! B
+B::= ( E ) !! [ bracket-expression ] !! I
+I::= varaible !! . number !! number !! label !! string
+<over>::= segment register
+(stringlength < 3)
+
+*/

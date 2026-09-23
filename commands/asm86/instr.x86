@@ -1,0 +1,17 @@
+$nolist
+
+dcl
+acclen          byte external,    /* accumulator length */
+accum(80)       byte external,    /* actual token scanned */
+
+      /* Mischellaneous variables: */
+
+noerror         byte external,   /* errorflag in codemacro decoding */
+firstmacroptr   address external, /* pointer at first codemacro */
+macroptr        address external, /* current pointer within macros */
+nooper          byte    external, /* no of instruction operands */
+operands(4)     operandstruc      /* instruction operands,max 4 */
+                        external,
+codemacroptr    address external; /* pointer to found codemacro */
+
+$list

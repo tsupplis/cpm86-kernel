@@ -1,0 +1,73 @@
+$title ('INSTRUCTION MNEMONICS MODULE - PART 2')
+mnem2:
+do;
+
+/*
+
+  modified  4/10/81  R. Silberstein
+  modified  6/16/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+
+*/
+
+/***************** INSTRUCTION MNEMONICS *****************/
+/*
+
+        This is all the instruction mnemonics for
+        the assembler. The mnemonics are grouped
+        according to the 6-bit hash value of the
+        mnemonics - values range from 10H to 1FH.
+
+        For each instruction, there is a pointer to
+        its codemacro definition.
+*/
+
+$include (:f1:mnem.lit)
+$include (:f1:cmlink.ext)
+
+    /********* MNEMONICS TABLE ********/
+
+declare
+
+/*
+                                            * HASH VALUE (HEX)  *
+                                            ---------------------
+*/
+jae     opcod3 public data (0,3,.jae1,'JAE'),        /* 10 */
+jbe     opcod3        data (0,3,.jbe1,'JBE'),        /* 11 */
+jg      opcod2 public data (.jbe,2,.jg1,'JG'),
+lea     opcod3        data (0,3,.lea1,'LEA'),        /* 12 */
+clc     opcod3 public data (.lea,3,.clc1,'CLC'),
+cmc     opcod3        data (0,3,.cmc1,'CMC'),        /* 13 */
+cld     opcod3        data (.cmc,3,.cld1,'CLD'),
+iand    opcod3 public data (.cld,3,.and10,'AND'),
+loopz   opcod5 public data (0,5,.loope1,'LOOPZ'),    /* 14 */
+aas     opcod3 public data (0,3,.aas1,'AAS'),        /* 15 */
+jge     opcod3        data (0,3,.jge1,'JGE'),        /* 16 */
+jl      opcod2 public data (.jge,2,.jl1,'JL'),
+sbb     opcod3        data (0,3,.sbb11,'SBB'),       /* 17 */
+in      opcod2 public data (.sbb,2,.in4,'IN'),
+das     opcod3        data (0,3,.das1,'DAS'),        /* 18 */
+cli     opcod3 public data (.das,3,.cli1,'CLI'),
+jna     opcod3        data (0,3,.jbe1,'JNA'),        /* 19 */
+jo      opcod2 public data (.jna,2,.jo1,'JO'),
+jnb     opcod3        data (0,3,.jae1,'JNB'),        /* 1a */
+jp      opcod2        data (.jnb,2,.jp1,'JP'),
+neg     opcod3        data (.jp,3,.neg2,'NEG'),
+inc     opcod3 public data (.neg,3,.inc3,'INC'),
+JNC     OPCOD3        DATA (0,3,.JAE1,'JNC'),        /* 1B */
+esc     opcod3        data (.JNC,3,.esc3,'ESC'),
+jle     opcod3        data (.esc,3,.jle1,'JLE'),
+lahf    opcod4 public data (.jle,4,.lahf1,'LAHF'),
+cbw     opcod3        data (0,3,.cbw1,'CBW'),        /* 1c */
+MOVSW	OPCOD5        DATA (.CBW,5,.MOVSW1,'MOVSW'),
+icall   opcod4 public data (.MOVSW,4,.call3,'CALL'),
+js      opcod2        data (0,2,.js1,'JS'),          /* 1d */
+jne     opcod3 public data (.js,3,.jne1,'JNE'),
+jnae    opcod4        data (0,4,.jb1,'JNAE'),        /* 1e */
+cwd     opcod3 public data (.jnae,3,.cwd1,'CWD'),
+jpe     opcod3        data (0,3,.jp1,'JPE'),         /* 1f */
+jng     opcod3        data (.jpe,3,.jle1,'JNG'),
+jnbe    opcod4 public data (.jng,4,.ja1,'JNBE');
+
+end mnem2;

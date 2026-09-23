@@ -1,0 +1,66 @@
+$nolist
+
+/*
+
+  modified  6/16/81  R. Silberstein
+
+*/
+
+dcl
+push    byte external,
+repz    byte external,
+aaa     byte external,
+movs    byte external,
+pushf   byte external,
+MOVSB   BYTE EXTERNAL,
+adc     byte external,
+add     byte external,
+CMPSW   BYTE EXTERNAL,
+ja      byte external,
+dec     byte external,
+loopne  byte external,
+repnz   byte external,
+jae     byte external,
+jg      byte external,
+clc     byte external,
+iand    byte external,
+loopz   byte external,
+aas     byte external,
+jl      byte external,
+in      byte external,
+cli     byte external,
+jo      byte external,
+inc     byte external,
+lahf    byte external,
+icall   byte external,
+jne     byte external,
+cwd     byte external,
+jnbe    byte external,
+cmp     byte external,
+ior     byte external,
+callf   byte external,
+div     byte external,
+les     byte external,
+sar     byte external,
+jmp     byte external,
+hlt     byte external,
+lock    byte external,
+xchg    byte external,
+ret     byte external,
+idiv    byte external,
+jmpf    byte external,
+mul     byte external,
+pop     byte external,
+sti     byte external,
+inot    byte external,
+mov     byte external,
+cmps    byte external,
+iret    byte external,
+popf    byte external,
+imul    byte external,
+out     byte external,
+xlat    byte external,
+jmps    byte external,
+loope   byte external;
+
+$list

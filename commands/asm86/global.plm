@@ -1,0 +1,167 @@
+$title ('GLOBAL VARIABLES')
+global:
+do;
+
+/*
+
+  modified  3/28/81  R. Silberstein
+  modified  4/16/81  R. Silberstein
+  modified  4/20/81  R. Silberstein
+  modified  7/24/81  R. Silberstein
+  modified  9/2/81   R. Silberstein
+
+*/
+
+/*
+        This module defines all the global variables
+        of the assmembler.
+*/
+
+$include (:f1:macro.lit)
+$include (:f1:struc.lit)
+$INCLUDE (:F1:SUBR2.EXT)
+
+dcl
+
+        /* dummy structure forces contiguous storage */
+
+glob            structure (
+pass            byte,   /* current pass no, 1,2,3 */
+
+        /* address counters */
+
+cip             addr,   /* current instruction pointer */
+csegtype        byte,   /* current segment type, code,data,
+                                  stack or extra data */
+csegvalue       addr,   /* current segment value */
+csegspec        byte,   /* true if segment value specified */
+
+escip           addr,   /* current ES instruction pointer */
+cscip           addr,   /* current CS instruction pointer */
+sscip           addr,   /* current SS instruction pointer */
+dscip           addr,   /* current DS instruction pointer */
+curcseg         addr,   /* current code segment value */
+curdseg         addr,   /* current data segment value */
+cursseg         addr,   /* current stack segment value */
+cureseg         addr,   /* current extra segment value */
+cspec           byte,   /* true if code segment value given */
+dspec           byte,   /* true if data segment value given */
+sspec           byte,   /* true if stack segment value given */
+espec           byte,   /* true if extra segment value given */
+
+
+        /* print output parameters */
+
+print$on        byte,   /* on/off flag */
+printswitchoff  byte,   /* set/reset by NOLIST/LIST */
+IFLIST          BYTE,   /* SET/RESET BY IFLIST/NOIFLIST */
+maxcol          byte);   /* pagewidth */
+
+dcl
+
+sourcename (12) byte public,   /* source file name */
+sourcestop      byte,          /* used to contain zero */
+savesource (12) byte public,   /* source file during INLUDE file */
+printdevice     byte public,   /* print file device */
+SYMBOLDEVICE    BYTE PUBLIC,   /* SYMBOL FILE DEVICE */
+title (30)      byte public,   /* user specified program title */
+stoptitle       byte,          /* used to contain zero */
+pagesize        byte public,   /* page size */
+simform         byte public,   /* true if formfeed is to be simulated*/
+sourcebuf (80)  byte public,    /* copy of source input to be printed*/
+sourceptr       byte public,    /* source buffer pointer */
+prefix (240)    byte public,    /* prefix to source line */
+prefixptr       byte public,    /* pointer to prefix buffer */
+ABSADDR (4)     BYTE PUBLIC;    /* ABSOLUTE ADDRESS FIELD */
+
+
+        /* references to glob structure */
+
+dcl
+pass            byte public at(.glob.pass),
+cip             addr public at(.glob.cip),
+csegtype        byte public at(.glob.csegtype),
+csegvalue       addr public at(.glob.csegvalue),
+csegspec        byte public at(.glob.csegspec),
+escip           addr public at(.glob.escip),
+cscip           addr public at(.glob.cscip),
+sscip           addr public at(.glob.sscip),
+dscip           addr public at(.glob.dscip),
+curcseg         addr public at(.glob.curcseg),
+curdseg         addr public at(.glob.curdseg),
+cursseg         addr public at(.glob.cursseg),
+cureseg         addr public at(.glob.cureseg),
+cspec           byte public at(.glob.cspec),
+dspec           byte public at(.glob.dspec),
+sspec           byte public at(.glob.sspec),
+espec           byte public at(.glob.espec),
+print$on        byte public at(.glob.print$on),
+printswitchoff  byte public at(.glob.printswitchoff),
+IFLIST          BYTE PUBLIC AT (.GLOB.IFLIST),
+maxcol          byte public at(.glob.maxcol);
+
+        /* io error stpublic atus */
+
+dcl
+errors          addr public,       /* counts no of errors */
+
+        /* scanner variables: */
+
+token   struc(                  /* actual token scannes */
+        type    byte,              /* token type, legal values :
+                                        reg       - register
+                                        pseudo    - pseudo code
+                                        string    - text string
+                                        spec      - special character
+                                        number    - number
+                                        operator  - aritmetic operator
+                                        ident     - identifier  */
+
+        descr   byte,              /* token description, legal values :
+                                        nil       - no specification
+                                        byte      - 8 bit type
+                                        word      - 16 bit type
+                                        dword     - 32 bit type  */
+
+        value   addr) public,      /* token value  */
+nextch          byte public,    /* next input character (lookahead) */
+acclen          byte public,    /* accumulator length */
+accum(80)       byte public,    /* actual token scanned */
+accumsave(80)   byte public,    /* used to save accumulator */
+acclensave      byte public,
+eofset          byte public,    /* true if end-of-file found */
+
+      /* Mischellaneous variables: */
+
+intel$hex$on    byte public,    /* true if INTEL hex ouput format */
+noerror         byte public,    /* errorflag in codemacro decoding */
+errorprinted    byte public,    /* true if an error is printed */
+firstmacroptr   address public, /* pointer at first codemacro */
+macroptr        address public, /* current pointer within macros */
+fullsymbtab     byte public,    /* true if symboltable is full */
+include$on      byte public,    /* true if input from INCLUDE file */
+IFLEVEL         BYTE PUBLIC,    /* IF-ENDIF NESTING LEVEL */
+currentsymbol   symbolstruc     /* current scanned symbol */
+                public,
+symbtabadr      address public, /* pointer at symbol in table */
+nooper          byte    public, /* no of instruction operands */
+operands(4)     operandstruc    /* instruction operands,max 4 */
+                        public,
+codemacroptr    address public, /* pointer to found codemacro */
+help(5)         byte    public, /* scratch area for ascii numbers */
+helpstop        byte,
+i               byte    public, /* scratch variable */
+default$drive   byte    public, /* default disk drive */
+include$default byte    public, /* default disk for include files */
+codemacro$flag  byte    public; /* true if building a codemacro */
+
+globalinit: procedure public; /* initiate some global varaiables */
+  stoptitle,sourcestop,helpstop=0;
+  pagesize=66;
+  fullsymbtab,intel$hex$on=false;
+  CALL FILL (0, SIZE (TITLE), .TITLE);
+  codemacro$flag=false;
+end globalinit;
+
+
+end$module global;

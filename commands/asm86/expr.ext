@@ -1,0 +1,23 @@
+$nolist
+
+/*
+
+  modified  8/19/81  R. Silberstein
+
+*/
+
+operand: proc byte external;
+end operand;
+
+NOFORWARDOPER: PROC BYTE EXTERNAL;
+END NOFORWARDOPER;
+
+expression: proc(pt) byte external;
+  dcl pt address;
+end expression;
+
+noforwardexpr: proc(pt) byte external;
+  dcl pt address;
+end noforwardexpr;
+
+$list

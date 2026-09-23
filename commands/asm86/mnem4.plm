@@ -1,0 +1,66 @@
+$title ('INSTRUCTION MNEMONICS MODULE - PART 4')
+mnem4:
+do;
+
+/*
+
+  modified  6/16/81  R. Silberstein
+
+*/
+
+/***************** INSTRUCTION MNEMONICS *****************/
+/*
+
+        This is all the instruction mnemonics for
+        the assembler. The mnemonics are grouped
+        according to the 6-bit hash value of the
+        mnemonics - values range from 30H to 3FH.
+
+        For each instruction, there is a pointer to
+        its codemacro definition.
+*/
+
+$include (:f1:mnem.lit)
+$include (:f1:cmlink.ext)
+
+    /********* MNEMONICS TABLE ********/
+
+declare
+
+/*
+                                            * HASH VALUE (HEX)  *
+                                            ---------------------
+*/
+sti     opcod3 public data (0,3,.sti1,'STI'),       /* 30 */
+retf    opcod4        data (0,4,.retf3,'RETF'),     /* 31 */
+inot    opcod3 public data (.retf,3,.not2,'NOT'),
+lods    opcod4        data (0,4,.lods2,'LODS'),     /* 32 */
+jnz     opcod3        data (.lods,3,.jne1,'JNZ'),
+mov     opcod3 public data (.jnz,3,.mov17,'MOV'),
+ror     opcod3        data (0,3,.ror4,'ROR'),       /* 33 */
+cmps    opcod4 public data (.ror,4,.cmps2,'CMPS'),
+LODSB   OPCOD5        DATA (0,5,.LODSB1,'LODSB'),   /* 34 */
+iret    opcod4 public data (.lodsb,4,.iret1,'IRET'),
+wait    opcod4        data (0,4,.wait1,'WAIT'),     /* 35 */
+CMPSB   OPCOD5        DATA (.WAIT,5,.CMPSB1,'CMPSB'),
+popf    opcod4 public data (.CMPSB,4,.popf1,'POPF'),
+                                                    /* 36 */
+imul    opcod4 public data (0,4,.imul2,'IMUL'),     /* 37 */
+out     opcod3 public data (0,3,.out4,'OUT'),       /* 38 */
+retn    opcod4        data (0,4,.ret3,'RETN'),      /* 39 */
+ixor    opcod3        data (.retn,3,.xor10,'XOR'),
+xlat    opcod4 public data (.ixor,4,.xlat1,'XLAT'),
+repne   opcod5        data (0,5,.repne1,'REPNE'),   /* 3a */
+into    opcod4        data (.repne,4,.into1,'INTO'),
+loop    opcod4        data (.into,4,.loop1,'LOOP'),
+jmps    opcod4 public data (.loop,4,.jmps1,'JMPS'),
+                                                    /* 3b */
+                                                    /* 3c */
+                                                    /* 3d */
+                                                    /* 3e */
+jcxz    opcod4        data (0,4,.jcxz1,'JCXZ'),     /* 3f */
+loope   opcod5 public data (.jcxz,5,.loope1,'LOOPE');
+
+/**************** END OF MNEMONIC TABLE ****************/
+
+end mnem4;

@@ -1,0 +1,15 @@
+$nolist
+
+
+/*    D E C L A R A T I O N   F O R   "C O D E M A C R O"   P A R T
+
+      Extended version of ASM86 */
+
+dcl      comma             lit   ''',''',
+         colon             lit   ''':''',
+         first             lit   '0',
+         second            lit   '1',
+         leftpar           lit   '''(''',
+         rightpar          lit   ''')''';
+
+$list

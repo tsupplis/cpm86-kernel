@@ -1,0 +1,59 @@
+$nolist
+
+/*
+
+  modified  3/26/81  R. Silberstein
+  modified  3/28/81  R. Silberstein
+
+*/
+
+outtext: procedure (t) external;
+  dcl t addr;
+end outtext;
+
+FILEABORT: PROCEDURE (FCBADR, TEXTADR) EXTERNAL;
+  DECLARE (FCBADR, TEXTADR) ADDRESS;
+END FILEABORT;
+
+fill: procedure(ch,n,pt) external;
+  dcl (ch,n) byte,pt addr;
+end fill;
+
+digit: procedure(ch) byte external;
+  dcl ch byte;
+end digit;
+
+letter: procedure(ch) byte external;
+  dcl ch byte;
+end letter;
+
+alphanumeric: proc(ch) byte external;
+  dcl ch byte;
+end alphanumeric;
+
+asciichar: proc(ch) byte external;
+  dcl ch byte;
+end asciichar;
+
+upper: procedure(ch) byte external;
+  dcl ch byte;
+end upper;
+
+equal: procedure(n,s,d) byte external;
+  dcl n byte,
+      (s,d) addr;
+end equal;
+
+hex1out: proc(n,d) external;
+  dcl n byte,d addr;
+end hex1out;
+
+hex2out: proc(n,d) external;
+  dcl n addr,d addr;
+end hex2out;
+
+decout: proc(n,d) external;
+  dcl n addr,d addr;
+end decout;
+
+$list

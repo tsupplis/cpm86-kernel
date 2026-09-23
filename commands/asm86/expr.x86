@@ -1,0 +1,147 @@
+$nolist
+
+/*
+
+  modified  4/24/81  R. Silberstein
+
+*/
+
+/*      Symbol types :          */
+
+dcl
+reg             lit     '0',    /* register */
+pseudo          lit     '1',    /* pseudo instruction */
+code            lit     '2',    /* instruction */
+string          lit     '3',    /* character string */
+spec            lit     '4',    /* special character */
+number          lit     '5',    /* 8 or 16 bit number */
+variable        lit     '6',
+lab             lit     '7',    /* label */
+operator        lit     '8',    /* operator in expressions */
+doubledefined   lit     '0f9h', /* doubled defined symbol */
+neglected       lit     '0fah', /* neglected symb.,never to be def. */
+ident           lit     '0fbh', /* identificator, scanner output */
+udefsymb        lit     '0fdh', /* undefined symbol */
+symbol          lit     '0feh', /* variable,label or undef. symb. */
+deletedsymb     lit     '0ffh'; /* deleted symbol (not used */
+
+
+/*      Symbol description values       */
+
+dcl
+nil             lit     '0',    /* no specification */
+byt             lit     '1',    /* symbol is 8-bit type */
+wrd             lit     '2',    /* symbol is 16 bit type */
+dwrd            lit     '4';    /* symbol is 2*16 bit type
+                                   or a segment register  */
+
+/*      Register values :       */
+
+dcl
+rbx      lit     '3',
+rbp      lit     '5',
+rsi      lit     '6',
+rdi      lit     '7',
+
+res      lit     '0',    /* segment registers */
+rcs      lit     '1',
+rss      lit     '2',
+rds      lit     '3';
+
+        /* Symbolic operators */
+
+dcl
+oshort          lit '0',        /* 8-bit value of expression */
+oor             lit '1',        /* logical OR */
+oxor            lit '2',        /* logical XOR */
+oand            lit '3',        /* logical AND */
+onot            lit '4',        /* logical NOT */
+oeq             lit '5',        /* equal */
+ogt             lit '6',        /* greater */
+oge             lit '7',        /* greater or equal */
+olt             lit '8',        /* less */
+ole             lit '9',        /* less or equal */
+one             lit '10',       /* not equal */
+omod            lit '11',       /* arithmetic MOD */
+oshl            lit '12',       /* shift left */
+oshr            lit '13',       /* shift rigth */
+optr            lit '14',       /* take type of 1. op, value of 2. */
+ooffset         lit '15',       /* offset value of operand */
+oseg            lit '16',       /* segment value of operand */
+otype           lit '17',       /* type value of operand */
+olength         lit '18',       /* length attribute of variables */
+olast           lit '19',       /* length - 1 */
+leftbracket     lit '''[''',
+rightbracket    lit ''']''';
+
+dcl
+
+operandstruc     lit     'struc(
+ length       addr,
+ stype        byte,
+ sflag        byte,
+ segment      addr,
+ offset       addr,
+ baseindex    byte)',
+
+
+/* define bits of SFLAG of structures above */
+
+type$bit      lit '7h',  /* bit 0-2 */
+segtypebit    lit '18h', /* bit 3-4 */
+segmbit       lit '20h', /* bit 5 */
+iregbit       lit '40h', /* bit 6 */
+bregbit       lit '80h', /* bit 7 */
+
+         /* left-shift counters */
+typecount     lit '0',
+segtypecount  lit '3',
+segmcount     lit '5',
+iregcount     lit '6',
+bregcount     lit '7',
+
+/* define bits of BASEINDEX byte of structures above */
+
+indexregbit   lit '7',   /* bit 0-2 */
+baseregbit    lit '38h', /* bit 3-5 */
+nooverridebit lit '40h', /* bit 6   */
+
+         /* left shift counters */
+
+indexregcount lit '0',
+baseregcount  lit '3',
+noovercount   lit '6';
+
+
+dcl
+udefsymbol             lit '10';  /* undefined elem. of expression */
+
+newsymbol: proc(lg,stradr,result) byte external;
+  dcl lg byte,(stradr,result) addr;
+end newsymbol;
+
+findsymbol: proc(lg,stradr,result) byte external;
+  dcl lg byte,(stradr,result) addr;
+end findsymbol;
+
+getattributes: proc(symbadr,dest) external;
+  dcl (symbadr,dest) addr;
+end getattributes;
+
+enterattributes: proc(symbadr,source) external;
+  dcl (symbadr,source) addr;
+end enterattributes;
+
+scan: proc external;
+end scan;
+
+specialtoken: proc (tok) byte external;
+  dcl tok byte;
+end specialtoken;
+
+bracketexpr: proc (pt) byte external;
+  dcl pt address;
+end bracketexpr;
+
+$list
+

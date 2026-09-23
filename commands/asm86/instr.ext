@@ -1,0 +1,6 @@
+$nolist
+
+instruction: proc external;
+end instruction;
+
+$list

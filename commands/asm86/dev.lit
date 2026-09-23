@@ -1,0 +1,11 @@
+$nolist
+
+/*  Special file devices if not diskfile : */
+
+dcl
+null            lit     '''Z''-''A''',  /* file devices */
+printer         lit     '''Y''-''A''',
+console         lit     '''X''-''A''',
+validdisk       lit     '''P''-''A''';
+
+$list
