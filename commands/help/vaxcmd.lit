@@ -1,0 +1,20 @@
+
+/**** VAX commands for generation - read the name of this program 
+		for PROGNAME below.
+
+	$ util := PROGNAME
+	$ ccpmsetup				! set up environment
+	$ assign 'f$directory()' f1:		! use local dir for temp files
+	$ plm86 'util'.plm xref 'p1' optimize(3) debug
+	$ link86 f2:scd.obj, 'util'.obj  to 'util'.lnk
+	$ loc86 'util'.lnk od(sm(code,dats,data,stack,const)) -
+		  ad(sm(code(0),dats(10000h))) ss(stack(+32)) to 'util'.
+	$ h86 'util'
+
+***** Then, on a micro:
+	A>vax progname.h86 $fans
+	A>gencmd progname data[b1000]
+
+***** Notes: Stack is increased for interrupts.  Const(ants) are last
+		to force hex generation.
+****/

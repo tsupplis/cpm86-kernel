@@ -1,0 +1,2639 @@
+$ TITLE(' CONCURRENT CP/M-86 2.0  ---  ED')
+ED:
+DO;
+    /* MODIFIED FOR .PRL OPERATION MAY, 1979 */
+    /* MODIFIED FOR OPERATION WITH CP/M 2.0 AUGUST 1979 */
+    /* modified for MP/M 2.0 June 1981 */
+    /* modified for CP/M 1.1 Oct  1981 */
+    /* modified for CONCURRENT CP/M 1.0 Jul 1982 */
+    /* modified for CP/M 3.0 July 1982 */
+    /* modified for CP/M 3.0 SEPT 1982 */
+    /* modified for CONCURRENT CP/M-86 2.0 October 1982 */
+
+/* MODIFICATION LOG:
+ *   July 1982 whf: some code cleanup (grouped logicals, declared BOOL);
+ *        fixed disk full error handling; fixed read from null files;
+ *        fixed (some) of the dirty fcb handling (shouldn't use settype
+ *        function on open fcbs!).
+ *   July 1982 dh: installed patches to change macro abort command from
+ *        ^C to ^Y and to not print error message when trying to delete
+ *        a file that doesn't exist.  Added PERROR: PROCEDURE to print
+ *        error messages in a consistant format and modified error 
+ *        message handler at RESET: entry point.  Also corrected Invalid
+ *        filename error to not abort ED if parsing a R or X command.
+ *        Modified start (at PLM:) and SETDEST: to prompt for missing 
+ *        filenames.  Modified parse$fcb & parse$lib to set a global 
+ *        flag and break if it got an invalid filename for X or R commands.
+ *        Start sets page size from the system control block (SCB) if 
+ *        ED is running under CP/M-80 (high(ver)=0).
+ *        The H command now works with new files. (sets newfile=false)
+      Sept 82
+ *        Corrected bug in which ED file b: didn't work. Changed PLM:
+ *        and SETDEST: routines.
+      Oct 82  whf
+ *        Changed version numbers for Concurrent. ED entry point changed to
+ *        PLMSTART.
+ */
+
+
+/**** VAX commands for ED generation.
+
+	$ util := ED
+	$ ccpmsetup				! set up environment
+	$ assign 'f$directory()' f1:		! use local dir for temp files
+	$ plm86 'util'.plm xref 'p1' optimize(3) debug
+	$ link86 f2:scd.obj, 'util'.obj  to 'util'.lnk
+	$ loc86 'util'.lnk od(sm(code,dats,data,stack,const)) -
+		  ad(sm(code(0),dats(10000h))) ss(stack(+32)) to 'util'.
+	$ h86 'util'
+
+***** Then, on a micro:
+	A>vax ed.h86 $fans
+	A>gencmd ed data[b1000 m80 xfff]
+
+***** Notes: Stack is increased for interrupts.  Const(ants) are last
+		to force hex generation.  'm80' is the min number of pgraphs,
+		and is found in ED.MP2.
+
+****/
+
+$include (:f1:copyrt.lit)
+
+declare
+    mpmproduct literally '01h', /* requires mp/m */
+    cpm3       literally '30h'; /* requires 3.0 cp/m */
+
+declare plmstart label public;  /* entry point for plm86 interface */
+
+
+/* DECLARE                            8080 Interface
+    JMP EDCOMMAND - 3 (TO ADDRESS LXI SP) 
+    EDJMP BYTE DATA(0C3H),
+    EDADR ADDRESS DATA(.EDCOMMAND-3); */
+
+
+  /**************************************
+   *                                    *
+   *       B D O S   INTERFACE          *
+   *                                    *
+   **************************************/
+
+
+  mon1:
+    procedure (func,info) external;
+      declare func byte;
+      declare info address;
+    end mon1;
+
+  mon2:
+    procedure (func,info) byte external;
+      declare func byte;
+      declare info address;
+    end mon2;
+
+  mon3:
+    procedure (func,info) address external;
+      declare func byte;
+      declare info address;
+    end mon3;
+
+  declare fcb (1)   byte    external;	/* 1st default fcb    */
+  declare fcb16 (1) byte    external;	/* 2nd default fcb    */
+  declare tbuff (1) byte    external;	/* default dma buffer */
+
+
+DECLARE
+    MAXB      ADDRESS EXTERNAL, /* MAX BASE 0006H */
+    BUFF (128)BYTE    EXTERNAL, /* BUFFER 0080H */
+    SECTSHF   LITERALLY '7',    /* SHL(1,SECTSHF) = SECTSIZE */
+    SECTSIZE  LITERALLY '80H';  /* SECTOR SIZE */
+
+
+BOOT: PROCEDURE ;
+    call mon1(0,0);          /* changed for MP/M-86 version */
+    /* SYSTEM REBOOT */
+    END BOOT;
+$ eject
+
+  /*  E D  :   T H E   C P / M   C O N T E X T    E D I T O R  */
+ 
+    /*      COPYRIGHT (C) 1976, 1977, 1978, 1979, 1980, 1981, 1982, 1983
+            DIGITAL RESEARCH
+            BOX 579 PACIFIC GROVE
+            CALIFORNIA 93950
+
+            Revised:
+              07 April 81  by Thomas Rolander
+              21 July  81  by Doug Huskey
+              29 Oct   81  by Doug Huskey
+              10 Nov   81  by Doug Huskey
+              08 July  82  by Bill Fitler
+              26 July  82  by Doug Huskey
+    */
+/* DECLARE COPYRIGHT(*) BYTE DATA
+   (' COPYRIGHT (C) 1983, DIGITAL RESEARCH '); 
+   **** this message should be in the header ***
+*/
+declare date(*) byte data ('2/83');
+
+ /* COMMAND           FUNCTION
+    -------           --------
+     A            APPEND LINES OF TEXT TO BUFFER
+     B            MOVE TO BEGINNING OR END OF TEXT
+     C            SKIP CHARACTERS
+     D            DELETE CHARACTERS
+     E            END OF EDIT
+     F            FIND STRING IN CURRENT BUFFER
+     H            MOVE TO TOP OF FILE (HEAD)
+     I            INSERT   CHARACTERS FROM KEYBOARD
+                  UP TO NEXT <ENDFILE>
+     J            JUXTAPOSITION OPERATION - SEARCH FOR FIRST STRING,
+                  INSERT SECOND STRING, DELETE UNTIL THIRD STRING
+     K            DELETE LINES
+     L            SKIP LINES
+     M            MACRO DEFINITION (SEE COMMENT BELOW)
+     N            FIND NEXT OCCURRENCE OF STRING
+                  WITH AUTO SCAN THROUGH FILE
+     O            RE-EDIT OLD FILE
+     P            PAGE AND DISPLAY (MOVES UP OR DOWN 24 LINES AND
+                  DISPLAYS 24 LINES)
+     Q            QUIT EDIT WITHOUT UPDATING THE FILE
+     R<FILENAME>  READ FROM FILE <FILENAME> UNTIL <ENDFILE> AND
+                  INSERT INTO TEXT
+     S            SEARCH FOR FIRST STRING, REPLACE BY SECOND STRING
+     T            TYPE LINES
+     U            TRANSLATE TO UPPER CASE (-U CHANGES TO NO TRANSLATE)
+     W            WRITE LINES OF TEXT TO FILE
+     X<FILENAME>  TRANSFER (XFER) LINES TO FILE <FILENAME> 
+     Z            SLEEP FOR 1/2 SECOND (USED IN MACROS TO STOP DISPLAY)
+     <CR>         MOVE UP OR DOWN AND PRINT ONE LINE
+ 
+
+    IN GENERAL, THE EDITOR ACCEPTS SINGLE LETTER COMMANDS WITH OPTIONAL
+INTEGER VALUES PRECEDING THE COMMAND.  THE EDITOR ACCEPTS BOTH UPPER AND LOWER
+CASE COMMANDS AND VALUES, AND PERFORMS TRANSLATION TO UPPER CASE UNDER THE FOL-
+LOWING CONDITIONS.  IF THE COMMAND IS TYPED IN UPPER CASE, THEN THE DATA WHICH
+FOLLOWS IS TRANSLATED TO UPPER CASE.  THUS, IF THE "I" COMMAND IS TYPED IN
+UPPER CASE, THEN ALL INPUT IS AUTOMATICALLY TRANSLATED (ALTHOUGH ECHOED IN
+LOWER CASE, AS TYPED).  IF THE "A" COMMAND IS TYPED IN UPPER CASE, THEN ALL
+INPUT IS TRANSLATED AS READ FROM THE DISK.  GLOBAL TRANSLATION TO UPPER CASE
+CAN BE CONTROLLED BY THE "U" COMMAND (-U TO NEGATE ITS EFFECT).  IF YOU ARE
+OPERATING WITH AN UPPER CASE ONLY TERMINAL, THEN OPERATION IS AUTOMATIC.
+SIMILARLY, IF YOU ARE OPERATING WITH A LOWER CASE TERMINAL, AND TRANSLATION
+TO UPPER CASE IS NOT SPECIFIED, THEN LOWER CASE CHARACTERS CAN BE ENTERED.
+
+     A NUMBER OF COMMANDS CAN BE PRECEDED BY A POSITIVE OR
+     NEGATIVE INTEGER BETWEEN 0 AND 65535 (1 IS DEFAULT IF NO VALUE
+     IS SPECIFIED).  THIS VALUE DETERMINES THE NUMBER OF TIMES THE
+     COMMAND IS APPLIED BEFORE RETURNING FOR ANOTHER COMMAND.
+         THE COMMANDS
+                       C D K L T P U  <CR>
+     CAN BE PRECEDED BY AN UNSIGNED, POSITIVE, OR NEGATIVE NUMBER,
+     THE COMMANDS
+                       A F J N W Z
+     CAN BE PRECEDED BY AN UNSIGNED OR POSITIVE NUMBER,
+     THE COMMANDS
+                       E H O Q
+     CANNOT BE PRECEDED BY A NUMBER.  THE COMMANDS
+                       F I J M R S
+     ARE ALL FOLLOWED BY ONE OR MORE STRINGS OF CHARACTERS WHICH CAN
+     BE OPTIONALLY SEPARATED OR TERMINATED BY EITHER <ENDFILE> OR <CR>.
+     THE <ENDFILE> IS GENERALLY USED TO SEPARATE THE SEARCH STRINGS
+     IN THE S AND J COMMANDS, AND IS USED AT THE END OF THE COMMANDS IF
+     ADDITIONAL COMMANDS FOLLOW.  FOR EXAMPLE, THE FOLLOWING COMMAND
+     SEQUENCE SEARCHES FOR  THE STRING 'GAMMA', SUBSTITUTES THE STRING
+     'DELTA', AND THEN TYPES THE FIRST PART OF THE LINE WHERE THE
+     CHANGE OCCURRED, FOLLOWED BY THE REMAINDER OF THE LINE WHICH WAS
+     CHANGED:
+                 SGAMMA<ENDFILE>DELTA<ENDFILE>0TT<CR>
+ 
+     THE CONTROL-L CHARACTER IN SEARCH AND SUBSTITUTE STRINGS IS
+     REPLACED ON INPUT BY <CR><LF> CHARACTERS.  THE CONTROL-I KEY
+     IS TAKEN AS A TAB CHARACTER.
+ 
+        THE COMMANDS R & X MUST BE FOLLOWED BY A FILE NAME (WITH default 
+     FILE TYPE OF 'LIB') WITH A TRAILING <CR> OR <ENDFILE>.  THE COMMAND
+     I IS FOLLOWED BY A STRING OF SYMBOLS TO INSERT, TERMINATED BY
+     A <CR> OR <ENDFILE>.  IF SEVERAL LINES OF TEXT ARE TO BE INSERTED,
+     THE I CAN BE DIRECTLY FOLLOWED BY AN <ENDFILE> OR <CR> IN WHICH
+     CASE THE EDITOR ACCEPTS LINES OF INPUT TO THE NEXT <ENDFILE>.
+     THE COMMAND 0T PRINTS THE FIRST PART OF THE CURRENT LINE,
+     AND THE COMMAND 0L MOVES THE REFERENCE TO THE BEGINNING OF THE
+     CURRENT LINE.  THE COMMAND 0P PRINTS THE CURRENT PAGE ONLY, WHILE
+     THE COMMAND 0Z READS THE CONSOLE RATHER THAN WAITING (THIS IS USED
+     AGAIN WITHIN MACROS TO STOP THE DISPLAY - THE MACRO EXPANSION
+     STOPS UNTIL A CHARACTER IS READ.  IF THE CHARACTER IS NOT A BREAK
+     THEN THE MACRO EXPANSION CONTINUES NORMALLY).
+ 
+        NOTE THAT A POUND SIGN IS TAKEN AS THE NUMBER 65535, ALL
+     UNSIGNED NUMBERS ARE ASSUMED POSITIVE, AND A SINGLE - IS ASSUMED -1
+ 
+     A NUMBER OF COMMANDS CAN BE GROUPED TOGETHER AND EXECUTED
+     REPETITIVELY USING THE MACRO COMMAND WHICH TAKES THE FORM
+ 
+             <NUMBER>MC1C2...CN<DELIMITER>
+ 
+     WHERE <NUMBER> IS A NON-NEGATIVE INTEGER N, AND <DELIMITER> IS
+     <ENDFILE> OR <CR>.  THE COMMANDS C1 ... CN  FOLLOWING THE M ARE
+     EXECUTED N TIMES, STARTING AT THE CURRENT POSITION IN THE BUFFER.
+     IF N IS 0, 1, OR OMITTED, THE COMMANDS ARE EXECUTED UNTIL THE END
+     IF THE BUFFER IS ENCOUNTERED.
+ 
+     THE FOLLOWING MACRO, FOR EXAMPLE, CHANGES ALL OCCURRENCES OF
+     THE NAME 'GAMMA' TO 'DELTA', AND PRINTS THE LINES WHICH
+     WERE CHANGED:
+ 
+                 MFGAMMA<ENDFILE>-5DIDELTA<ENDFILE>0LT<CR>
+ 
+    (NOTE: AN <ENDFILE> IS THE CP/M END OF FILE MARK - CONTROL-Z)
+ 
+    IF ANY KEY IS DEPRESSED DURING TYPING OR MACRO EXPANSION, THE
+    FUNCTION IS CONSIDERED TERMINATED, AND CONTROL RETURNS TO THE
+    OPERATOR.
+ 
+    ERROR CONDITIONS ARE INDICATED BY PRINTING ONE OF THE CHARACTERS:
+ 
+     SYMBOL                    ERROR CONDITION
+     ------      ----------------------------------------------------
+     GREATER     FREE MEMORY IS EXHAUSTED - ANY COMMAND CAN BE ISSUED
+                 WHICH DOES NOT INCREASE MEMORY REQUIREMENTS.
+     QUESTION    UNRECOGNIZED COMMAND OR ILLEGAL NUMERIC FIELD
+     POUND       CANNOT APPLY THE COMMAND THE NUMBER OF TIMES SPECFIED
+                 (OCCURS IF SEARCH STRING CANNOT BE FOUND)
+     LETTER O    CANNOT OPEN <FILENAME>.LIB IN R COMMAND
+ 
+     THE ERROR CHARACTER IS ALSO ACCOMPANIED BY THE LAST CHARACTER
+     SCANNED WHEN THE ERROR OCCURRED.                      */
+ 
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  GLOBAL VARIABLES * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+DECLARE LIT LITERALLY 'LITERALLY',
+    DCL LIT 'DECLARE',
+    PROC LIT 'PROCEDURE',
+    ADDR LIT 'ADDRESS',
+    BOOLEAN LIT 'BYTE',
+    CTLL LIT '0CH',
+    CTLR LIT '12H',                /* REPEAT LINE IN INSERT MODE */
+    CTLU LIT '15H',                /* LINE DELETE IN INSERT MODE */
+    CTLX LIT '18H',                /* EQUIVALENT TO CTLU */
+    CTLH LIT '08H',                /* BACKSPACE */
+    TAB LIT '09H',                 /* TAB CHARACTER */
+    LCA  LIT '110$0001B',          /* LOWER CASE A */
+    LCZ  LIT '111$1010B',          /* LOWER CASE Z */
+    ESC  LIT '1BH',                /* ESCAPE CHARACTER */
+    ENDFILE LIT '1AH';             /* CP/M END OF FILE */
+ 
+DECLARE 
+    TRUE LITERALLY '1', 
+    FALSE LITERALLY '0',
+    FOREVER LITERALLY 'WHILE TRUE',
+    CTRL$Y LITERALLY '19h',
+    CR LITERALLY '13',
+    LF LITERALLY '10',
+    WHAT LITERALLY '63';
+
+DECLARE
+    MAX ADDRESS,                   /* .MEMORY(MAX)=0 (END) */
+    MAXM ADDRESS,                  /* MINUS 1 */
+    HMAX ADDRESS;                  /* = MAX/2 */
+ 
+declare
+    i  byte;                       /* used by command parsing */
+
+DECLARE
+    us literally '8',              /* file from user 0   */
+    RO LITERALLY '9',              /* R/O FILE INDICATOR */
+    SY LITERALLY '10',             /* SYSTEM FILE ATTRIBUTE */
+    EX LITERALLY '12',             /* EXTENT NUMBER POSITION */
+    UB LITERALLY '13',             /* UNFILLED BYTES */
+    ck LITERALLY '13',             /* checksum */
+    MD LITERALLY '14',             /* MODULE NUMBER POSITION */
+    NR LITERALLY '32',             /* NEXT RECORD FIELD */
+    FS LITERALLY '33',             /* FCB SIZE */
+    RFCB (FS) BYTE                 /* READER FILE CONTROL BLOCK */
+        INITIAL(0, /* FILE NAME */ '        ',
+                   /* FILE TYPE */ 'LIB',0,0,0),
+    RBP BYTE,                      /* READ BUFFER POINTER */
+    XFCB (FS) BYTE                 /* XFER FILE CONTROL BLOCK */
+        INITIAL(0, 'X$$$$$$$','LIB',0,0,0,0,0,0,0),
+    XFCBE BYTE AT(.XFCB(EX)),      /* XFCB EXTENT */
+    XFCBR BYTE AT(.XFCB(NR)),      /* XFCB RECORD # */
+    xfcbext byte initial(0),       /* save xfcb extent for appends */
+    xfcbrec byte initial(0),       /* save xfcb record for appends */
+    XBUFF (SECTSIZE) BYTE,         /* XFER BUFFER */
+    XBP BYTE,                      /* XFER POINTER */
+
+    NBUF BYTE,                     /* NUMBER OF BUFFERS */
+    BUFFLENGTH ADDRESS,            /* NBUF * SECTSIZE */
+    SFCB (FS) BYTE AT(.FCB),       /* SOURCE FCB = DEFAULT FCB */
+    SDISK BYTE AT (.FCB),          /* SOURCE DISK */
+    SBUFFADR ADDRESS,              /* SOURCE BUFFER ADDRESS */
+    SBUFF BASED SBUFFADR (128) BYTE, /* SOURCE BUFFER */
+    password (16) byte initial(0), /* source password */
+
+    DFCB (FS) BYTE,                /* DEST FILE CONTROL BLOCK */
+    DDISK BYTE AT (.DFCB),         /* DESTINATION DISK */
+    DBUFFADR ADDRESS,              /* DESTINATION BUFFER ADDRESS */
+    DBUFF BASED DBUFFADR (128) BYTE, /* DEST BUFFER */
+    NSOURCE ADDRESS,               /* NEXT SOURCE CHARACTER */
+    NDEST   ADDRESS,               /* NEXT DESTINATION CHAR */
+
+    tmpfcb (FS) BYTE;              /* temporary fcb for rename & deletes */
+ 
+DECLARE	                                  /**** some of the logicals *****/ 
+    newfile      BOOLEAN initial (false), /* true if no source file */
+    onefile      BOOLEAN initial (true),  /* true if output file=input file */
+    XFERON       BOOLEAN initial (false), /* TRUE IF XFER ACTIVE */
+    reading      BOOLEAN initial (false), /* TRUE IF reading RFCB */
+    PRINTSUPPRESS BOOLEAN initial (false),/* TRUE IF PRINT SUPPRESSED */
+    sys          BOOLEAN initial (false), /* true if system file */
+    protection 	 BOOLEAN initial (false), /* password protection mode */
+    INSERTING    BOOLEAN,          	  /* TRUE IF INSERTING CHARACTERS */
+    READBUFF     BOOLEAN,          	  /* TRUE IF END OF READ BUFFER */
+    TRANSLATE    BOOLEAN initial (false), /* TRUE IF XLATION TO UPPER CASE */
+    UPPER        BOOLEAN initial (false), /* TRUE IF GLOBALLY XLATING TO UC */
+    LINESET      BOOLEAN initial (true),  /* TRUE IF LINE #'S PRINTED */
+    has$bdos3    BOOLEAN initial (false), /* true if BDOS version >= 3.0 */
+    tail BOOLEAN initial (true),  /* true if readiing from cmd tail */
+    dot$found    BOOLEAN initial (false); /* true if dot found in fname parse*/
+
+DECLARE
+    dtype  (3)  byte,                /* destination file type */
+    libfcb (12) byte initial(0,'X$$$$$$$LIB'),/* default lib name */
+    tempfl (3)  byte initial('$$$'), /* temporary file type */
+    backup (3)  byte initial('BAK'); /* backup file type */
+
+declare
+   error$code address;
+ 
+DECLARE
+    COLUMN  BYTE initial(0),  /* CONSOLE COLUMN POSITION */
+    SCOLUMN BYTE INITIAL(8),  /* STARTING COLUMN IN "I" MODE */
+    TCOLUMN BYTE,             /* TEMP DURING BACKSPACE */
+    QCOLUMN BYTE;             /* TEMP DURING BACKSPACE */
+ 
+DECLARE DCNT BYTE;	      /* RETURN CODE FROM MON? CALLS */
+ 
+/* COMMAND BUFFER */
+DECLARE (MAXLEN,COMLEN) BYTE, COMBUFF(128) BYTE,
+    CBP BYTE initial(0);
+
+DECLARE /* LINE COUNTERS */
+    BASELINE ADDRESS,        /* CURRENT LINE */
+    RELLINE  ADDRESS;        /* RELATIVE LINE IN TYPEOUT */
+ 
+DECLARE
+    FORWARD LIT '1',
+    BACKWARD LIT '0',
+    RUBOUT LIT '07FH',
+    POUND LIT '23H',
+    MACSIZE LIT '128',       /* MAX MACRO SIZE */
+    SCRSIZE LIT '100',       /* SCRATCH BUFFER SIZE */
+    COMSIZE LIT 'ADDRESS';   /* DETERMINES MAX COMMAND NUMBER*/
+ 
+DCL MACRO(MACSIZE) BYTE,
+    SCRATCH(SCRSIZE) BYTE,     /* SCRATCH BUFFER FOR F,N,S */
+    (WBP, WBE, WBJ)  BYTE,     /* END OF F STRING, S STRING, J STRING */
+    (FLAG, MP, MI, XP) BYTE,
+    MT COMSIZE;
+ 
+DCL (START, RESTART, OVERCOUNT, OVERFLOW, 
+     disk$err, dir$err, RESET, BADCOM) LABEL;
+
+/* global variables used by file parsing routines */
+dcl ncmd byte initial(0);
+   
+ 
+DCL (DISTANCE, TDIST) COMSIZE,
+    (DIRECTION, CHAR) BYTE,
+    ( FRONT, BACK, FIRST, LASTC) ADDR;
+ 
+dcl LPP byte initial(23);          /* LINES PER PAGE */
+
+/* the following stucture is used near plm: to set
+   the lines per page from the BDOS 3 SCB */
+declare
+    pb (2) byte data (28,0);
+
+declare 
+    ver address;                   /* VERSION NUMBER */
+ 
+declare
+    err$msg         address initial(0),
+    invalid (*)     byte data ('Invalid Filename$'),
+    dirfull (*)     byte data ('DIRECTORY FULL$'),
+    diskfull (*)    byte data ('DISK FULL$'),
+    password$err(*) byte data ('Creating Password$'),
+    not$found (*)   byte data ('File not found$'),
+    notavail (*)    byte data ('File not available$');
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+               * * *  CP/M INTERFACE ROUTINES * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+
+ /* IO SECTION */
+ 
+READCHAR: PROCEDURE BYTE; RETURN MON2(1,0);
+    END READCHAR;
+
+  conin: 
+    procedure byte;
+    return mon2(6,0fdh);
+    end conin;
+
+PRINTCHAR: PROCEDURE(CHAR);
+    DECLARE CHAR BYTE;
+    IF PRINTSUPPRESS THEN RETURN;
+    CALL MON1(2,CHAR);
+    END PRINTCHAR;
+
+TTYCHAR: PROCEDURE(CHAR);
+    DECLARE CHAR BYTE;
+    IF CHAR >= ' ' THEN COLUMN = COLUMN + 1;
+    IF CHAR = LF THEN COLUMN = 0;
+    CALL PRINTCHAR(CHAR);
+    END TTYCHAR;
+ 
+BACKSPACE: PROCEDURE;
+    /* MOVE BACK ONE POSITION */
+    IF COLUMN = 0 THEN RETURN;
+    CALL TTYCHAR(CTLH); /* COLUMN = COLUMN - 1 */
+    CALL TTYCHAR(' ' ); /* COLUMN = COLUMN + 1 */
+    CALL TTYCHAR(CTLH); /* COLUMN = COLUMN - 1 */
+    COLUMN = COLUMN - 2;
+    END BACKSPACE;
+
+PRINTABS: PROCEDURE(CHAR);
+    DECLARE (CHAR,I,J) BYTE;
+    I = CHAR = TAB AND 7 - (COLUMN AND 7);
+    IF CHAR = TAB THEN CHAR = ' ';
+        DO J = 0 TO I;
+        CALL TTYCHAR(CHAR);
+        END;
+    END PRINTABS;
+ 
+GRAPHIC: PROCEDURE(C) BOOLEAN;
+    DECLARE C BYTE;
+    /* RETURN TRUE IF GRAPHIC CHARACTER */
+    IF C >= ' ' THEN RETURN TRUE;
+    RETURN C = CR OR C = LF OR C = TAB;
+    END GRAPHIC;
+
+PRINTC: PROCEDURE(C);
+    DECLARE C BYTE;
+    IF NOT GRAPHIC(C) THEN
+        DO; CALL PRINTABS('^');
+        C = C + '@';
+        END;
+    CALL PRINTABS(C);
+    END PRINTC;
+
+CRLF: PROCEDURE;
+    CALL PRINTC(CR); CALL PRINTC(LF);
+    END CRLF;
+
+PRINTM: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL MON1(9,A);
+    END PRINTM;
+
+PRINT: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL CRLF;
+    CALL PRINTM(A);
+    END PRINT;
+
+perror: procedure(a);
+    declare a address;
+    call print(.(tab,'ERROR - $'));
+    call printm(A);
+    call crlf;
+    end perror;
+
+READ: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL MON1(10,A);
+    END READ;
+ 
+        /* used for library files */
+OPEN: PROCEDURE(FCB);
+     DECLARE FCB ADDRESS;
+     if MON2(15,FCB) = 255 then do;
+        flag = 'O';
+	err$msg = .not$found;
+        go to reset;
+        end;
+     END OPEN;
+ 
+        /* used for main source file */
+OPEN$FILE: PROCEDURE(FCB) ADDRESS;
+     DECLARE FCB ADDRESS;
+     RETURN MON3(15,FCB);
+     END OPEN$FILE;
+ 
+CLOSE: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(16,FCB);
+    END CLOSE;
+ 
+DELETE: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    DCNT = MON2(19,FCB);
+    END DELETE;
+ 
+DISKREAD: PROCEDURE(FCB) BYTE;
+    DECLARE FCB ADDRESS;
+    RETURN MON2(20,FCB);
+    END DISKREAD;
+ 
+DISKWRITE: PROCEDURE(FCB) BYTE;
+    DECLARE FCB ADDRESS;
+    RETURN MON2(21,FCB);
+    END DISKWRITE;
+ 
+RENAME: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    CALL MON1(23,FCB);
+    END RENAME;
+ 
+READCOM: PROCEDURE;
+    MAXLEN = 128; CALL READ(.MAXLEN);
+    END READCOM;
+ 
+BREAK$KEY: PROCEDURE BOOLEAN;
+    IF MON2(11,0) THEN
+        DO; /* CLEAR CHAR */
+        IF MON2(1,0) = CTRL$Y THEN 
+            RETURN TRUE;
+        END;
+    RETURN FALSE;
+    END BREAK$KEY;
+ 
+CSELECT: PROCEDURE BYTE;
+    /* RETURN CURRENT DRIVE NUMBER */
+    RETURN MON2(25,0);
+    END CSELECT;
+ 
+SETDMA: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    /* SET DMA ADDRESS */
+    CALL MON1(26,A);
+    END SETDMA;
+ 
+set$attribute: procedure(FCB);
+    declare fcb address;
+    call MON1(30,FCB);
+    end set$attribute;
+
+/* The PL/M built-in procedure "MOVE" can be used to move storage,
+   its definition is:  
+
+MOVE: PROCEDURE(COUNT,SOURCE,DEST);
+        DECLARE (COUNT,SOURCE,DEST) ADDRESS;
+        / MOVE DATA FROM SOURCE TO DEST ADDRESSES, FOR COUNT BYTES /
+        END MOVE;
+  */
+                  /* this routine is included solely for 
+                     enconomy of space over the use of the
+                     equivalent (in-line) code generated by
+                     the built-in function */
+move:   proc(c,s,d);
+    dcl (s,d) addr, c byte;
+    dcl a based s byte, b based d byte;
+
+        do while (c:=c-1)<>255;
+        b=a; s=s+1; d=d+1;
+        end;
+    end move;
+ 
+write$xfcb: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    call move(8,.password,.password(8));
+    if MON2(103,FCB)= 0ffh then
+       call perror(.password$err);
+    END write$xfcb;
+ 
+read$xfcb: PROCEDURE(FCB);
+    DECLARE FCB ADDRESS;
+    call MON1(102,FCB);
+    END read$xfcb;
+ 
+  /* 0ff => return BDOS errors */
+return$errors:
+    procedure(mode);
+    declare mode byte;
+      call mon1 (45,mode);	
+    end return$errors;
+
+REBOOT: PROCEDURE;
+    IF XFERON THEN 
+        CALL DELETE(.libfcb);
+    CALL BOOT;
+    END REBOOT;
+
+version: procedure address;
+    /* returns current cp/m version # */
+    return mon3(12,0);
+    end version;
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  SUBROUTINES  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+
+  /*  INPUT / OUTPUT BUFFERING ROUTINES */
+ 
+
+
+                  /* abort ED and print error message */
+ABORT: PROCEDURE(A);
+    DECLARE A ADDRESS;
+    CALL perror(A);
+    CALL REBOOT;
+    END ABORT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* fatal file error */
+FERR: PROCEDURE;
+    CALL CLOSE(.DFCB); /* ATTEMPT TO CLOSE FILE FOR LATER RECOVERY */
+    CALL ABORT (.dirfull);
+    END FERR;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set password if cpm 3*/
+setpassword: procedure;
+    if has$bdos3 then
+        call setdma(.password);
+    end setpassword;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* delete file at afcb */
+delete$file: procedure(afcb);
+    declare afcb address;
+    call setpassword;
+    call delete(afcb);
+    end delete$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* rename file at afcb */
+rename$file: procedure(afcb);
+    declare afcb address;
+    call delete$file(afcb+16);     /* delete new file */
+    call setpassword;
+    call rename(afcb);
+    end rename$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* make file at afcb */
+make$file: procedure(afcb);
+    declare afcb address;
+    call delete$file(afcb);     /* delete file */
+    call setpassword;
+    DCNT = MON2(22,afcb);       /* create file */
+    end make$file;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* fill string @ s for c bytes with f */
+fill:   proc(s,f,c);
+    dcl s addr,
+        (f,c) byte,
+        a based s byte;
+
+        do while (c:=c-1)<>255;
+        a = f;
+        s = s+1;
+        end;
+    end fill;
+ 
+
+
+ 
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                * * *  FILE HANDLING ROUTINES  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+
+
+                  /* set destination file type to type at A */
+SETTYPE: PROCEDURE(afcb,A);
+    DECLARE (afcb, A) ADDRESS;
+    CALL MOVE(3,A,aFCB+9);
+    END SETTYPE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set dma to xfer buffer */
+SETXDMA: PROCEDURE;
+    CALL SETDMA(.XBUFF);
+    END SETXDMA;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* fill primary source buffer  */
+FILLSOURCE: PROCEDURE;
+    DECLARE I BYTE;
+    ZN: PROCEDURE;
+        NSOURCE = 0;
+        END ZN;
+ 
+     CALL ZN;
+        DO I = 0 TO NBUF;
+        CALL SETDMA(SBUFFADR+NSOURCE);
+        IF (DCNT := DISKREAD(.FCB)) <> 0 THEN
+            DO; IF DCNT > 1 THEN CALL FERR;
+            SBUFF(NSOURCE) = ENDFILE;
+            I = NBUF;
+            END;
+        ELSE
+            NSOURCE = NSOURCE + SECTSIZE;
+        END;
+    CALL ZN;
+    END FILLSOURCE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* get next character in source file */
+GETSOURCE: PROCEDURE BYTE;
+    DECLARE B BYTE;
+    if newfile then return endfile;   /* in case they try to #a */
+    IF NSOURCE >= BUFFLENGTH THEN CALL FILLSOURCE;
+    IF (B := SBUFF(NSOURCE)) <> ENDFILE THEN
+        NSOURCE = NSOURCE + 1;
+    RETURN B;
+    END GETSOURCE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* try to free space by erasing backup */
+erase$bak: PROCEDURE BOOLEAN;
+
+    if onefile then 
+        if newfile then do;
+            call move(fs,.dfcb,.tmpfcb);  /* can't diddle with open fcb */
+            CALL SETTYPE(.tmpfcb,.BACKUP);
+            CALL DELETE$file(.tmpfcb);
+            if dcnt <> 255 then
+                return true;
+            end;
+    return false;
+    end erase$bak;
+
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* write output buffer up to (not including)
+                     ndest  (low 7 bits of ndest are 0  */
+WRITEDEST: PROCEDURE;
+    DECLARE (I,N,save$ndest) BYTE;
+ 
+    n = shr(ndest,sectshf);   /* calculate number sectors to write */
+    if n=0 then return;       /* no need to write if we haven't filled sector*/
+    save$ndest = ndest;       /* save for error recovery */
+    ndest = 0;
+        DO I = 1 TO N;
+retry:
+        CALL SETDMA(DBUFFADR+NDEST);
+        IF DISKWRITE(.DFCB) <> 0 THEN 
+            if erase$bak then
+                go to retry;
+            else do;    /* reset buffer, let them take action (delete files) */
+                if ndest <> 0 then
+                    call move(save$ndest-ndest, dbuffadr+ndest, dbuffadr);
+                ndest = save$ndest-ndest;
+                go to disk$err;
+                end;
+        NDEST = NDEST + SECTSIZE;
+        END;
+    ndest = 0;
+    END WRITEDEST;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* put a character in output buffer */
+PUTDEST: PROCEDURE(B);
+    DECLARE B BYTE;
+    IF NDEST >= BUFFLENGTH THEN CALL WRITEDEST;
+    DBUFF(NDEST) = B;
+    NDEST = NDEST + 1;
+    END PUTDEST;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* put a character in the xfer buffer */
+PUTXFER: PROCEDURE(C);
+    DECLARE C BYTE;
+    IF XBP >= SECTSIZE THEN /* BUFFER OVERFLOW */
+        DO; 
+retry:
+        CALL SETXDMA;
+        xfcbext = xfcbe;               /* save for appends */
+        xfcbrec = xfcbr; 
+        IF DISKWRITE(.XFCB) <> 0 THEN 
+            if erase$bak then
+                go to retry;
+            else do;
+/********       call close(.xfcb);   ***  commented out whf 8/82 !!!! ********/
+                go to disk$err;
+                end;
+        XBP = 0;
+        END;
+    XBUFF(XBP) = C; XBP = XBP + 1;
+    END PUTXFER;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* empty xfer buffer and close file.
+                     This routine is added to allow saving lib
+                     files for future edits - DH 10/18/81 */
+close$xfer: procedure;
+    dcl i byte;
+
+        do i = xbp to sectsize;
+        call putxfer(ENDFILE);
+        end;
+    call close(.xfcb);
+    end close$xfer;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* compare xfcb and rfcb to see if same */
+compare$xfer: procedure BOOLEAN;
+    dcl i byte;
+
+    i = 12;
+        do while (i:=i-1) <> -1;
+        if xfcb(i) <> rfcb(i) then
+            return false;
+        end;
+    return true;
+    end compare$xfer;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* restore xfer file extent and current 
+                     record, read record and set xfer pointer
+                     to first ENDFILE */
+append$xfer: procedure;
+
+    xfcbe = xfcbext;
+    call open(.xfcb);
+    xfcbr = xfcbrec;
+    call setxdma;
+    if diskread(.xfcb) = 0 then do;
+        xfcbr = xfcbrec;                /* write same record */
+            do xbp = 0 to sectsize;
+            if xbuff(xbp) = ENDFILE then
+                return;
+            end;
+        end; 
+    end append$xfer;
+$ eject
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+                  * * *  END EDIT ROUTINE * * *
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+
+                  /* finish edit, close files, rename */
+FINIS: PROCEDURE;
+    MOVEUP: PROCEDURE(afcb);
+    dcl afcb address;
+    /* set second filename (new name) for rename function */
+    CALL MOVE(16,aFCB,aFCB+16);
+    END MOVEUP;
+
+    /* * * * * * * *  WRITE OUTPUT BUFFER  * * * * * * * * */
+    /* SET UNFILLED BYTES - USED FOR ISIS-II COMPATIBILITY */
+    /*  DFUB = 0 ; <<<< REMOVE FOR MP/M 2 , CP/M 3 */
+        DO WHILE (LOW(NDEST) AND 7FH) <> 0;
+        /* COUNTS UNFILLED BYTES IN LAST RECORD */
+        /* DFUB = DFUB + 1; */
+        CALL PUTDEST(ENDFILE);
+        END;
+    CALL WRITEDEST;
+
+    if not newfile then
+        call close(.sfcb);	/* close this to clean up for mp/m environs */
+
+    /* * * * * *  CLOSE TEMPORARY DESTINATION FILE  * * * * * */
+    CALL CLOSE(.DFCB);
+    IF DCNT = 255 THEN CALL FERR;
+    if sys then do;
+        dfcb(sy)=dfcb(sy) or 80h;
+        call setpassword;
+        call set$attribute(.dfcb);
+        end;
+
+    /* * * * * *  RENAME SOURCE TO BACKUP IF ONE FILE  * * * * * */
+    if onefile then do;
+        call moveup(.sfcb);
+        CALL SETTYPE(.sfcb+16,.BACKUP);   /* set new type to BAK */
+        CALL RENAME$FILE(.SFCB);
+        end;
+
+    /* * * * * *  RENAME TEMPORARY DESTINATION FILE  * * * * * */
+    CALL MOVEUP(.DFCB);
+    CALL SETTYPE(.DFCB+16,.DTYPE);
+    CALL RENAME$FILE(.DFCB);
+
+    END FINIS;
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  COMMAND ROUTINES * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+
+
+                  /* print a character if not macro expansion */
+PRINTNMAC: PROCEDURE(CHAR);
+    DECLARE CHAR BYTE;
+    IF MP <> 0 THEN RETURN;
+    CALL PRINTC(CHAR);
+    END PRINTNMAC;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return true if lower case character */
+LOWERCASE: PROCEDURE(C) BOOLEAN;
+    DECLARE C BYTE;
+    RETURN C >= LCA AND C <= LCZ;
+    END LOWERCASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* translate character to upper case */
+UCASE: PROCEDURE(C) BYTE;
+    DECLARE C BYTE;
+    IF LOWERCASE(C) THEN RETURN C AND 5FH;
+    RETURN C;
+    END UCASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* get password and place at fcb + 16 */
+getpasswd:   proc;
+    dcl (i,c) byte;
+
+    call crlf;
+    call print(.('Password ? ','$'));
+retry:
+    call fill(.password,' ',8);
+        do i = 0 to 7;
+nxtchr:
+        if (c:=ucase(conin)) >= ' ' then 
+            password(i)=c;
+        if c = cr then
+            go to exit;
+        if c = CTLX then
+            goto retry;
+        if c = CTLH then do;
+            if i<1 then
+                goto retry;
+            else do;
+                password(i:=i-1)=' ';
+                goto nxtchr;
+                end;
+            end;
+        if c = 3 then
+            call reboot;
+        end;
+exit:
+    c = break$key;     /* clear raw I/O mode */
+    end getpasswd;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* translate to upercase if translate flag
+                     is on (also translate ESC to ENDFILE) */
+UTRAN: PROCEDURE(C) BYTE;
+    DECLARE C BYTE;
+    IF C = ESC THEN C = ENDFILE;
+    IF TRANSLATE THEN RETURN UCASE(C);
+    RETURN C;
+    END UTRAN;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* print the line number */
+PRINTVALUE: PROCEDURE(V);
+    /* PRINT THE LINE VALUE V */
+    DECLARE D BYTE,
+	ZERO BOOLEAN,
+        (K,V) ADDRESS;
+    K = 10000;
+    ZERO = FALSE;
+        DO WHILE K <> 0;
+        D = LOW(V/K); V = V MOD K;
+        K = K / 10;
+        IF ZERO OR  D <> 0 THEN
+            DO; ZERO = TRUE;
+            CALL PRINTC('0'+D);
+            END; 
+        ELSE
+            CALL PRINTC(' ');
+        END;
+    END PRINTVALUE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* print line with number V */
+PRINTLINE: PROCEDURE(V);
+    DECLARE V ADDRESS;
+    IF NOT LINESET THEN RETURN;
+    CALL PRINTVALUE(V);
+    CALL PRINTC(':');
+    CALL PRINTC(' ');
+    IF INSERTING THEN 
+        CALL PRINTC(' '); 
+    ELSE
+        CALL PRINTC('*');
+    END PRINTLINE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* print current line (baseline) */
+PRINTBASE: PROCEDURE;
+    CALL PRINTLINE(BASELINE);
+    END PRINTBASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* print current line if not in a macro */
+PRINTNMBASE: PROCEDURE;
+    IF MP <> 0 THEN RETURN;
+    CALL PRINTBASE;
+    END PRINTNMBASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ 
+
+                  /* get next character from command tail */
+getcmd: proc byte;
+     if buff(ncmd+1) <> 0 then
+        return buff(ncmd := ncmd + 1);
+     return cr;
+    end getcmd;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+          /* read next char from command buffer */
+READC: PROCEDURE BYTE;
+    /* MAY BE MACRO EXPANSION */
+    IF MP > 0 THEN
+        DO;
+        IF BREAK$KEY THEN GO TO OVERCOUNT;
+        IF XP >= MP THEN
+            DO; /* START AGAIN */
+            IF MT <> 0 THEN
+                DO; IF (MT:=MT-1) = 0 THEN
+                    GO TO OVERCOUNT;
+                END;
+            XP = 0;
+            END;
+        RETURN UTRAN(MACRO((XP := XP + 1) - 1));
+        END;
+    IF INSERTING THEN RETURN UTRAN(READCHAR);
+ 
+    /* GET COMMAND LINE */
+    IF READBUFF THEN
+        DO; READBUFF = FALSE;
+        IF LINESET AND COLUMN = 0 THEN
+            DO;
+            IF BACK >= MAXM THEN
+                CALL PRINTLINE(0); 
+            ELSE
+                CALL PRINTBASE;
+            END; 
+        ELSE
+            CALL PRINTC('*');
+        CALL READCOM; CBP = 0;
+        CALL PRINTC(LF);
+        COLUMN = 0;
+        END;
+    IF (READBUFF := CBP = COMLEN ) THEN 
+        COMBUFF(CBP) = CR;
+    RETURN UTRAN(COMBUFF((CBP := CBP +1) -1));
+    END READC;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ 
+
+                  /* get upper case character from command 
+                     buffer or command line */
+get$uc: proc;
+    if tail then 
+        char = ucase(getcmd);
+    else
+        char = ucase(readc);
+    end get$uc;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+ 
+
+                  /* parse file name 
+                     this routine requires a routine to get 
+                     the next character and put it in a byte
+                     variable */
+parse$fcb: proc(fcbadr) byte;
+    dcl fcbadr addr;
+    dcl afcb based fcbadr (33) byte;
+    dcl drive lit 'afcb(0)';
+    dcl (i,delimiter) byte;
+    dcl pflag boolean;
+
+    putc: proc;
+       afcb(i := i + 1) = char;
+       pflag = true;
+    end putc;
+
+    delim: proc boolean;
+       dcl del(*) byte data (CR,ENDFILE,' ,.;=:<>_[]*?');
+                         /*   0 1        2345678901234 */
+          do delimiter = 0 to last(del);
+          if char = del(delimiter) then do;
+             if delimiter > 12 then 	/* * or ? */
+                call perror(.('Cannot Edit Wildcard Filename$'));
+             return (true);
+             end;
+          end;
+       return (false);
+    end delim;
+
+
+    pflag = false;
+    flag = true;	/* global flag set to false if invalid filename */
+    dot$found = false;  /* allow null extensions in 'parse$lib' */
+    call get$uc;
+    if char <> CR then 
+        if char <> ENDFILE then do;
+                        /* initialize fcb to srce fcb type & drive */
+            call fill(fcbadr+12,0,21);
+            call fill(fcbadr+1,' ',11);
+                        /* clear leading blanks */
+                do while char = ' ';
+                call get$uc;
+                end;
+                        /* parse loop */
+                do while not delim;
+                i = 0;
+                    /* get name */
+                    do while not delim;
+                    if i > 8 then
+                        go to err;		/* too long */
+                    call putc;
+                    call get$uc;
+                    end;
+                if char = ':' then do;
+                    /* get drive from afcb(1) */
+                    if i <> 1 then
+                        go to err;		/* invalid : */
+                    if (drive := afcb(1) - 'A' + 1) > 16 then
+                        go to err;		/* invalid drive */
+                    afcb(1) = ' ';
+                    call get$uc;
+                    end;
+                if char = '.' then do;
+                    /* get file type */
+                    i = 8;
+                    dot$found = true;         /* .ext specified (may be null)*/
+                    call get$uc;
+                        do while not delim;
+                        if i > 11 then
+                            go to err;		/* too long */
+                        call putc;
+                        call get$uc;
+                        end;
+                    end;
+		if char = ';' then do;
+		    /* get password */
+		    call fill(fcbadr+16,' ',8);	/* where fn #152 puts passwd */
+		    i = 15;			/* passwd is last field */
+		    call get$uc;
+			do while not delim;
+			if i > 23 then
+			    go to err;
+			call putc;
+			call get$uc;
+			end;
+		    call move(8,fcbadr+16,.password); /* where ed wants it */
+		    end;
+                end;				/* parse loop */
+            /* delimiter must be a comma or space */
+            if delimiter > 3 then   /* not a CR,ENDFILE,SPACE,COMMA */
+                go to err;
+            if not pflag then
+                go to err;
+            end;
+
+    return (pflag);
+
+err:
+    call perror(.invalid);
+    return (flag:=false);
+    end parse$fcb;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set up destination FCB */
+setdest: PROCEDURE;
+    dcl i byte;
+
+    /* onefile = true; (initialized) */
+    if not tail then do;
+        call print(.('Enter Output file: $'));
+        call readcom;
+        cbp,readbuff = 0;
+        call crlf;
+        call crlf;
+        end;
+    if parse$fcb(.dfcb) then do;
+        onefile = false;
+        if dfcb(1) = ' ' then
+            call move(15,.sfcb+1,.dfcb+1);
+        end;
+    else
+        CALL MOVE(16,.SFCB,.DFCB);
+    call move(3,.dfcb(9),.dtype);   /* save destination type */
+    end setdest;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set read lib file DMA address */
+SETRDMA: PROCEDURE;
+    CALL SETDMA(.BUFF);
+    END SETRDMA;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* read lib file routine */
+READFILE: PROCEDURE BYTE;
+    IF RBP >= SECTSIZE THEN
+        DO; CALL SETRDMA;
+        IF DISKREAD(.RFCB) <> 0 THEN RETURN ENDFILE;
+        RBP = 0;
+        END;
+    RETURN UTRAN(BUFF((RBP := RBP + 1) - 1));
+    END READFILE;
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  INITIALIZATION  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+SETUP: PROCEDURE;
+
+    /* * * * * * * * *  OPEN SOURCE FILE  * * * * * * * * */
+
+    sfcb(ex), sfcb(md), sfcb(nr) = 0;
+    if has$bdos3 then do;
+        call return$errors(0FEh);            /* set error mode */
+        call setpassword;
+        end;
+    error$code = open$file (.SFCB);
+    if has$bdos3 then do;                    /* extended bdos errors */
+        call return$errors(0);               /* reset error mode */
+        if low(error$code) = 0FFh and high(error$code) = 7 then do; 
+            call getpasswd;                  /* let them enter password */
+            call crlf;
+            call crlf;
+            call setpassword;                /* set dma to password */
+            error$code = open$file(.fcb);    /* reset error$code */
+            end;
+        if low(error$code)=0FFh and high(error$code)<>0 then 
+                call abort(.notavail);       /* abort anything but not found */
+        end;
+    dcnt=low(error$code);
+    if onefile then do;
+        IF ROL(FCB(RO),1) THEN
+            CALL abort(.('FILE IS READ/ONLY$'));
+        else IF ROL(FCB(SY),1) THEN   /* system attribute */
+            do;
+            if rol(FCB(us),1) then
+                dcnt = 255;          /* user 0 file so create */
+            else
+                sys = true;
+            end;
+        end;
+
+    /* * * * * *  NEW FILE IF NO SOURCE FILE  * * * * * */
+
+    IF DCNT = 255 THEN do;
+        if not onefile then
+            call abort(.not$found);
+        newfile = true;
+        CALL PRINT(.('NEW FILE$'));
+        CALL CRLF;
+        END; 
+
+    /* * * * * *  MAKE TEMPORARY DESTINATION FILE  * * * * * */
+
+    CALL SETTYPE(.dfcb,.tempfl);
+    DFCB(EX)=0;
+    CALL MAKE$file(.DFCB);
+    if dcnt = 255 then
+        call ferr;
+    /* THE TEMP FILE IS NOW CREATED */
+
+    /* now create the password if any */
+    if protection <> 0 then do;
+        dfcb(ex) = protection or 1;  /* set password */
+        call setpassword;
+        call write$xfcb(.dfcb);
+        end;
+    dfcb(ex),DFCB(32) = 0;  /* NEXT RECORD IS ZERO */
+
+    /* * * * * * * * *  RESET BUFFER  * * * * * * * * */
+
+    NSOURCE = BUFFLENGTH; 
+    NDEST = 0;
+    BASELINE = 1;           /* START WITH LINE 1 */
+    END SETUP;
+
+
+
+ 
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  BUFFER MANAGEMENT * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+
+
+                  /* DISTANCE is the number of lines prefix 
+                     to a command */
+                  /* set maximum distance (0FFFFH) */
+SETFF: PROCEDURE;
+    DISTANCE = 0FFFFH;
+    END SETFF;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return true if distance is zero */
+DISTZERO: PROCEDURE BOOLEAN;
+    RETURN DISTANCE = 0;
+    END DISTZERO;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set distance to zero */
+ZERODIST: PROCEDURE;
+    DISTANCE = 0;
+    END ZERODIST;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* check for zero distance and decrement */
+DISTNZERO: PROCEDURE BOOLEAN;
+    IF NOT DISTZERO THEN
+        DO; DISTANCE = DISTANCE - 1;
+        RETURN TRUE;
+        END;
+    RETURN FALSE;
+    END DISTNZERO;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set memory limits of command from 
+                     distance and direction */
+SETLIMITS: PROC;
+    DCL (I,K,L,M) ADDR, (MIDDLE,LOOPING) BYTE;
+    RELLINE = 1; /* RELATIVE LINE COUNT */
+    IF DIRECTION = BACKWARD THEN
+        DO; DISTANCE = DISTANCE+1; I = FRONT; L = 0; K = 0FFFFH;
+        END; 
+    ELSE
+        DO; I = BACK; L = MAXM; K = 1;
+        END;
+ 
+    LOOPING = TRUE;
+        DO WHILE LOOPING;
+            DO WHILE (MIDDLE := I <> L) AND
+                MEMORY(M:=I+K) <> LF;
+            I = M;
+            END;
+        LOOPING = (DISTANCE := DISTANCE - 1) <> 0;
+        IF NOT MIDDLE THEN
+            DO; LOOPING = FALSE;
+            I = I - K;
+            END; 
+        ELSE do;
+            RELLINE = RELLINE - 1;
+            IF LOOPING THEN 
+                I = M;
+            end;
+        END;
+ 
+    IF DIRECTION = BACKWARD THEN
+        DO; FIRST = I; LASTC = FRONT - 1;
+        END; 
+    ELSE
+        DO; FIRST = BACK + 1; LASTC = I + 1;
+        END;
+    END SETLIMITS;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* increment current position */
+INCBASE: PROCEDURE;
+    BASELINE = BASELINE + 1;
+    END INCBASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* decrement current position */
+DECBASE: PROCEDURE;
+    BASELINE = BASELINE - 1;
+    END DECBASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* increment limits */
+INCFRONT: PROC; FRONT = FRONT + 1;
+    END INCFRONT;
+INCBACK: PROCEDURE; BACK = BACK + 1;
+    END INCBACK;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* decrement limits */
+DECFRONT: PROC; FRONT = FRONT - 1;
+    IF MEMORY(FRONT) = LF THEN 
+        CALL DECBASE;
+    END DECFRONT;
+DECBACK: PROC; BACK = BACK - 1;
+    END DECBACK;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* move current page in memory if move flag 
+                     true otherwise delete it */
+MEM$MOVE: PROC(MOVEFLAG);
+    DECLARE (MOVEFLAG,C) BYTE;
+    /* MOVE IF MOVEFLAG IS TRUE */
+    IF DIRECTION = FORWARD THEN
+        DO WHILE BACK < LASTC; CALL INCBACK;
+        IF MOVEFLAG THEN
+            DO;
+            IF (C := MEMORY(BACK)) = LF THEN CALL INCBASE;
+            MEMORY(FRONT) = C; CALL INCFRONT;
+            END;
+        END; 
+    ELSE
+        DO WHILE FRONT > FIRST; CALL DECFRONT;
+        IF MOVEFLAG THEN
+            DO; MEMORY(BACK) = memory(front); CALL DECBACK;
+            END;
+        END;
+    END MEM$MOVE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* force a memory move */
+MOVER: PROC;
+    CALL MEM$MOVE(TRUE);
+    END MOVER;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* reset memory limit pointers, deleting
+                     characters (used by D command) */
+SETPTRS: PROC;
+    CALL MEM$MOVE(FALSE);
+    END SETPTRS;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set limits and force a move */
+MOVELINES: PROC;
+    CALL SETLIMITS;
+    CALL MOVER;
+    END MOVELINES;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set front to lower value deleteing
+                     characters (used by S and J commands) */
+setfront: proc(newfront);
+    dcl newfront addr;
+
+        do while front <> newfront;
+        call decfront;
+        end;
+    end setfront;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set limits for memory move */
+SETCLIMITS: PROC;
+    IF DIRECTION = BACKWARD THEN
+        DO; LASTC = BACK;
+        IF DISTANCE > FRONT THEN
+            FIRST = 1; 
+        ELSE 
+            FIRST = FRONT - DISTANCE;
+        END; 
+    ELSE
+        DO; FIRST = FRONT;
+        IF DISTANCE >= MAX - BACK THEN
+            LASTC = MAXM; 
+        ELSE 
+            LASTC = BACK + DISTANCE;
+        END;
+    END SETCLIMITS;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* read another line of input */
+READLINE: PROCEDURE;
+    DECLARE B BYTE;
+    /* READ ANOTHER LINE OF INPUT */
+    CTRAN: PROCEDURE(B) BYTE;
+        DECLARE B BYTE;
+        /* CONDITIONALLY TRANSLATE TO UPPER CASE ON INPUT */
+        IF UPPER THEN RETURN UTRAN(B);
+        RETURN B;
+        END CTRAN;
+    DO FOREVER;
+    IF FRONT >= BACK THEN GO TO OVERFLOW;
+    IF (B := CTRAN(GETSOURCE)) = ENDFILE THEN
+        DO; CALL ZERODIST; RETURN;
+        END;
+    MEMORY(FRONT) = B;
+    CALL INCFRONT;
+    IF B = LF THEN
+        DO; CALL INCBASE;
+        RETURN;
+        END;
+    END;
+    END READLINE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* write one line out */
+WRITELINE: PROCEDURE;
+    DECLARE B BYTE;
+        DO FOREVER;
+        IF BACK >= MAXM THEN /* EMPTY */
+            DO; CALL ZERODIST; RETURN;
+            END;
+        CALL INCBACK;
+        CALL PUTDEST(B:=MEMORY(BACK));
+        IF B = LF THEN
+            DO; CALL INCBASE;
+            RETURN;
+            END;
+        END;
+    END WRITELINE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* write lines until at least half the
+                     the buffer is empty */
+WRHALF: PROCEDURE;
+    CALL SETFF;
+        DO WHILE DISTNZERO;
+        IF HMAX >= (MAXM - BACK) THEN 
+            CALL ZERODIST; 
+        ELSE
+            CALL WRITELINE;
+        END;
+    END WRHALF;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* write lines determined by distance 
+                     called from W and E commands */
+WRITEOUT: PROCEDURE;
+    DIRECTION = BACKWARD; FIRST = 1; LASTC = BACK;
+    CALL MOVER;
+    IF DISTZERO THEN CALL WRHALF;
+    /* DISTANCE = 0 IF CALL WRHALF */
+        DO WHILE DISTNZERO;
+        CALL WRITELINE;
+        END;
+    IF BACK < LASTC THEN
+        DO; DIRECTION = FORWARD; CALL MOVER;
+        END;
+    END WRITEOUT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* clear memory buffer */
+CLEARMEM: PROCEDURE;
+    CALL SETFF;
+    CALL WRITEOUT;
+    END CLEARMEM;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* clear buffers, terminate edit */
+TERMINATE: PROCEDURE;
+    CALL CLEARMEM;
+    if not newfile then
+        DO WHILE (CHAR := GETSOURCE) <> ENDFILE;
+        CALL PUTDEST(CHAR);
+        END;
+    CALL FINIS;
+    END TERMINATE;
+ 
+
+
+ 
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  COMMAND PRIMITIVES  * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+ 
+
+
+                  /* insert char into memory buffer */
+INSERT: PROCEDURE;
+    IF FRONT = BACK THEN GO TO OVERFLOW;
+    MEMORY(FRONT) = CHAR; CALL INCFRONT;
+    IF CHAR = LF THEN CALL INCBASE;
+    END INSERT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* read a character and check for endfile
+                     or CR  */
+SCANNING: PROCEDURE BYTE;
+    RETURN NOT ((CHAR := READC) = ENDFILE OR
+                   (CHAR = CR AND NOT INSERTING));
+    END SCANNING;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* read command buffer and insert characters
+                     into scratch 'til next endfile or CR for
+                     find, next, juxt, or substitute commands
+                     fill at WBE and increment WBE so it 
+                     addresses the next empty position of scratch */
+COLLECT: PROCEDURE;
+
+    SETSCR: PROCEDURE;
+        SCRATCH(WBE) = CHAR;
+        IF (WBE := WBE + 1) >= SCRSIZE THEN GO TO OVERFLOW;
+        END SETSCR;
+
+        DO WHILE SCANNING;
+        IF CHAR = CTLL THEN
+            DO; CHAR = CR; CALL SETSCR;
+            CHAR = LF;
+            END;
+        IF CHAR = 0 THEN GO TO BADCOM;
+        CALL SETSCR;
+        END;
+    END COLLECT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* find the string in scratch starting at
+                     PA and ending at PB */
+FIND: PROCEDURE(PA,PB) BYTE;
+    DECLARE (PA,PB) BYTE;
+    DECLARE J ADDRESS,
+        (K, MATCH) BYTE;
+    J = BACK ;
+    MATCH = FALSE;
+        DO WHILE NOT MATCH AND (MAXM > J);
+        LASTC,J = J + 1; /* START SCAN AT J */
+        K = PA ; /* ATTEMPT STRING MATCH AT K */
+            DO WHILE SCRATCH(K) = MEMORY(LASTC) AND
+                NOT (MATCH := K = PB);
+            /* MATCHED ONE MORE CHARACTER */
+            K = K + 1; LASTC = LASTC + 1;
+            END;
+        END;
+    IF MATCH THEN /* MOVE STORAGE */
+        DO; LASTC = LASTC - 1; CALL MOVER;
+        END;
+    RETURN MATCH;
+    END FIND;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set up the search string for F, N, and
+                     S commands  */
+SETFIND: PROCEDURE;
+    WBE = 0; CALL COLLECT; WBP = WBE;
+    END SETFIND;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* check for found string in F and S commands */
+CHKFOUND: PROCEDURE;
+    IF NOT FIND(0,WBP) THEN /* NO MATCH */ GO TO OVERCOUNT;
+    END CHKFOUND;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* parse read / xfer lib FCB */
+parse$lib: procedure(fcbadr) byte;
+    dcl fcbadr address;
+    dcl afcb based fcbadr (33) byte;
+    dcl b byte;
+
+    b = parse$fcb(fcbadr);	
+    /* flag = false if invalid */
+    if not flag then do;
+        flag = 'O';
+        goto reset;
+        end;
+    if afcb(9) = ' ' and not dot$found then
+        call move(3,.libfcb(9),fcbadr+9);
+    if afcb(1) = ' ' then
+        call move(8,.libfcb(1),fcbadr+1);
+    return b;
+    end parse$lib;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* print relative position */
+PRINTREL: PROCEDURE;
+    CALL PRINTLINE(BASELINE+RELLINE);
+    END PRINTREL;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* type lines command */
+TYPELINES: PROCEDURE;
+    DCL I ADDR;
+    DCL C BYTE;
+    CALL SETLIMITS;
+    /* DISABLE THE * PROMPT */
+    INSERTING = TRUE;
+    IF DIRECTION = FORWARD THEN
+        DO; RELLINE = 0; I = FRONT;
+        END; 
+    ELSE
+        I = FIRST;
+    IF (C := MEMORY(I-1)) = LF then  do;
+        if COLUMN <> 0 THEN
+            CALL CRLF;
+        end;
+    else
+        relline = relline + 1;
+
+        DO I = FIRST TO LASTC;
+        IF C = LF THEN
+            DO;
+            CALL PRINTREL;
+            RELLINE = RELLINE + 1;
+            IF BREAK$KEY THEN GO TO OVERCOUNT;
+            END;
+        CALL PRINTC(C:=MEMORY(I));
+        END;
+    END TYPELINES;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set distance to lines per page (LPP) */
+SETLPP: PROCEDURE;
+    DISTANCE = LPP;
+    END SETLPP;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* save distance in TDIST */
+SAVEDIST: PROCEDURE;
+    TDIST = DISTANCE;
+    END SAVEDIST;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* Restore distance from TDIST */
+RESTDIST: PROCEDURE;
+    DISTANCE = TDIST;
+    END RESTDIST;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* page command (move n pages and print) */
+PAGE: PROCEDURE;
+    DECLARE I BYTE;
+    CALL SAVEDIST;
+    CALL SETLPP;
+    CALL MOVELINES;
+    I = DIRECTION;
+    DIRECTION = FORWARD;
+    CALL SETLPP;
+    CALL TYPELINES;
+    DIRECTION = I;
+    IF LASTC = MAXM OR FIRST = 1 THEN 
+        CALL ZERODIST;
+    ELSE 
+        CALL RESTDIST;
+    END PAGE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* wait command (1/2 second time-out) */
+WAIT: PROCEDURE;
+    DECLARE I BYTE;
+        DO I = 0 TO 19;
+        IF BREAK$KEY THEN GO TO RESET;
+        CALL TIME(250);
+        END;
+    END WAIT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set direction to forward */
+SETFORWARD: PROCEDURE;
+    DIRECTION = FORWARD;
+    DISTANCE = 1;
+    END SETFORWARD;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* append 'til buffer is at least half full */
+APPHALF: PROCEDURE;
+    CALL SETFF; /* DISTANCE = 0FFFFH */
+        DO WHILE DISTNZERO;
+        IF FRONT >= HMAX THEN 
+            CALL ZERODIST; 
+        ELSE
+            CALL READLINE;
+        END;
+    END APPHALF;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* insert CR LF characters */
+INSCRLF: PROCEDURE;
+    /* INSERT CR LF CHARACTERS */
+    CHAR = CR; CALL INSERT;
+    CHAR = LF; CALL INSERT;
+    END INSCRLF;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* test if invalid delete or
+                     backspace at beginning of inserting */
+ins$error$chk: procedure;
+    if (tcolumn = 255) or (front = 1) then
+        go to reset;
+    end ins$error$chk;
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  COMMAND PARSING * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+ 
+
+
+                  /* test for upper or lower case command
+                     set translate flag (used to determine
+                     if following characters should be translated
+                     to upper case */
+TESTCASE: PROCEDURE;
+    DECLARE T BYTE;
+    TRANSLATE = TRUE;
+    T = LOWERCASE(CHAR);
+    CHAR = UTRAN(CHAR);
+    TRANSLATE = UPPER OR NOT T;
+    END TESTCASE;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set translate to false and read next 
+                     character */
+READCTRAN: PROCEDURE;
+    TRANSLATE = FALSE;
+    CHAR = READC;
+    CALL TESTCASE;
+    END READCTRAN;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return true if command is only character
+                     not in macro or combination on a line */
+SINGLECOM: PROCEDURE(C) BOOLEAN;
+    DECLARE C BYTE;
+    RETURN CHAR = C AND COMLEN = 1 AND MP = 0;
+    END SINGLECOM;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return true if command is only character
+                     not in macro or combination on a line, and
+                     the operator has responded with a 'Y' to a
+                     Y/N request */
+SINGLERCOM: PROCEDURE(C) BOOLEAN;
+    DECLARE (C,i) BYTE;
+    IF SINGLECOM(C) THEN
+        DO forever; 
+        CALL CRLF; CALL PRINTCHAR(C);
+        CALL MON1(9,.('-(Y/N)',WHAT,'$'));
+        i = UCASE(READCHAR); CALL CRLF;
+        IF i = 'N' THEN GO TO START;
+        if i = 'Y' then 
+            RETURN TRUE;
+        END;
+    RETURN FALSE;
+    END SINGLERCOM;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return true if char is a digit */
+DIGIT: PROCEDURE BOOLEAN;
+    RETURN (I := CHAR - '0') <= 9;
+    END DIGIT;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* return with distance = number char = 
+                     next command */
+NUMBER: PROCEDURE;
+    DISTANCE = 0;
+        DO WHILE DIGIT;
+        DISTANCE = SHL(DISTANCE,3) +
+                   SHL(DISTANCE,1) + I;
+        CALL READCTRAN;
+        END;
+    END NUMBER;
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
+
+                  /* set distance to distance relative to
+                     the current line */
+RELDISTANCE: PROCEDURE;
+    IF DISTANCE > BASELINE THEN
+        DO; DIRECTION = FORWARD;
+        DISTANCE = DISTANCE - BASELINE;
+        END; 
+    ELSE
+        DO; DIRECTION = BACKWARD;
+        DISTANCE = BASELINE - DISTANCE;
+        END;
+    END RELDISTANCE;
+
+
+ 
+$ eject
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+
+
+                  * * *  MAIN PROGRAM * * *
+
+
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+ 
+ 
+plmstart:              /* entry of MP/M-86 Interface */  
+ 
+ /* INITIALIZE THE SYSTEM */
+
+    ver = version;
+    if low(ver) >= cpm3 then 
+        has$bdos3 = true;      /* handles passwords & xfcbs */
+
+    /* * * * * * * SET UP MEMORY BUFFER * * * * * * * * * */
+
+    /* I/O BUFFER REGION IS 1/8 AVAILABLE MEMORY */
+    NBUF = SHR(MAX := MAXB - .MEMORY,SECTSHF+3) - 1;
+    /* NBUF IS NUMBER OF BUFFERS - 1 */
+    BUFFLENGTH = SHL(DOUBLE(NBUF+1),SECTSHF+1);
+    /* NOW SET MAX AS REMAINDER OF FREE MEMORY */
+    IF BUFFLENGTH + 1024 > MAX THEN
+        DO; CALL perror(.('Insufficient memory$'));
+        CALL BOOT;
+        END;
+    /* REMOVE BUFFER SPACE AND 00 AT END OF MEMORY VECTOR */
+    MAX = MAX - BUFFLENGTH - 1;
+    /* RESET BUFFER LENGTH FOR I AND O */
+    BUFFLENGTH = SHR(BUFFLENGTH,1);
+    SBUFFADR = MAXB - BUFFLENGTH;
+    DBUFFADR = SBUFFADR - BUFFLENGTH;
+    MEMORY(MAX) = 0; /* STOPS MATCH AT END OF BUFFER */
+    MAXM = MAX - 1;
+    HMAX = SHR(MAXM,1);
+
+    /* * * * * *  SET UP SOURCE & DESTINATION FILES  * * * * * */
+
+    if fcb(1)=' ' then do;
+        call print(.('Enter Input  file: $'));
+        call readcom;
+        call crlf;
+        tail = false;
+        end;
+    if not parse$fcb(.SFCB) then     /* parse source fcb */
+        call reboot;
+
+    if has$bdos3 then do;
+        call read$xfcb(.sfcb);       /* get prot from source */
+        protection = sfcb(ex);       /* password protection mode */
+        sfcb(ex) = 0;
+        if high(ver) = 0 then        /* CP/M-80 */
+            if (lpp:=mon2(49,.pb)) = 0 then
+                lpp = 23;            /* get lines per page from SCB */
+        end;
+    call setdest;                    /* parse destination file */
+    tail = false;                    /* parse$fcb from ED command */
+
+    /* SOURCE AND DESTINATION DISKS SET */
+
+    /* IF SOURCE AND DESTINATION DISKS DIFFER, CHECK FOR
+    AN EXISTING SOURCE FILE ON THE DESTINATION DISK - THERE
+    COULD BE A FATAL ERROR CONDITION WHICH COULD DESTROY A
+    FILE IF THE USER HAPPENED TO BE ADDRESSING THE WRONG
+    DISK */
+    IF (SDISK <> DDISK) or not onefile THEN
+        IF mon2(15,.dfcb) <> 255 THEN   /* try to open */
+            /* SOURCE FILE PRESENT ON DEST DISK */
+            CALL ABORT(.('Output File Exists, Erase It$'));
+
+
+ 
+RESTART:
+    CALL SETUP;
+    MEMORY(0) = LF;
+    FRONT = 1; BACK = MAXM;
+    COLUMN = 0;
+    GO TO START;
+ 
+OVERCOUNT: FLAG = POUND; GO TO RESET;
+ 
+BADCOM: FLAG = WHAT; GO TO RESET;
+ 
+OVERFLOW: /* ARRIVE HERE ON OVERFLOW CONDITION (I,F,S COMMAND) */
+    FLAG = '>'; go to reset;
+
+disk$err:
+    flag = 'F';
+    err$msg = .diskfull;
+    go to reset;
+
+dir$err:
+    flag = 'F';
+    err$msg = .dirfull;
+ 
+RESET: /* ARRIVE HERE ON ERROR CONDITION */
+    PRINTSUPPRESS = FALSE;
+    CALL PRINT(.(tab,'BREAK "$'));
+    CALL PRINTC(FLAG);
+    CALL PRINTM(.('" AT $'));
+    if char = CR or char = LF then
+        call printm(.('END OF LINE$'));
+    else
+        CALL PRINTC(CHAR);
+    if err$msg <> 0 then do;
+        call perror(err$msg);
+        err$msg = 0;
+        end;
+    CALL CRLF;
+
+
+START:
+    READBUFF = TRUE;
+    MP = 0;
+ 
+ 
+ 
+$ eject
+
+    DO FOREVER; /* OR UNTIL THE POWER IS TURNED OFF */
+ 
+    /* **************************************************************
+    SIMPLE COMMANDS (CANNOT BE PRECEDED BY DIRECTION/DISTANCE):
+             E      END THE EDIT NORMALLY
+             H      MOVE TO HEAD OF EDITED FILE
+             I      INSERT CHARACTERS
+             O      RETURN TO THE ORIGINAL FILE
+             R      READ FROM LIBRARY FILE
+             Q      QUIT EDIT WITHOUT CHANGES TO ORIGINAL FILE
+       ************************************************************** */
+ 
+ 
+ 
+    INSERTING = FALSE;
+    CALL READCTRAN;
+    FLAG = 'E';
+    MI = CBP; /* SAVE STARTING ADDRESS FOR <CR> COMMAND */
+    IF SINGLECOM('E') THEN
+        DO; CALL TERMINATE;
+        CALL REBOOT;
+        END; 
+
+    ELSE IF SINGLECOM('H') THEN /* GO TO TOP */
+        DO; CALL TERMINATE;
+        newfile = false;
+        if onefile then do;
+            /* PING - PONG DISKS */
+            CHAR  = DDISK; 
+            DDISK = SDISK; 
+            SDISK = CHAR;
+            end;
+        else do;
+            call settype(.dfcb,.dtype);
+            call move (16,.dfcb,.sfcb); /* source = destination */
+            onefile = true;
+            end;
+        GO TO RESTART;
+        END; 
+
+    ELSE IF CHAR = 'I' THEN /* INSERT CHARACTERS */
+        DO;
+        IF (INSERTING := (CBP = COMLEN) AND (MP = 0)) THEN do;
+            tcolumn = 255;           /* tested in ins$error$chk routine */
+            distance = 0; 
+            direction = backward;
+            if memory(front-1) = LF then 
+                call printbase;
+            else 
+                call typelines;
+            end;
+        DO WHILE SCANNING;
+            DO WHILE CHAR <> 0;
+            IF CHAR=CTLU OR CHAR=CTLX OR CHAR=CTLR THEN
+                /* LINE DELETE OR RETYPE */
+                DO;
+                /* ELIMINATE OR REPEAT THE LINE */
+                IF CHAR = CTLR THEN
+                    DO; CALL CRLF;
+                    CALL TYPELINES;
+                    END; 
+                ELSE
+                    /* LINE DELETE */
+                    DO; CALL SETLIMITS; CALL SETPTRS;
+                    IF CHAR = CTLU THEN
+                        DO; CALL CRLF; CALL PRINTNMBASE;
+                        END; 
+                    ELSE
+                        /* MUST BE CTLX */
+                        DO WHILE COLUMN > SCOLUMN;
+                        CALL BACKSPACE;
+                        END;
+                    END;
+                END; 
+            ELSE IF CHAR = CTLH THEN
+                DO;
+                call ins$error$chk;
+                IF (TCOLUMN := COLUMN) > 0 THEN
+                    CALL PRINTNMAC(' '); /* RESTORE AFT BACKSP */
+                call decfront;
+                if tcolumn > scolumn then
+                    DO; /* CHARACTER CAN BE ELIMINATED */
+                    PRINTSUPPRESS = TRUE;
+                    /* BACKSPACE CHARACTER ACCEPTED */
+                    COLUMN = 0;
+                    CALL TYPELINES;
+                    PRINTSUPPRESS = FALSE;
+                    /* COLUMN POSITION NOW RESET */
+                    IF (QCOLUMN := COLUMN) < SCOLUMN THEN
+                        QCOLUMN = SCOLUMN;
+                    COLUMN = TCOLUMN; /* ORIGINAL VALUE */
+                        DO WHILE COLUMN > QCOLUMN;
+                        CALL BACKSPACE;
+                        END;
+                    END;
+                else
+                    do;
+                    if memory(front-1) = CR then
+                        call decfront;
+                    call crlf;
+                    call typelines;
+                    end;
+                CHAR = 0;
+                END; 
+            ELSE IF CHAR = RUBOUT THEN
+                DO; call ins$error$chk;
+                CALL DECFRONT; CALL PRINTC(CHAR:=MEMORY(FRONT));
+                CHAR = 0;
+                END; 
+            else if char = LF and memory(front-1) <> CR then
+                do;
+                call printc(CR);
+                call inscrlf;
+                end;  
+            ELSE
+                /* NOT A SPECIAL CASE */
+                DO; 
+                IF NOT GRAPHIC(CHAR) THEN
+                    DO; 
+                    CALL PRINTNMAC('^');
+                    CALL PRINTNMAC(CHAR + '@');
+                    end;
+                    /* COLUMN COUNT GOES UP IF GRAPHIC */
+                    /* COMPUTE OUTPUT COLUMN POSITION */
+                if char = CTLL and not inserting then
+                    call inscrlf;
+                else do;
+                    IF MP = 0 THEN
+                        DO; 
+                        IF CHAR >= ' ' THEN
+                            COLUMN = COLUMN + 1; 
+                        ELSE IF CHAR = TAB THEN
+                            COLUMN = COLUMN + (8 - (COLUMN AND 111B));
+                        END;
+                    CALL INSERT;
+                    END;
+                end;
+            IF CHAR = LF THEN CALL PRINTNMBASE;
+            IF CHAR = CR THEN
+                CALL PRINTNMAC(CHAR:=LF); 
+            ELSE 
+                CHAR = 0;
+            tcolumn = 0;
+            END; /* of while char <> 0 */
+        END; /* of while scanning */
+        IF CHAR <> ENDFILE THEN do; /* MUST HAVE STOPPED ON CR */
+            CALL INSCRLF;
+            column = 0;
+            end;
+        IF INSERTING AND LINESET THEN CALL CRLF;
+        END; 
+
+
+    ELSE IF SINGLERCOM('O') THEN /* FORGET THIS EDIT */
+        do;
+        call close(.sfcb);
+        GO TO RESTART; 
+        end; 
+
+
+    ELSE IF CHAR = 'R' THEN
+        DO; DECLARE I BYTE;
+        /* READ FROM LIB FILE */
+        CALL SETRDMA;
+        IF (FLAG := parse$lib(.rfcb)) THEN 
+            reading = false;
+        if not reading then do;
+            if not flag then 
+                /* READ FROM XFER FILE */
+                CALL MOVE(12,.XFCB,.RFCB);
+            RFCB(12), RFCB(32) = 0; /* zero extent, next record */
+            rbp = sectsize;
+            CALL open(.RFCB); 
+            reading = true;
+            end;
+	
+            DO WHILE (CHAR := READFILE) <> ENDFILE;
+            CALL INSERT;
+            END;
+        reading = false;
+        call close (.rfcb);
+        END; 
+
+
+    ELSE IF SINGLERCOM('Q') THEN
+        DO; 
+        CALL DELETE$file(.DFCB); 
+        if newfile or not onefile then do;
+            call settype(.dfcb,.dtype);
+            call delete$file(.dfcb);
+            end;
+        CALL REBOOT;
+        END; 
+
+
+    ELSE 
+        /* MAY BE A COMMAND WHICH HAS AN OPTIONAL DIRECTION AND DISTANCE */
+        DO; /* SCAN A SIGNED INTEGER VALUE (IF ANY) */
+        DCL I BYTE;
+
+        CALL SETFORWARD;
+ 
+        IF CHAR = '-' THEN
+            DO; CALL READCTRAN; DIRECTION = BACKWARD;
+            END;
+ 
+        IF CHAR = POUND THEN
+            DO; CALL SETFF; CALL READCTRAN;
+            END; 
+
+        ELSE IF DIGIT THEN
+            DO; CALL NUMBER;
+            /* MAY BE ABSOLUTE LINE REFERENCE */
+            IF CHAR = ':' THEN
+                DO; CHAR = 'L';
+                CALL RELDISTANCE;
+                END;
+            END; 
+
+        ELSE IF CHAR = ':' THEN /* LEADING COLON */
+            DO; CALL READCTRAN; /* CLEAR THE COLON */
+            CALL NUMBER;
+            CALL RELDISTANCE;
+            IF DIRECTION = FORWARD THEN
+                DISTANCE = DISTANCE + 1;
+            END;
+
+ 
+$ eject
+
+        IF DISTZERO THEN 
+            DIRECTION = BACKWARD;
+        /* DIRECTION AND DISTANCE ARE NOW SET */
+ 
+ 
+    /* **************************************************************
+    MAY BE A COMMAND WHICH HAS DIRECTION AND DISTANCE SPECIFIED:
+             B      BEGINNING/BOTTOM OF BUFFER
+             C      MOVE CHARACTER POSITIONS
+             D      DELETE CHARACTERS
+             K      KILL LINES
+             L      MOVE LINE POSITION
+             P      PAGE UP OR DOWN (LPP LINES AND PRINT)
+             T      TYPE LINES
+             U      UPPER CASE TRANSLATE
+             V      VERIFY LINE NUMBERS
+            <CR>    MOVE UP OR DOWN LINES AND PRINT LINE
+       ************************************************************** */
+ 
+ 
+        IF CHAR = 'B' THEN
+            DO; DIRECTION = 1 - DIRECTION;
+            FIRST = 1; LASTC = MAXM; CALL MOVER;
+            END; 
+
+
+        ELSE IF CHAR = 'C' THEN
+            DO; CALL SETCLIMITS; CALL MOVER;
+            END; 
+
+
+        ELSE IF CHAR = 'D' THEN
+            DO; CALL SETCLIMITS;
+            CALL SETPTRS; /* SETS BACK/FRONT */
+            END; 
+
+
+        ELSE IF CHAR = 'K' THEN
+            DO; CALL SETLIMITS;
+            CALL SETPTRS;
+            END; 
+
+
+       ELSE IF CHAR = 'L' THEN 
+            CALL MOVELINES; 
+
+
+       ELSE IF CHAR = 'P' THEN /* PAGE MODE PRINT */
+            DO; 
+            IF DISTZERO THEN
+                DO; DIRECTION = FORWARD;
+                CALL SETLPP; CALL TYPELINES;
+                END; 
+            ELSE
+                DO WHILE DISTNZERO; CALL PAGE;
+                CALL WAIT;
+                END;
+            END; 
+
+
+        ELSE IF CHAR = 'T' THEN
+            CALL TYPELINES; 
+
+
+        ELSE IF CHAR = 'U' THEN
+            UPPER = DIRECTION = FORWARD; 
+
+
+        ELSE IF CHAR = 'V' THEN
+            DO; /* 0V DISPLAYS BUFFER STATE */
+            IF DISTZERO THEN
+                DO; CALL PRINTVALUE(BACK-FRONT);
+                CALL PRINTC('/');
+                CALL PRINTVALUE(MAXM);
+                CALL CRLF;
+                END; 
+            ELSE if (LINESET := DIRECTION = FORWARD) then
+                scolumn = 8;
+            else
+                scolumn = 0;
+            END;
+
+
+
+        ELSE IF CHAR = CR THEN /* MAY BE MOVE/TYPE COMMAND */
+            DO;
+            IF MI = 1 AND MP = 0 THEN /* FIRST COMMAND */
+                DO; CALL MOVELINES; CALL SETFORWARD; CALL TYPELINES;
+                END;
+            END; 
+ 
+ 
+$ eject
+
+        ELSE IF DIRECTION = FORWARD OR DISTZERO THEN
+            DO;
+ 
+    /* **************************************************************
+    COMMANDS WHICH ALLOW ONLY A PRECEDING NUMBER:
+             A      APPEND LINES
+             F      FIND NTH OCCURRENCE
+             M      APPLY MACRO
+             N      SAME AS F WITH AUTOSCAN THROUGH FILE
+             S      PERFORM N SUBSTITUTIONS
+             W      WRITE LINES TO OUTPUT FILE
+             X      TRANSFER (XFER) LINES TO TEMP FILE
+             Z      SLEEP
+       ************************************************************** */
+ 
+ 
+ 
+        IF CHAR = 'A' THEN
+            DO; DIRECTION = FORWARD;
+            FIRST = FRONT; LASTC = MAXM; CALL MOVER;
+            /* ALL STORAGE FORWARD */
+            IF DISTZERO THEN CALL APPHALF;
+            /* DISTANCE = 0 IF APPHALF CALLED */
+                DO WHILE DISTNZERO;
+                CALL READLINE;
+                END;
+            DIRECTION = BACKWARD; CALL MOVER;
+            /* POINTERS REPOSITIONED */
+            END; 
+
+
+        ELSE IF CHAR = 'F' THEN
+            DO; CALL SETFIND; /* SEARCH STRING SCANNED
+            AND SETUP BETWEEN 0 AND WBP-1 IN SCRATCH */
+                DO WHILE DISTNZERO; CALL CHKFOUND;
+                END;
+            END; 
+
+
+        ELSE IF CHAR = 'J' THEN /* JUXTAPOSITION OPERATION */
+            DO; DECLARE T ADDRESS;
+            CALL SETFIND; CALL COLLECT;
+            WBJ = WBE; CALL COLLECT;
+            /* SEARCH FOR STRING 0 - WBP-1, INSERT STRING WBP TO WBJ-1,
+            AND THEN DELETE UP TO STRING WBJ TO WBE-1 */
+            DO WHILE DISTNZERO; CALL CHKFOUND;
+            /* INSERT STRING */ MI = WBP - 1;
+                DO WHILE (MI := MI + 1) < WBJ;
+                CHAR = SCRATCH(MI); CALL INSERT;
+                END;
+            T = FRONT; /* SAVE POSITION FOR DELETE */
+            IF NOT FIND(WBJ,WBE) THEN GO TO OVERCOUNT;
+            /* STRING FOUND, SO MOVE IT BACK */
+            FIRST = FRONT - (WBE - WBJ);
+            DIRECTION = BACKWARD; CALL MOVER;
+            /* NOW REMOVE THE INTERMEDIATE STRING */
+            call setfront(t);
+            END;
+        END; 
+
+
+        ELSE IF CHAR = 'M' AND MP = 0 THEN /* MACRO DEFINITION */
+            DO; XP = 255;
+            IF DISTANCE = 1 THEN CALL ZERODIST;
+                DO WHILE (MACRO(XP := XP + 1) := READC) <> CR;
+                END;
+            MP = XP; XP = 0; MT = DISTANCE;
+            END; 
+
+
+        ELSE IF CHAR = 'N' THEN
+            DO; /* SEARCH FOR STRING WITH AUTOSCAN */
+            CALL SETFIND; /* SEARCH STRING SCANNED */
+                DO WHILE DISTNZERO;
+                /* FIND ANOTHER OCCURRENCE OF STRING */
+                    DO WHILE NOT FIND(0,WBP); /* NOT IN BUFFER */
+                    IF BREAK$KEY THEN GO TO RESET;
+                    CALL SAVEDIST; CALL CLEARMEM;
+                    /* MEMORY BUFFER WRITTEN */
+                    CALL APPHALF;
+                    DIRECTION = BACKWARD; FIRST = 1; CALL MOVER;
+                    CALL RESTDIST; DIRECTION = FORWARD;
+                    /* MAY BE END OF FILE */
+                    IF BACK >= MAXM THEN GO TO OVERCOUNT;
+                    END;
+                END;
+            END; 
+
+
+        ELSE IF CHAR = 'S' THEN /* SUBSTITUTE COMMAND */
+            DO; CALL SETFIND;
+            CALL COLLECT;
+            /* FIND STRING FROM 0 TO WBP-1, SUBSTITUTE STRING
+            BETWEEN WBP AND WBE-1 IN SCRATCH */
+                DO WHILE DISTNZERO;
+                CALL CHKFOUND;
+                /* FRONT AND BACK NOW POSITIONED AT FOUND
+                STRING - REPLACE IT */
+                call setfront(FRONT - (MI := WBP)); /* BACKED UP */
+                    DO WHILE MI < WBE;
+                    CHAR = SCRATCH(MI);
+                    MI = MI + 1; CALL INSERT;
+                    END;
+                 END;
+            END; 
+
+
+        ELSE IF CHAR = 'W' THEN
+            CALL WRITEOUT; 
+
+
+        ELSE IF CHAR = 'X' THEN /* TRANSFER LINES */
+            DO;
+            flag = parse$lib(.rfcb);
+            xbp = 0;
+            IF DISTZERO THEN  
+                DO;             /* delete the file */
+                xferon  = false;
+                CALL DELETE(.rfcb);
+                if dcnt = 255 then
+                    call perror(.not$found);    
+                END; 
+            ELSE 
+                do;             /* transfer lines */
+                declare i address;
+
+                if xferon and compare$xfer then
+                    call append$xfer;
+                else
+                    DO;         
+                    XFERON = TRUE;
+                    call move(12,.rfcb,.xfcb);
+                    xfcbext, xfcbrec, xfcbe, xfcbr = 0;
+                    CALL MAKE$file(.XFCB);
+                    IF DCNT = 255 THEN 
+                        goto dir$err;
+                    END;
+                CALL SETLIMITS;
+                    DO I = FIRST TO LASTC;
+                    CALL PUTXFER(MEMORY(I));
+                    END;
+                call close$xfer;
+                END;
+            END; 
+
+
+        ELSE IF CHAR = 'Z' THEN /* SLEEP */
+            DO;
+            IF DISTZERO THEN
+                DO; IF READCHAR = ENDFILE THEN GO TO RESET;
+                END;
+                DO WHILE DISTNZERO; CALL WAIT;
+                END;
+            END; 
+        ELSE IF CHAR <> 0 THEN /* NOT BREAK LEFT OVER FROM STOP */
+        /* DIRECTION FORWARD, BUT NOT ONE OF THE ABOVE */
+        GO TO BADCOM;
+ 
+ 
+        END; 
+        ELSE /* DIRECTION NOT FORWARD */
+            GO TO BADCOM;
+        END;
+    END;
+END;

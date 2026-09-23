@@ -1,0 +1,2663 @@
+	title	'DDT86 1.2  8/20/82'
+;
+;	*****************************************
+;	*					*
+;	*	D D T  8 0 8 6 - 8 0 8 8	*
+;	*					*
+;	*****************************************	
+;
+ddt_org		equ	100h		;origin of this module
+lasmorg		equ	ddt_org+1400h	;origin of disassembler
+asmorg		equ	ddt_org+2300h	;origin of assembler
+;
+		cseg
+;
+		org	005ch
+fcb		rb	10h
+fcb2		rb	14h
+buff		rb	80h
+;
+		org	lasmorg
+disem:		mov	ax,0
+		ret	4	;remove parameters from stack
+;
+		org	asmorg
+assem:		mov	ax,0
+		ret	4	;remove parameters from stack
+;
+		org	ddt_org
+
+		jmp	ddt86	;ccp transfers control here	
+		jmp	conin
+		jmp	plmconout
+		jmp	plmgetline
+		jmp	asment	;get here on error in assem (pl/m)
+		jmp	plmset	;assembler link to ddt set/verify
+;
+bdosint:	int	bdosi	;this is only here for user to patch
+				;actual bdos link gets set from here
+bdosintloc	equ	offset bdosint
+bdosintnum	equ	offset bdosint+1
+;
+bdosi		equ	224	;bdos interrupt number
+stsize		equ	96	;stack size
+nbps		equ	2	;number of breakpoints
+;
+ifmask16	equ	0200h	;16-bit IF mask
+ifmask8		equ	02h	;8-bit IF mask
+;
+lf		equ	0ah	;line feed
+cr		equ	0dh	;carriage return
+eol		equ	cr
+ctls		equ	13h	;ascii ctl-s
+;
+;	*******************************************
+;	*					  *
+;	*           m e s s a g e s		  *
+;	*					  *
+;	*******************************************
+;
+copyright	db	' COPYRIGHT (C) 1981, DIGITAL RESEARCH '
+;
+signon		db	'DDT86 1.','2'
+;
+date		db	' 08/20/82',' ' or 80h
+;
+regname		db	'A','X' or 80h
+		db	'B','X' or 80h
+		db	'C','X' or 80h
+		db	'D','X' or 80h
+		db	'S','P' or 80h
+		db	'B','P' or 80h
+		db	'S','I' or 80h
+		db	'D','I' or 80h
+segreg		db	'C','S' or 80h
+		db	'D','S' or 80h
+		db	'S','S' or 80h
+		db	'E','S' or 80h
+		db	'I','P' or 80h
+;
+flagname	db	'ODITSZAPC'
+flagbits	db	5,6,7,8,9,10,12,14,16
+;
+segnames	db	'C','S' or 80h
+		db	'D','S' or 80h
+		db	'E','S' or 80h
+		db	'S','S' or 80h
+		db	'X','1' or 80h
+		db	'X','2' or 80h
+		db	'X','3' or 80h
+		db	'X','4' or 80h
+;
+closem		db	cr,lf,'CANNOT CLOS','E' or 80h
+loadm		db	cr,lf,'INSUFFICIENT MEMOR','Y' or 80h
+makem		db	cr,lf,'NO SPAC','E' or 80h
+memm		db	cr,lf,'MEMORY REQUEST DENIE','D' or 80h
+openm		db	cr,lf,'NO FIL','E' or 80h
+readm		db	'  START      EN','D' or 80h
+verm		db	cr,lf,'VERIFY ERROR AT',' ' or 80h
+writem		db	cr,lf,'DISK WRITE ERRO','R' or 80h
+;
+;	****************************************************
+;	*						   *
+;	*	    i n i t i a l i z a t i o n		   *
+;	*						   *
+;	****************************************************
+;
+setbdosint:			;copy vector at 0:bdosi*4 to (bdosi+1)*4
+	mov	al,byte ptr .bdosintnum	;get bdos interrupt #
+	inc	al
+	mov	byte ptr .ddtbdosintnum,al	;ddt uses the next interrupt internally
+	sub	ah,ah
+	shl	ax,1
+	shl	ax,1		;bdos int # * 4
+	mov	di,ax		;[di] points to new bdos interrupt vector
+	mov	si,ax
+	sub	si,4		;[si] points to actual bdos interrupt vector
+	push	ds		;save ds
+	sub	ax,ax
+	mov	es,ax		;set es and ds to 0 to move interrupt vectors
+	mov	ds,ax
+	mov	cx,4
+rep	movs	al,al		;copy bdos interrupt vector to next int vector
+	pop	ds		;restore ds
+	ret
+;
+checkcmdtail:			;if command tail not empty, assume E command
+	mov	si,offset buff
+	mov	ah,0
+	lods	al		;get count from command tail
+	or	al,al
+	jz	cctret		;nothing to do if tail empty
+	cmp	al,conbuffmax
+	jbe	movcom
+	mov	al,conbuffmax	;truncate, if needed
+movcom:
+	mov	cx,ax		;count to [cx]
+	mov	di,offset conbuff
+	push	ds
+	pop	es		;point destination to ddt seg
+rep	movs	al,al		;copy command tail into ddt command buff
+	mov	al,eol
+	stos	al		;store terminator
+	call	execute		;command tail is assumed E command
+cctret:
+	ret
+;
+ddt86:
+	cld
+	mov	ccpss,ss
+	mov	ccpsp,sp	;save ccp stack pointer
+	mov	userss,ss
+	mov	usersp,sp	;initialize user's machine state to ccp stack
+;
+	pushf
+	pop	ax		;get flags
+	and	ax,ifmask16	;mask to IF bit
+	mov	sysif,ah	;save system IF state
+	mov	userfl,ax	;initialize user's flags to sysif
+;
+	mov	ax,cs
+	cli			;entering critical region
+	mov	ss,ax		;set ss = cs
+	mov	sp,offset stackp	;set up stack pointer
+	test	sysif,ifmask8	;see if interrupts were enabled
+	jz	d0		;don't turn them on if they were off
+	sti
+d0:				;exiting critical region
+;
+	call	setbdosint	;copy vector since ddt uses bdosi+1 internally
+;
+	test	savevecflag,0ffh	;ddt interrupts saved on each g/t/u?
+	jnz	d1			;if so, don't initialize here
+	call	bpvect			;if not, initialize them here
+d1:
+	mov	si,offset signon	;get sign on message
+	call	printm	        ;and print it
+	CALL	GETDATAPAGEADDR
+	CMP	BX,0FFFFH	;SEE IF FUNCTION IS IMPLEMENTED
+	JZ	D15		;SKIP COLUMN CHECK IF THERE IS NO DATA PAGE
+	CMP	ES:BYTE PTR 64[BX],80	;CHECK FOR 80-COLUMN CONSOLE
+	JNC	D15		;IF >= 80, NO FURTHER ACTION
+	MOV	COL40,1		;IF < 80, SET 40-COLUMN MODE
+D15:
+    	call	version
+	cmp	al,30h		;see if we are under file system iii (mp/m)
+	mov	bh,0
+	jc	d2		;if earlier version, skip
+	mov	dl,0feh
+	call	seterrmode	;so bdos returns to ddt on file errors
+	mov	bh,1
+d2:
+	mov	errmode,bh
+;
+	call	checkcmdtail	;if non-blank, do E command
+;
+;	*************************************************
+;	*						*
+;	*	    w o r k i n g  l o o p		*
+;	*						*
+;	*************************************************
+;
+start:
+	CMP	FILEOPEN,0	;SEE IF A FILE WAS LEFT OPEN
+	JZ	STRT00		;IF NOT, SKIP CLOSE
+	MOV	DX,OFFSET FCB
+	CALL	CLOSE		;CLOSE FILE
+STRT00:
+	cld			;direction flag points up
+	mov	sp,offset stackp	;make sure stack is right
+	call	crlf		;print crlf
+	mov	al,'-'		;and prompt
+	call	conout
+	call	getline		;get command line
+	call	conin		;read first char
+	cmp	al,eol
+	jz	start
+	cmp	al,';'
+	jz	start		;ignore comment lines
+	sub	al,'A'		;check range for valid command
+	jb	err
+	cmp	al,'Z'-'A'
+	ja	err
+	shl	al,1		;* 2 (2 bytes per ctable entry)
+	mov	ah,0
+	xchg	ax,bx
+	mov	numreq,1	;most commands require an argument
+	mov	wmode,0		;most commands are not word mode
+	call  	word ptr ctable [bx]	;immed call command routine
+	jmps	start		;start over
+;
+err:
+	call	crlf
+	mov	al,'?'		;error handler
+	call	conout		;print error char
+	jmps	start		;stack maybe messed up, keep this jmp
+;
+;	**************************************************
+;	*						 *
+;	*       c o m m a n d  j u m p  t a b l e	 *
+;	*						 *
+;	**************************************************
+;
+ctable	dw	assm		;assemble mnemonics
+	dw	blockcompare	;compare memory blocks
+	dw	err
+	dw	display		;display memory
+	dw	execute		;load user program for execution
+	dw	fill		;fill memory with constant
+	dw	gouser		;go to user program
+	dw	hexmath		;compute hex sum and difference
+	dw	ifcb		;input file control block
+	dw	err
+	dw	err
+	dw	lassm		;disassemble memory
+	dw	move		;move block
+	dw	err
+	dw	err
+	dw	err
+	DW	QUERY		;QUERY I/O PORT
+	dw	read		;read file
+	dw	setmem		;set memory
+	dw	trace		;trace program execution
+	dw	untrace		;untraced program execution
+	dw	verify		;display file info
+	dw	write		;write memory block to disk
+	dw	xcom		;display/alter CPU state
+	dw	err
+	dw	err
+;
+;	*************************************************
+;	*						*
+;	*          b d o s   i n t e r f a c e          *
+;	*						*
+;	*************************************************
+;
+bdos:				;this interrupt instruction is overwritten on initialization
+				;the actual int # used is the one at bdosint: + 1
+ddtbdosintnum	equ	offset bdos + 1
+;
+	int	bdosi
+	ret
+;
+consin:
+	mov	cl,1
+	call	bdos
+	ret
+;
+conout:
+	mov	cl,2
+	mov	dl,al
+	call	bdos
+	ret
+;
+rdconbuff:
+	mov	cl,10
+	call	bdos
+	ret
+;
+constat:
+	mov	cl,11
+	call	bdos
+	ret
+;
+version:
+	mov	cl,12
+	jmp	bdos
+;
+open:
+	mov	cl,15
+	call	bdos
+	inc	al		;test for 0ffh returned
+	jz	openerr
+	MOV	FILEOPEN,1
+	ret
+openerr:
+	mov	si,offset openm
+	jmps	errm
+;
+close:
+	mov	cl,16
+	call	bdos
+	inc	al
+	jz	closeerr
+	MOV	FILEOPEN,0
+	ret
+closeerr:
+	mov	si,offset closem
+	jmps	errm
+;
+delete:
+	mov	cl,19
+	jmp	bdos
+;
+readsec:
+	mov	cl,20
+	jmp	bdos
+;
+writesec:
+	mov	cl,21
+	call	bdos
+	or	al,al
+	jnz	writeerr
+	ret
+writeerr:
+	mov	si,offset writem
+	jmps	errm
+;
+make:
+	mov	cl,22
+	call	bdos
+	inc	al
+	jz	makeerr
+	ret
+makeerr:
+	mov	si,offset makem
+	jmps	errm
+;
+setdma:
+	mov	cl,26
+	jmp	bdos
+;
+COMPUTEFILESIZE:
+	MOV	CL,35
+	JMP	BDOS
+;
+seterrmode:
+	mov	cl,45
+	jmp	bdos
+;
+GETDATAPAGEADDR:
+	MOV	CL,49
+	JMP	BDOS
+;
+setdmab:
+	mov	cl,51
+	jmp	bdos
+;
+errm:
+	call	printm
+	jmp	start
+;
+getmaxmem:
+	PUSH	DX
+	mov	cl,53
+	call	bdos
+	POP	DX
+	inc	al
+	jz	memerr
+	CALL	ALLOCABSNOCHECK
+	ret
+;
+GETABSMAX:
+	PUSH	DX
+	MOV	CL,54
+	CALL	BDOS
+	POP	DX
+	INC	AL
+	JZ	MEMERR
+	CALL	ALLOCABSNOCHECK
+	RET
+;
+ALLOCMEM:
+	MOV	CL,55
+	CALL	BDOS
+	INC	AL
+	JZ	MEMERR
+	RET
+;
+ALLOCABSNOCHECK:
+	MOV	CL,56
+	JMP	BDOS
+;
+allocabsmem:
+	CALL	ALLOCABSNOCHECK
+	INC	AL
+	JZ	MEMERR
+	ret
+memerr:
+	mov	si,offset memm
+	jmps	errm
+;
+freemem:
+	mov	cl,57
+	jmp	bdos
+;
+load:
+	mov	cl,59
+	call	bdos
+	inc	ax		;test for 0ffffh returned
+	jz	loaderr
+	ret
+loaderr:
+	mov	si,offset loadm
+	jmps	errm
+;
+plmconout:
+	push	bp
+	mov	bp,sp
+	mov	ax,4[bp]
+	call	conout
+	pop	bp
+	ret	2
+;
+plmgetline:
+	push	bp
+	call	getline
+	pop	bp		;restore bp for pl/m
+	ret
+;
+;	****************************************************
+;	*                                                  *
+;	*      c o n s o l e  i / o  r o u t i n e s       *
+;	*                                                  *
+;	****************************************************
+;
+getline:
+	mov	dx,offset conbuffhdr
+	call	rdconbuff
+	mov	bl,conbuffcnt
+	mov	bh,0
+	add	bx,offset conbuff
+	mov	byte ptr [bx], eol
+	mov	conptr,0
+	ret
+;
+RAWCONIN:
+	mov	si,offset conbuff
+	add	si,conptr
+	lods	al
+	inc	conptr
+	RET
+;
+CONIN:
+	CALL	RAWCONIN	;fall thru to upper
+upper:
+	cmp	al,'a'		;less than 'a'
+	jb	upret		;or
+	cmp	al,'z'		;greater than 'z'
+	ja	upret		;then no change
+	and	al,5fh		;else convert to uc
+upret:	ret
+;
+ctlchek:			;check for ctl-s, ctl-q and ctl-c
+	call	constat		;keypress?
+	or	al,al		;zero?
+	jz	ctlexit		;no keypress so return
+	call	consin		;if keypress then get the data
+	cmp	al,ctls		;check for ctl-s
+	jz	kwait
+	jmp	start		;any other key will restart
+kwait:	call	consin		;if ctl-s then wait for another keypress
+ctlexit:
+	ret
+;
+crlf:
+	mov	al,cr		;send cr and lf to console
+	call	conout
+	mov	al,lf
+	call	conout
+	ret
+;
+crlfchk:			;do crlf and check for abort
+	call	crlf
+	call	ctlchek
+	ret
+;
+blank:				;print a blank.
+	mov	al,' '
+	call	conout
+	ret
+;
+tabs:				;print # blanks in cx
+	push	cx
+	call	blank
+	pop	cx
+	loop	tabs
+	ret
+;
+printm:				;print the message at [si] on console
+				;end of message indicated by parity set.
+	lods	al		;get a byte
+	test	al,80h		;check for end of message
+	jnz	pquit		;quit if parity set
+	push	si
+	call	conout		;otherwise display byte
+	pop	si
+	jmps	printm		;print more message 
+pquit:
+	and	al,7fh		;strip parity
+	call	conout		;print last byte
+	ret
+;
+ascout:				;output [al] in ascii
+	cmp	al,' '
+	jb	perout		;less than blank?
+	cmp	al,7eh
+	jna	ascend
+perout:
+	mov	al,'.'		;output '.'
+ascend:
+	call	conout		;else output ascii
+	ret
+;
+print8or16:			;print byte or word at es:[si] depending on wmode
+	mov	ax,es:[si]
+	test	wmode,1
+	jz	printbyte
+	jmps	printword
+;
+printdword:			;print double word as ssss:oooo
+	; called with:
+	;  es = segment
+	;  di = offset
+	push	di
+	mov	ax,es
+	call	printword	;print segment
+	mov	al,':'
+	call	conout
+	pop	ax
+;
+printword:			;print value in [ax] as 4 hex digits
+	push	ax
+	mov	al,ah
+	call	printbyte
+	pop	ax
+;
+printbyte:			;print value in [al] as 2 hex digits
+	push	ax
+	mov	cl,4
+	shr	al,cl		;shift al right 4 places
+	call	printnibble	;output upper nibble
+	pop	ax		;restore al (now we do lower nibble)
+;
+printnibble:			;print value in low 4 bits of [al] as a hex digit
+	and	al,0fh		;mask upper 4 bits
+	add	al,90h
+	daa
+	adc	al,40h
+	daa
+	call	conout
+	ret
+;
+;	**************************************
+;	*                                    *
+;	*     file name parsing routines     *
+;	*                                    *
+;	**************************************
+;
+parse:				;parse into fcb whose offset is in [di]
+	push	cs
+	pop	es		;set es=cs
+	push	di		;save fcb address
+	sub	al,al
+	mov	cx,36		;fcblen
+rep	stos	al		;initialize fcb to 0
+	pop	di		;restore fcb address
+;
+parse2:				;enter here to parse without clearing
+				;assumes es = cs from parse:
+	mov	fcbadr,di	;save fcb address
+	inc	di		;point to first byte of filename
+	call	setupdisk	;check for d: and set drive byte
+	mov	cx,8
+	call	fillfield	;first item was disk, now get filename
+	mov	cx,3		;length of file type
+	cmp	lastchar,'.'
+	jz	filltype
+	call	fillbl		;fill type with blanks if no '.'
+	jmps	parseret
+filltype:
+	call	fillfield	;if '.', fill field from console buff
+parseret:
+	call	scanq		;count '?'s in fcb
+	mov	al,lastchar
+	ret			;with last char scanned in [al]
+parseerr:
+	jmp	err
+;
+DEBLANK:
+	CALL	CONIN
+	MOV	LASTCHAR,AL
+	CMP	AL,' '
+	JZ	DEBLANK		;DEBLANK INPUT
+	RET
+;
+setupdisk:			;set byte 0 of fcb according to char in fcb (1)
+	CALL	DEBLANK
+	cmp	al,eol
+	jz	s1		;can't be drive, decrement conptr to rescan
+	call	conin
+	cmp	al,':'
+	jnz	s0		;not a drive, subtract 2 from conptr to rescan
+	mov	al,lastchar	;get drive char
+	sub	al,'A'-1
+	dec	di		;point to fcb (0)
+	stos	al		;store drive byte
+	ret
+s0:
+	dec	conptr
+s1:
+	dec	conptr
+	ret
+;
+pdelim:				;check char in [al] for delimiter; return ZF if so.
+	mov	di,offset delims
+	mov	cx,ndelims
+repnz	scas	al		;look in table
+	ret
+;
+fillfield:			;count in [cx], dest ptr in [di]
+	call	conin
+	mov	lastchar,al	;save last char scanned
+	cmp	al,'*'
+	jnz	notast
+	call	fillq		;fill with '?'
+	jmps	fillfield	;continue till delimiter
+notast:
+	push	di
+	push	cx
+	call	pdelim
+	pop	cx
+	pop	di
+	jz	fillbl		;if delimiter, fill field with ' '
+	jcxz	parseerr	;error if count exceeded
+	stos	al		;store char in fcb
+	dec	cx		;decrement count
+	jmps	fillfield
+fillq:
+	mov	al,'?'
+	jmps	fillx
+fillbl:
+	mov	al,' '
+fillx:
+	jcxz	filldone
+rep	stos	al		;store '?' or ' '
+filldone:
+	ret
+;
+scanq:				;count '?'s in fcb, return ZF set if found
+	mov	di,fcbadr
+	inc	di		;point to first char of filename
+	mov	cx,11		;11 chars to check
+	mov	al,'?'
+repnz	scas	al
+	ret
+;
+;	***********************************
+;	*                                 *
+;	*     user CPU state routines     *
+;	*                                 *
+;	***********************************
+;
+chkreg:				;if reg name in [ax] is valid, return with 
+				;register number in regnum
+				;else go to error processor
+	mov	cx,totreg+1	;number of names to check + 1
+	mov	di,offset regname
+	push	cs
+	pop	es
+repnz	scas	ax
+	jcxz	checkerr	;not a valid reg name
+	mov	dx,totreg
+	sub	dx,cx
+	mov	regnum,dx	;save reg number
+	ret
+;
+checkflag:			;check for valid flag name
+	mov	cx,nflag+1	;number of names to check + 1
+	mov	di,offset flagname
+	push	cs
+	pop	es
+repnz	scas	al
+	jcxz	checkerr	;not a valid flag name
+	mov	dx,nflag
+	sub	dx,cx
+	mov	regnum,dx	;save flag number
+	ret
+;
+checkerr:
+	jmp	err
+;
+setreg:				;set reg whose number is in [cx] to value in [ax]
+	mov	si,offset userreg
+	add	si,cx
+	add	si,cx
+	mov	[si],ax
+	ret
+;
+printflags:			;print values of flags
+	mov	cx,0
+pf0:
+	push	cx		;save count
+	call	printflag
+	pop	cx
+	inc	cx
+	cmp	cx,9
+	jb	pf0
+	ret
+;
+setflag:			;set flag whose # is in [cx] to value in [bx]
+	mov	si,offset flagbits
+	add	si,cx
+	lods	al
+	mov	cl,al
+	mov	ax,0fffeh
+	ror	ax,cl
+	ror	bx,cl
+	and	userfl,ax
+	or	userfl,bx
+	ret
+;
+printflagname:			;print flag name whose # is in [cx]
+	mov	si,offset flagname
+	add	si,cx
+	lods	al		;get flag name
+	call	conout
+	ret
+;
+getflag:			;check flag whose # is in [cx]
+				;return with ZF set if flag is set
+	mov	ax,1
+	mov	si,offset flagbits
+	add	si,cx
+	mov	cl,[si]		;get flagbits (flagnum)
+	ror	ax,cl		;get mask into position
+	and	ax,userfl	;see if bit set in CPU state
+	ret
+;
+printflagval:			;print value of flag (as 0 or 1) whose # is in [cx]
+	call	getflag
+	mov	al,'0'
+	jz	pf2		;if flag not set, print '0'
+	mov	al,'1'		;else print '1'
+pf2:
+	call	conout
+	ret
+;
+printflag:			;print flag (as flagname of '-') whose # is in [cx]
+	mov	si,offset flagname
+	add	si,cx		;point to flag name
+	push	word ptr [si]	;save flag char
+	call	getflag
+	pop	ax		;get flag char
+	jnz	pname		;if flag set, use flag char
+	mov	al,'-'		;else print hyphen
+pname:
+	call	conout
+	ret
+;
+preg1:				;print first 6 register names (for 40 columns)
+	mov	cx,0
+	mov	nreg,6
+	JMPS	PR1
+preg2:				;print next 7 register names (for 40 columns)
+	mov	cx,6
+	jmps	pr00
+printregs:			;print register values
+	mov	cx,0
+pr00:
+	mov	nreg,13
+	JMPS	PR1
+pr0:
+	call	testregcl	;see if reg should be printed
+	jnb	pr2		;don't print if carry not set
+	push	cx
+	CALL	BLANK
+	POP	CX
+PR1:
+	PUSH	CX
+	CALL	PRINTREGVAL
+	pop	cx
+pr2:
+	inc	cx
+	cmp	cl,nreg
+	jb	pr0
+	ret
+;
+printregval:			;print value of reg whose # is in [cx]
+	mov	si,offset userreg
+	add	si,cx
+	add	si,cx
+	lods	ax
+	call	printword
+	ret
+;
+printregname:			;print name of reg whose # is in [cx]
+	mov	si,offset regname
+	add	si,cx
+	add	si,cx
+	call	printm
+	ret
+;
+testregcl:			;see if reg whose # is in [cl] should be printed
+				;return with carry set if so
+	test	segflag,0ffh
+	jnz	printit		;print all reg's if segflag set
+	cmp	cl,11		;otherwise, see if [cl] has seg reg #
+	ja	printit
+	cmp	cl,8
+	ret
+printit:
+	stc
+	ret
+;
+SETUPHDR:
+	call	crlf
+	MOV	CX,8
+	call	tabs		;leave space for flags
+	mov	cx,0
+	ret
+;
+preghdr1:			;print header for first 6 regs (for 40 col)
+	call	setuphdr
+	mov	nreg,6
+	jmps	prh0
+preghdr2:			;print header for next 7 registers
+	call	blank
+	mov	cx,6
+	MOV	NREG,13
+	JMPS	PRH05
+printregheader:			;print header for registers
+	call	setuphdr
+prh00:
+	mov	nreg,13
+prh0:
+	call	testregcl	;see if reg should be printed
+	jnb	prh1		;don't print if carry not set
+	push	cx
+	mov	cx,3
+	call	tabs
+	POP	CX
+PRH05:
+	PUSH	CX
+	CALL	PRINTREGNAME
+	pop	cx
+prh1:
+	inc	cx
+	cmp	cl,nreg
+	jb	prh0
+	ret
+;
+printinstr:			;disassemble instruction at [cs:ip]
+	mov	es,usercs
+	mov	si,userip
+	test	disempresent,0ffh
+	jz	pi1
+	push	es
+	push	si
+	test	segflag,0ffh
+	jz	pi0
+	call	crlf
+pi0:
+	call	disem
+	ret
+pi1:
+	mov	al,es:[si]
+	call	printbyte
+	ret
+;
+printseginfo:			;print name, start and end address of segment whose
+				;number is in [al] if length is non-zero.
+	mov	cl,al		;save seg number
+	mov	bl,6
+	mul	bl		;6 bytes per segment in base page
+	add	ax,offset basepagesave
+	mov	si,ax		;si now points to entry in base page
+	lods	ax		;get low 16 bits of length
+	mov	bx,ax		;save in bx
+	lods	al		;get high nibble of length
+	mov	dl,al		;save it
+	mov	ah,0
+	or	ax,bx		;test for zero length
+	jz	psiret		;if zero, no display
+	lods	ax		;get base
+	push	bx		;save low (length)
+	push	dx		;save high (length)
+	push	ax		;save base
+	mov	ch,0		;zero high byte of segment #
+	shl	cx,1		;* 2 (2 bytes per segment name)
+	add	cx,offset segnames	;cx now points to segment name
+	push	cx		;save it
+	call	crlf
+	pop	si
+	call	printm		;print segment name
+	call	blank
+	pop	es		;get base
+	push	es		;save base
+	mov	di,0
+	call	printdword	;print start address
+	call	blank
+	pop	bx		;get base
+	pop	ax		;get high (len)
+	mov	cl,12
+	shl	ax,cl		;move ls nibble of al to ms nibble of ah
+	add	ax,bx		;add ms nibble of length to base
+	mov	es,ax
+	pop	di		;get low (len)
+	call	printdword	;print end address
+psiret:
+	ret
+;
+setcpustate:			;set users regs after E command
+	mov	ax,ccpss
+	mov	userss,ax
+	mov	ax,ccpsp
+	mov	usersp,ax	;reset user stack pointer to ccp stack
+	mov	ax,bx		;get ds base in [ax] (returned from bdos load)
+	mov	userds,ax	;set user's ds
+	mov	usercs,ax
+	mov	useres,ax
+	mov	type1seg,ax
+	mov	type2seg,ax
+	mov	es,ax
+	test	es:byte ptr .5, 1	;test 8080 flag
+	jz	not8080
+	mov	ax,100h		;default for userip, lasloc, disloc
+	jmps	setdone
+not8080:
+	mov	ax,es:.3	;get cs base
+	mov	usercs,ax
+	mov	type1seg,ax
+	mov	ax,es:.15	;get es base
+	or	ax,ax
+	JZ	SETDONE
+	mov	useres,ax	;set it if there was one
+	sub	ax,ax		;userip, lasloc, disloc = 0 for non-8080 model
+setdone:
+	mov	userip,ax
+	mov	lasloc,ax
+	ret
+;
+;	*********************************************
+;	*                                           *
+;	*     breakpoint/single step procedures     *
+;	*                                           *
+;	*********************************************
+;
+setbp:				;set breakpoint at address stored in dword at [di]
+	les	si,[di]		;point [es]:[si] to breakpoint location
+	mov	al,0cch		;int 3 instruction
+	xchg	al,es:[si]	;set breakpoint and fetch instruction
+	mov	4[di],al	;save user instruction in breakpoint table
+	inc	bpcnt		;increment breakpoint count
+	ret
+;
+bpclear:			;clear breakpoint table
+	sub	cx,cx
+	mov	cl,bpcnt	;get # of bp's to clear
+	mov	si,offset brk1loc	;point to bp table
+bpcloop:
+	jcxz	bpend		;0..quit
+	lods	ax		;get bp offset
+	push	ax		;save it
+	lods	ax		;get bp segment
+	mov	es,ax
+	lods	al		;get inst byte
+	pop	di		;get bp offset
+	stos	al		;store user instruction back
+	loop	bpcloop
+	mov	bpcnt,0		;zero bp counter
+bpend:	ret
+;
+bpv:
+	test	savevecflag,0ffh
+	jz	bpvectret
+bpvect:				;set up breakpoint/single step vectors
+	call	savevect
+	mov	dx,0
+	mov	es,dx		;make sure dest is absolute 0
+	mov	di,4		;set up single step vector
+	mov	ax,offset ssentry	;single step entry point
+	stos	ax		;save at ss vector
+	mov	ax,cs
+	stos	ax		;save cs
+	mov	di,12		;set up breakpoint vector
+	mov	ax,offset breakentry 	;set up bp vector
+	stos	ax		;save at bp vector
+	mov	ax,cs
+	stos	ax		;save cs
+bpvectret:
+	ret
+;
+savevect:			;save previous contents of 0:4 thru 0:f
+	mov	si,4
+	mov	di,offset vectorsave
+	push	ds
+	pop	es		;point to ddt segment
+	mov	cx,12
+	push	ds
+	mov	dx,0
+	mov	ds,dx
+rep	movs	al,al
+	pop	ds
+svret:
+	ret
+;
+restorevect:			;restore previous contents of 0:4 thru 0:f
+	test	savevecflag,0ffh
+	jz	rvret
+	mov	si,offset vectorsave
+	mov	di,4
+	mov	cx,12
+	mov	dx,0
+	mov	es,dx
+rep	movs	al,al
+rvret:
+	ret
+;
+setdefseg:			;set default type1seg, lasloc
+	mov	di,userip
+	mov	lasloc,di	;set disassembler offset
+	mov	es,usercs
+	mov	type1seg,es	;set type1seg segment
+	MOV	AX,USERDS
+	MOV	TYPE2SEG,AX	;SEG TYPE2SEG
+	RET
+;
+breakaddr:			;print address where break occurred
+	call	crlf
+	mov	al,'*'
+	call	conout
+	call	setdefseg
+	call	printdword	;print break address
+	ret
+;
+breakentry:			;breakpoint entry
+	mov	breakfl,1
+	jmps	savecpu		;common code for break and single step
+ssentry:			;single step entry
+	mov	breakfl,0
+savecpu:
+	mov	userax,ax
+	mov	userbx,bx
+	mov	usercx,cx
+	mov	userdx,dx
+	mov	usersi,si
+	mov	userdi,di
+	mov	userbp,bp
+	mov	usersp,sp
+	mov	useres,es
+	mov	userds,ds
+	mov	userss,ss
+	mov	bp,sp
+	mov	ax,[bp]
+	mov	userip,ax
+	mov	ax,2[bp]
+	mov	usercs,ax
+	mov	ax,4[bp]
+	mov	userfl,ax
+;
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,offset stackp
+;
+	test	sysif,ifmask8	;see whether interrupts should be enabled
+	jz	sav0
+	sti
+sav0:
+	add	usersp,6	;to make up for stacked cs, ip, and fl
+	cld
+	call	restorevect
+	test	breakfl,0ffh
+	jz	sst0
+;
+break0:				;continuation of break processing
+	dec	userip		;adjust user ip for breakpoint instr
+	call	bpclear		;clear all breakpoints
+	test	skipbdos,0ffh	;were we originally in trace mode?
+	jnz	sst00		;if so, continue tracing
+;
+tracedone:
+	call	breakaddr
+	jmp	start
+;
+sst00:				;get here on breakpoint on return from bdos
+	mov	skipbdos,0	;no longer tracing thru bdos
+sst0:				;continuation of single step processing
+	and	userfl,0feffh	;clear user trap flag
+	test	userifoff,1
+	jz	sst1
+	mov	userifoff,0
+	or	userfl,200h	;restore user if
+sst1:
+	OR	TRACECOUNT,0	;IF COUNT IS 0, MUST HAVE GOT HERE
+				;BY TRACING THRU A PUSHF INSTRUCTION, AND
+				;LATER POPPING THE FLAGS AFTER A G COMMAND.
+	JZ	RSTORE		;IF SO, SIMPLY CONTINUE WITH G COMMAND
+	dec	tracecount
+	jz	tracedone
+	call	ctlchek		;check for abort
+	test	traceprint,0ffh
+	jz	tracerestore
+	call	xnohdr		;display regs without header
+;
+tracerestore:			;enter here when in trace mode
+	mov	es,usercs
+	mov	si,userip
+	mov	ax,word ptr .bdosintloc	;get bdos interrupt instruction
+	cmp	ax,es:[si]	;see if instruction to be traced is bdos int
+	jnz	tr00
+	mov	brk1seg,es
+	add	si,2		;point to instruction after bdos int
+	mov	brk1loc,si
+	mov	di,offset brk1loc
+	call	setbp		;set breakpoint at return from bdos
+	mov	skipbdos,1	;so we know we were in trace mode when we hit bp
+	jmps	rstore		;without setting single step flag
+tr00:
+	mov	ax,userfl
+	or	ax,100h		;set trace flag
+	test	ax,200h		;is user if set?
+	jz	tr01
+	and	ax,not 200h	;clear it (so we don't end up in int handler)
+	mov	es,usercs
+	mov	si,userip
+	mov	bl,es:[si]	;get instruction to execute
+	cmp	bl,0fah		;is it cli?
+	jz	tr01
+	cmp	bl,0cfh		;iret?
+	jz	tr01
+	cmp	bl,09dh		;popf?
+	jz	tr01
+	cmp	bl,0cdh		;int?
+	jz	tr01
+	mov	userifoff,1	;set flag so ddt86 will turn if back on
+tr01:
+	mov	userfl,ax
+rstore:				;enter here when in G mode
+	call	bpv
+	cli
+	mov	sp,offset userreg	;point to reg save area
+	pop	ax
+	pop	bx
+	pop	cx
+	pop	dx
+	pop	savesp
+	pop	bp
+	pop	si
+	pop	di
+	pop	ds		;throw away cs
+	pop	ds
+	pop	savess
+	pop	es
+	mov	ss,savess	;restore stack
+	mov	sp,savesp
+	push	userfl		;flags
+	push	usercs		;cs
+	push	userip		;ip
+	iret			;transfer to user program
+;
+;	**********************************
+;	*                                *
+;	*     miscellaneous routines     *
+;	*                                *
+;	**********************************
+;
+delim:
+	cmp	al,eol
+	jz	delret
+	cmp	al,','
+	jz	delret
+	cmp	al,' '
+	jz	delret
+	cmp	al,':'
+delret:
+	ret
+;
+hexcon:
+	sub	al,'0'
+	cmp	al,10
+	jb	hexret
+	add	al,('0' - 'A' + 10) and 0ffh
+	cmp	al,16
+	jnb	hexerr
+	cmp	al,10
+	jb	hexerr
+hexret:
+	ret
+hexerr:
+	jmp	err
+;
+plmset:				;get here when assembler wants to set memory
+	mov	bp,sp		;for parameter fetching
+	mov	ax,2[bp]	;get value in [al]
+	mov	es,type1seg	;segment used in A command is in type1 seg
+	mov	di,4[bp]	;get offset from stack
+	call	setbyte		;set and verify
+	inc	di		;increment offset
+	jnz	psret		;if incremented offset is non-zero, return
+	jmp	start		;otherwise exit A command, since wrap occurred
+psret:
+	ret	4		;remove 2 parameters
+;
+set8or16:			;set byte or word at es:[di] depending on wmode
+	test	wmode,1
+	jz	setbyte
+				;fall through to setword
+;
+setword:			;set word at es:[di] to [ax] and verify
+;
+;	NOTE:  THIS CODE COULD BE REPLACED BY THE FOLLOWING 4 INSTRUCTIONS
+;	       FOR SYSTEMS IN WHICH MEMORY CAN ONLY BE ADDRESSED BY WORDS.
+;	       HOWEVER, THIS WILL WRAP AROUND AND MODIFY LOCATIONS 0 IF
+;	       [DI] CONTAINS 0FFFEH.
+;
+;	MOV	ES:[DI],AX
+;	CMP	ES:[DI],AX
+;	JNZ	BADVER
+;	RET
+;
+	push	ax		;save hi byte
+	call	setbyte		;set low byte
+	pop	ax
+	mov	al,ah
+	inc	di		;point to next location
+	jz	sret		;don't set byte if wraparound occurred
+				;fall thru to setbyte
+;
+setbyte:			;set byte at es:[di] to [al] and verify
+	mov	es:[di],al	;store byte
+	cmp	es:[di],al	;see if it got stored
+	jnz	badver
+sret:
+	ret
+;
+badver:
+	push	di
+	push	es
+	mov	si,offset verm
+	call	printm		;print verify error message
+	pop	es
+	pop	di
+	call	printdword
+	jmp	start
+;
+inc1or2:			;inc pointer at [si] by 1 or 2, depending on wmode
+				;return with carry flag set if wrap occurred
+	mov	al,wmode
+	and	ax,1		;mask to 0 or 1
+	inc	ax		;increment value is now 1 or 2
+	add	[si],ax		;increment pointer
+	cmp	[si],ax		;test for wraparound
+	ret
+;
+getnumber:			;get number from input buffer
+				;returns:
+				;bx = value of number from input
+				;al = last character scanned (delimiter)
+				;ah = blank flag (0 = blank, 1 = non-blank)
+	sub	bx,bx		;initialize value to 0
+	mov	ah,bh		;initialize blank flag to blank
+getn0:
+	call	conin
+	call	delim		;check for delimiter
+	jz	getnret		;delimiter found, exit
+	mov	cl,4
+	shl	bx,cl		;make room for new nibble
+	call	hexcon		;convert ascii to binary
+	add	bl,al		;add nibble
+	mov	ah,1		;blank flag = non-blank
+	jmps	getn0
+getnret:
+	ret
+;
+getoffset:			;get offset from input line
+				;offset is a non-blank number not followed by ':'
+				;returns:
+				;al = last char scanned (delimiter)
+				;bx = value
+	call	getnumber	;get value to bx
+	or	ah,ah		;check for blank entry
+	jz	geterr		;don't allow blank entry
+	cmp	al,':'		;check delimiter for ':'
+	jz	geterr		;don't allow ':' delimiter
+	ret
+;
+getlastoffset:			;same as getoffset but delimiter must be a cr
+	call	getoffset
+	cmp	al,eol
+	jnz	geterr
+	ret
+geterr:
+	jmp	err
+;
+checkword:			;check for 'W' following command letter
+	call	conin
+	cmp	al,'W'
+	jnz	chret
+	mov	wmode,1
+	ret
+chret:	dec	conptr		;to rescan character
+	ret
+;
+checkreg:			;check for valid segment register prefix - <sr>:
+				;called with:
+				;bl = first char
+				;bh = second char
+				;returns:
+				;si = offset to register, if found
+				;zf = found flag (1 = found, 0 = not found)
+	or	bh,80h		;since they are defined like that
+	mov	bp,offset segreg	;point to seg reg names
+	sub	si,si		;initialize index to 0
+check0:
+	cmp	bx,[bp+si]	;is it a seg reg name
+	jz	checkret
+	add	si,2		;point to next name
+	cmp	si,8		;check for done (4 seg reg names)
+	jnz	check0
+	or	si,si		;unset zero flag
+checkret:
+	ret
+;
+checksegreg:			;check for valid seg reg name
+				;if found, return contents of seg reg
+				;else reset input pointer for rescan
+				;returns:
+				;dx = seg reg value
+				;zf = valid seg reg (1 = valid, 0 = not valid)
+	push	conptr		;save input pointer for possible rescan
+	call	conin
+	push	ax
+	call	conin
+	push	ax
+	call	conin
+	cmp	al,':'		;valid seg reg must have colon
+	pop	bx
+	pop	cx
+	mov	bh,cl
+	xchg	bl,bh
+	jnz	notsr
+	call	checkreg	;see if it's a valid name
+	jnz	notsr
+	mov	bp,offset usercs	;point to saved user seg reg's
+	mov	dx,[bp+si]	;get value of user seg reg
+	pop	cx		;throw away saved input pointer
+	ret
+notsr:
+	pop	conptr		;reset for rescan
+	ret
+;
+getsegandoff:			;get user location specification
+				;may be one of the following forms:
+				;<empty>
+				;nnnn
+				;sr:nnnn
+				;mmmm:nnnn
+				;if numreq set, <empty> is invalid
+				;called with:
+				;di = offset of 4 byte area containing <offset><segment>
+				;numreq must have been initialized by calling routine
+	call	checksegreg	;see if there is a segment prefix
+	jz	gets0
+	call	getnumber	;no segment prefix, check for number
+	or	ah,ah		;was there one?
+	jz	gets3
+	mov	dx,bx		;move number to dx
+	cmp	al,':'		;was delimiter a ':'
+	jnz	gets2
+gets0:
+	call	getoffset	;segment prefix present, must have number
+	mov	[di],bx		;number goes to <offset>
+	mov	2[di],dx	;first number (or sr) goes to <segment>
+	ret
+gets2:
+	mov	[di],dx		;only one number, put it in <offset>
+getsret:
+	ret
+gets3:
+	test	numreq,0ffh	;blank field, see if ok
+	jz	getsret		;ok, return with no change at [di]
+	jmp	err		;number was required
+;
+;	*****************************
+;	*                           *
+;	*     disk i/o routines     *
+;	*                           *
+;	*****************************
+;
+readfile:			;read file in fcb into memory described in mcb
+				;when done, mcb will have base and length of block to free
+	MOV	AX,STARTREADSEG
+	MOV	ENDREADSEG,AX
+	MOV	AX,STARTREADOFF
+	MOV	ENDREADOFF,AX
+rf0:
+	MOV	DX,MCBBASE
+	call	setdmab		;set dma base
+	MOV	DX,0
+	CALL	SETDMA		;DMA OFFSET WILL ALWAYS BE 0
+	cmp	mcblen,8	;8 paragraphs per sector
+	JB	NOMEM		;NO MORE MEMORY, CHECK FOR END OF FILE
+	mov	dx,offset fcb
+	call	readsec
+	or	al,al		;test value returned from bdos
+	jnz	readdone
+	add	mcbbase,8	;point mcb to next available paragraph
+	sub	mcblen,8	;decrement # of available paragraphs
+	MOV	AX,ENDREADOFF
+	MOV	BX,80H
+	ADD	BX,AX		;COMPUTE NEW END OFFSET
+	CMP	BX,AX		;CHECK FOR WRAPAROUND
+	JNC	RF1
+	ADD	ENDREADSEG,1000H	;INCREMENT SEGMENT IF WRAP OCCURRED
+RF1:
+	MOV	ENDREADOFF,BX	;UPDATE END READ OFFSET
+	JMPS	RF0		;CONTINUE READING
+readdone:
+	MOV	AX,ENDREADOFF
+	DEC	ENDREADOFF	;TO POINT TO LAST BYTE ACTUALLY READ
+	OR	AX,AX		;WERE WE ON A 64K BOUNDARY?
+	JNZ	RF2
+	SUB	ENDREADSEG,1000H	;SINCE ONE TOO MANY WAS ADDED IN READ LOOP
+RF2:
+	MOV	DX,OFFSET FCB
+	CALL	CLOSE
+	ret
+NOMEM:
+	MOV	DX,CS
+	CALL	SETDMAB
+	MOV	DX,80H
+	CALL	SETDMA		;POINT TO DEFAULT BUFFER IN SID86 BASEPAGE
+	MOV	DX,OFFSET FCB
+	CALL	READSEC		;JUST TO SEE IF WE ARE AT THE END OF THE FILE
+	CMP	AL,1		;TEST FOR EOF ERROR
+	JZ	READDONE	;IF NO MORE FILE, SIMPLE RETURN
+				;ELSE FALL THRU TO ERROR
+	jmp	loaderr
+;
+;
+writefile:			;write block at startwriteloc - endwriteloc to file in fcb
+	mov	ax,startwriteoff
+	mov	cl,4
+	shr	ax,cl		;divide offset by 16 - truncate ls nibble
+	add	ax,startwriteseg	;compute absolute paragraph number
+	mov	mcbbase,ax
+	mov	dmaseg,ax
+	mov	bx,ax		;store start paragraph # in [bx]
+	mov	ax,endwriteoff
+	shr	ax,cl
+	add	ax,endwriteseg	;calculate absolute paragraph number of end
+	sub	ax,bx		;compute # of paragraphs to write
+	jb	wferr		;start can't be > end
+	mov	mcblen,ax	;store # paragraphs to write
+	mov	dx,offset fcb
+	call	delete
+	test	errmode,0ffh
+	jz	wf00
+	inc	al		;did delete return 0ffh?
+	jnz	wf00		;if not, ok
+	or	ah,ah		;see if extended or physical error
+	jnz	wferr		;if so, don't continue
+wf00:
+	mov	dx,offset fcb
+	call	make
+wf0:
+	mov	dx,dmaseg
+	call	setdmab
+	mov	dmaoff,0	;clear dma offset
+wf1:
+	mov	dx,dmaoff
+	call	setdma
+	mov	dx,offset fcb
+	call	writesec
+	sub	mcblen,8	;8 paragraphs per sector
+	jb	writedone
+	add	dmaoff,80h	;increment dma pointer
+	jnz	wf1		;loop if no wrap occurred
+	add	dmaseg,1000h	;if wrap occurred, increment dma segment
+	jmps	wf0
+writedone:
+	ret
+wferr:
+	jmp	err
+;
+eject
+;
+;	**********************************
+;	*                                *
+;	*     a - assemble mnemonics     *
+;	*                                *
+;	**********************************
+;
+assm:
+	test	assempresent,0ffh
+	jz	asmerr
+	mov	asmspsav,sp	;save in case of error in pl/m
+	mov	di,offset type1loc
+	call	getsegandoff	;get start address
+	CMP	AL,EOL
+	JNZ	ASMERR		;ONLY 1 PARAMETER ALLOWED
+asm0:
+	push	type1seg	;for pl/m call
+	push	type1loc	;for pl/m call
+	call	assem		;returns offset of next available byte
+	cmp	ax,type1loc	;test for no input
+	jna	asmret		;done unless greater than original type1loc
+	mov	type1loc,ax	;update type1loc
+	jmps	asm0
+asmret:
+	ret
+asmerr:
+	jmp	err
+asment:				;arrive here on input error in pl/m
+	mov	sp,asmspsav	;reset stack to where it was
+	jmps	asm0		;go back for more input
+;
+;	*****************************
+;	*                           *
+;	*     b - block compare     *
+;	*                           *
+;	*****************************
+;
+blockcompare:
+	mov	di,offset type2loc
+	call	getsegandoff
+	call	getoffset	;get end offset
+	mov	usermax,bx
+	cmp	al,eol
+	jz	cmperr		;need 3 arguments
+	sub	bx,type2loc
+	jb	cmperr		;error if start > end
+	mov	ax,type2seg
+	mov	userseg2,ax	;default to same seg as source
+	mov	di,offset userloc2
+	call	getsegandoff	;get destination address
+	cmp	al,eol
+	jnz	cmperr		;error if more than 3 arguments
+cmp0:
+	les	si,dword ptr type2loc
+	mov	al,es:[si]
+	les	si,dword ptr userloc2
+	cmp	al,es:[si]
+	jz	cmpcont
+	call	crlfchk
+	mov	di,offset type2loc
+	call	printerror
+	call	blank
+	call	blank
+	mov	di,offset userloc2
+	call	printerror
+cmpcont:
+	inc	type2loc
+	mov	ax,type2loc
+	cmp	usermax,ax
+	jc	cmpdone
+	inc	userloc2
+	jz	cmpdone		;prevent wraparound
+	jmps	cmp0
+;
+cmpdone:
+	ret
+cmperr:
+	jmp	err
+;
+printerror:			;print dword at [di], byte pointed to by dword
+	les	di,[di]
+	mov	al,es:[di]
+	push	ax		;save byte at es:di
+	call	printdword
+	call	blank
+	pop	ax
+	call	printbyte
+	ret
+;
+;	******************************
+;	*                            *
+;	*     d - display memory     *
+;	*                            *
+;	******************************
+;
+display:
+	mov	numreq,0	;ok to have no entries
+	mov	ax,type2seg
+	mov	disseg,ax	;default to type2 seg
+	call	checkword
+	test	col40,0ffh
+	jz	dis01
+	test	wmode,1
+	jnz	dis00
+	mov	al,nd40
+	jmps	dis02
+dis00:
+	mov	al,ndw40	;chars per line for dw in 40 col mode
+	jmps	dis02
+dis01:
+	mov	al,nd80		;16 bytes per line in normal mode
+dis02:
+	mov	linemax,al
+	mov	di,offset disloc
+	call	getsegandoff
+	cmp	al, ','
+	mov	ax,disseg
+	mov	type2seg,ax	;update default type2 seg
+	jnz	dis0		;must be cr, no dismax entered
+	call	getlastoffset	;get dismax
+	jmps	dis1
+dis0:
+	mov	bx,disloc	;no dismax entered, calculate default
+	mov	al,linemax
+	mov	cl,nlines
+	mul	cl
+	dec	al
+	add	bx,ax
+	cmp	bx,disloc	;see if we went over ffff
+	jnb	dis1
+	mov	bx,0ffffh	;set dismax if we wrapped around
+dis1:
+	mov	dismax,bx
+disp3:
+	call	crlfchk
+	les	di,dword ptr disloc
+	mov	tdisp,di
+	call	printdword
+disp4:
+	call	blank
+	les	si,dword ptr disloc
+	call	print8or16
+	mov	si,offset disloc
+	call	inc1or2
+	jb	disp6		;stop if wrap occurred
+	mov	ax,disloc
+	sub	ax,tdisp	;calculate # bytes printed on line
+	cmp	al,linemax	;see if line full
+	jz	disp6
+	mov	ax,disloc
+	cmp	ax,dismax	;check for done
+	jna	disp4
+disp6:
+	call	blank
+disp7:
+	mov	es,disseg
+	mov	si,tdisp
+	mov	al,es:[si]
+	call	ascout
+	inc	tdisp
+	jz	disp8		;stop if wrap occurred
+	mov	ax,tdisp
+	cmp	ax,disloc
+	jnz	disp7
+	cmp	ax,dismax
+	ja	disp8
+	jmps	disp3
+disp8:
+	ret
+;
+;	******************************************
+;	*                                        *
+;	*     e - load program for execution     *
+;	*                                        *
+;	******************************************
+;
+cmd		db	'CMD'
+;
+eerr:
+	jmp	err
+execute:
+	CALL	DEBLANK
+	cmp	al,eol		;check for no filename
+	JZ	FREE		;NO FILENAME MEANS FREE ALL MEMORY
+	dec	conptr		;to rescan character
+	mov	di,offset fcb
+	call	parse
+	jz	eerr		;no '?' or '*' allowed
+	cmp	al,eol
+	jnz	eerr		;eol must follow filename
+	push	cs
+	pop	es		;set es = cs
+	cmp	es:fcb+9, ' '	;see if filetype blank
+	jnz	ex0
+	mov	si,offset cmd
+	mov	di,offset fcb+9
+	mov	cx,3
+rep	movs	al,al		;set filetype to 'CMD' if empty
+ex0:
+	mov	dx,offset fcb
+	call	open		;see if file exists
+	CALL	FREE
+	mov	dx,offset fcb
+	call	load		;load user program
+	push	bx		;save ds base
+	call	setcpustate
+	pop	dx		;get ds base back
+	call	setdmab		;set dma base
+	mov	dx,80h
+	call	setdma		;default to 80h in user's DS
+	mov	dx,offset fcb
+	call	close
+	mov	mode,'E'
+	mov	si,0
+	mov	di,offset basepagesave
+	push	ds
+	pop	es		;set es to ddt's segment
+	mov	ax,userds
+	push	ds		;save it
+	mov	ds,ax
+	mov	cx,48
+rep	movs	al,al		;copy user's base page into ddt save area
+	pop	ds		;restore ds
+	call	verify		;display load info
+	dec	conptr		;to rescan cr
+	jmp	ifcb		;to clear fcb
+FREE:
+	mov	mcbext,0ffh	;free all allocations below DDT86
+	mov	dx,offset mcb
+	call	freemem		;free all memory previously allocated under DDT
+	RET
+;
+;	***************************
+;	*                         *
+;	*     f - fill memory     *
+;	*                         *
+;	***************************
+;
+fill:
+	call	checkword	;check for 'FW'
+	mov	di,offset type2loc
+	call	getsegandoff
+	call	getoffset	;get end address
+	mov	usermax,bx	;save end address
+	call	getlastoffset	;get fill constant
+	test	wmode,1
+	jnz	fil0
+	or	bh,bh		;if not wmode, high byte must be 0
+	jnz	filerr
+fil0:
+	mov	cx,usermax	;get end address
+	sub	cx,type2loc	;compare for valid range
+	jb	filerr		;error if start > end
+fil1:
+	les	di,dword ptr type2loc
+	mov	ax,bx		;get fill constant
+	call	set8or16
+	mov	si,offset type2loc
+	call	inc1or2
+	jb	filret		;stop if wrap occurred
+	mov	ax,type2loc
+	cmp	ax,usermax
+	jbe	fil1
+filret:
+	ret
+filerr:
+	jmp	err
+;
+;	**********************************
+;	*                                *
+;	*     g - go to user program     *
+;	*                                *
+;	**********************************
+;
+gouser:
+	mov	ax,usercs
+	mov	goseg,ax	;default goseg = usercs
+	mov	ax,userip
+	mov	goloc,ax	;default goloc = userip
+	mov	numreq,0	;number not required in G command
+	mov	di,offset goloc
+	call	getsegandoff	;get start address
+	cmp	al,eol
+	jz	gorestore	;if eol, no breakpoints set
+	mov	ax,goseg
+	mov	brk1seg,ax
+	mov	brk2seg,ax	;defaults for breakpoint segments = goseg
+	mov	di,offset brk1loc
+	call	getsegandoff	;get first breakpoint
+	push	ax		;save terminating char
+	mov	di,offset brk1loc
+	call	setbp		;save breakpoint in table
+	pop	ax		;get char
+	cmp	al,eol
+	jz	gorestore	;only one breakpoint
+	mov	di,offset brk2loc
+	call	getsegandoff	;get second breakpoint
+	cmp	al,eol
+	jnz	goerr		;only 2 breakpoints allowed
+	mov	di,offset brk2loc
+	call	setbp		;set second breakpoint
+gorestore:
+	mov	skipbdos,0	;make sure it's 0 since we aren't in T/U mode
+	mov	ax,goseg
+	mov	usercs,ax	;usercs = goseg
+	mov	ax,goloc
+	mov	userip,ax	;userip = goloc
+	jmp	rstore		;restore user CPU state
+goerr:
+	call	bpclear		;in case any were set
+	jmp	err
+;
+;
+;	************************
+;	*                      *
+;	*     h - hex math     *
+;	*                      *
+;	************************
+;
+hexmath:
+	call	getoffset
+	push	bx		;save first value
+	call	getlastoffset
+	pop	ax		;get first value
+	push	ax		;save a copy
+	add	ax,bx
+	push	bx		;save second value
+	push	ax		;save sum
+	call	crlf
+	pop	ax		;get sum
+	call	printword	;print sum
+	call	blank
+	pop	bx		;get second value
+	pop	ax		;get first value
+	sub	ax,bx
+	call	printword	;print difference
+	ret
+;
+;	****************************************
+;	*                                      *
+;	*     i - input file control block     *
+;	*                                      *
+;	****************************************
+;
+ifcb:
+	push	conptr		;save input pointer
+	mov	di,offset fcb
+	call	parse
+	cmp	al,eol
+	jnz	i0		;only one filename
+	dec	conptr		;to rescan eol and blank second filename in fcb
+i0:
+	mov	di,offset fcb2
+	call	parse2		;parse second filename
+	push	ds
+	pop	es		;point to DDT's ds
+	pop	conptr		;restore input pointer
+	mov	di,81h		;move command tail to [es]:[di]
+	sub	cx,cx		;zero count
+i1:
+	call	conin		;get char from command tail
+	cmp	al,eol		;end of command tail?
+	jz	i2
+	stos	al		;store in user's base page
+	inc	cx		;increment count
+	jmps	i1		;loop until eol
+i2:
+	mov	al,0
+	stos	al		;store 0 at end of string
+	mov	es:.80h,cl	;store count at start of buffer
+	cmp	mode,'E'
+	jnz	idone		;if no file loaded with E command, we're done
+	mov	si,offset fcb
+	mov	di,si
+	mov	es,userds
+	add	cx,38		;total bytes to move = # in command + 36 (fcb)
+				; +2 (0 at end of command and count byte)
+rep	movs	al,al		;move fcb from ddt86 basepage to user's basepage
+idone:
+	ret
+ierr:
+	jmp	err
+;
+;	**********************************
+;	*                                *
+;	*     l - list assembly code     *
+;	*                                *
+;	**********************************
+;
+lassm:
+	test	disempresent,0ffh
+	jz	laserr
+	mov	lascntsw,0	;don't use count if end addr specified
+	mov	numreq,0	;ok if no entries
+	mov	ax,type1seg
+	mov	lasseg,ax	;default to type1 seg
+	mov	di,offset lasloc
+	call	getsegandoff
+	cmp	al,eol
+	mov	ax,lasseg
+	mov	type1seg,ax	;update default type1 seg
+	jz	las0
+	call	getlastoffset	;if ',', get end address
+	jmps	las1
+las0:
+	mov	lascntsw,1	;disassemble fixed # of instructions
+	mov	al,nlines
+	mov	lascnt,al
+	mov	bx,0ffffh	;set lasmax to big number
+las1:
+	mov	lasmax,bx
+las2:
+	mov	di,lasloc
+	cmp	di,lasmax
+	ja	lasret
+	push	di
+	call	crlfchk
+	pop	di
+	mov	es,lasseg
+	push	es
+	push	di		;for disem call (PL/M)
+	call	printdword
+	call	blank
+	call	disem
+	cmp	ax,lasloc
+	jb	lasret		;stop if wrap occurred
+	mov	lasloc, ax
+	test	lascntsw,0ffh
+	jz	las2
+	dec	lascnt
+	jnz	las2
+lasret:
+	ret
+laserr:
+	jmp	err
+;
+;	**************************
+;	*                        *
+;	*     m - move block     *
+;	*                        *
+;	**************************
+;
+move:
+	mov	di,offset type2loc
+	call	getsegandoff
+	call	getoffset	;get end offset
+	mov	usermax,bx
+	cmp	al,eol
+	jz	moverr		;need 3 arguments
+	sub	bx,type2loc
+	jb	moverr		;error if start > end
+	mov	ax,type2seg
+	mov	userseg2,ax	;default to same seg as source
+	mov	di,offset userloc2
+	call	getsegandoff	;get destination address
+	cmp	al,eol
+	jnz	moverr		;error if more than 3 arguments
+mov0:
+	les	si,dword ptr type2loc
+	mov	al,es:[si]	;get source byte
+	les	di,dword ptr userloc2
+	call	setbyte		;put destination byte
+	inc	type2loc
+	jz	movret		;don't allow wraparound
+	inc	userloc2
+	jz	movret		;don't allow wraparound in destination segment
+	mov	ax,type2loc
+	cmp	ax,usermax	;check for done
+	jna	mov0
+movret:
+	ret
+moverr:
+	jmp	err
+;
+;	*************************
+;	*                       *
+;	*     Q - QUERY I/O     *
+;	*                       *
+;	*************************
+;
+QUERY:
+	CALL	CONIN		;CHECK FOR INPUT OR OUTPUT
+	CMP	AL,'I'
+	JZ	QINPUT
+	CMP	AL,'O'
+	JZ	QOUTPUT
+QERR:
+	JMP	ERR
+;
+QINPUT:
+	CALL	CHECKWORD	;CHECK FOR 16-BIT INPUT
+	CALL	GETLASTOFFSET	;GET PORT #
+	PUSH	BX		;SAVE PORT ADDR
+	CALL	CRLF
+	POP	DX		;SET UP FOR IN INSTRUCTION
+	TEST	WMODE,0FFH
+	JZ	INBYTE		;IF WMODE = 0, INPUT A BYTE
+	IN	AX,DX		;OTHERWISE, INPUT A WORD
+	CALL	PRINTWORD	;AND PRINT THE VALUE
+	RET
+INBYTE:
+	IN	AL,DX		;INPUT A BYTE
+	CALL	PRINTBYTE	;AND PRINT IT
+	RET
+;
+QOUTPUT:
+	CALL	CHECKWORD	;CHECK FOR 16-BIT OUTPUT
+	CALL	GETOFFSET	;GET PORT #
+	PUSH	BX		;SAVE PORT #
+	CMP	AL,EOL
+	JZ	QERR		;REQUIRES 2 ARGUMENTS
+	CALL	GETLASTOFFSET	;GET VALUE TO OUTPUT
+	MOV	AX,BX		;PREPARE FOR OUT INSTRUCTION
+	POP	DX		;RESTORE PORT #
+	TEST	WMODE,0FFH	;CHECK FOR 8 OR 16-BIT OUTPUT
+	JZ	OUTBYTE
+	OUT	DX,AX		;OUTPUT 16-BIT VALUE
+	RET
+OUTBYTE:
+	OR	AH,AH		;TEST FOR VALUE > 255
+	JNZ	QERR		;VALUE MUST BE <= 255 FOR 8-BIT OUTPUT
+	OUT	DX,AL		;OUTPUT 8-BIT VALUE
+	RET
+;
+;	*************************
+;	*                       *
+;	*     r - read file     *
+;	*                       *
+;	*************************
+;
+rerr:
+	jmp	err
+read:
+	MOV	ABSREADFLAG,0	;DEFAULT TO NOT ABSOLUTE
+	call	conin		;get first command char
+	cmp	al,eol		;check for no input
+	jz	rerr		;filename must be included in command
+	dec	conptr		;to rescan first char
+	mov	di,offset fcb
+	call	parse
+	jz	rerr		;no '?' or '*' allowed
+	cmp	al,eol
+	JZ	READ1		;1 PARAMETER ALLOWED - ABSOLUTE LOCATION
+	MOV	AX,TYPE1SEG
+	MOV	STARTREADSEG,AX	;DEFAULT TO TYPE1 SEG VALUE
+	MOV	DI,OFFSET STARTREADOFF
+	CALL	GETSEGANDOFF	;GET READ ADDRESS
+	CMP	AL,EOL
+	JNZ	RERR		;NO MORE PARAMETERS ALLOWED
+	AND	STARTREADOFF,0FFF0H	;MASK TO PARAGRAPH BOUNDARY
+	MOV	AX,STARTREADOFF
+	MOV	CL,4
+	SHR	AX,CL		;GET # PARAGRAPHS IN OFFSET
+	ADD	AX,STARTREADSEG	;COMPUTE ACTUAL PARAGRAPH # FOR READ
+	MOV	MCBBASE,AX	;SET UP MCB FOR ABSOLUTE REQUEST
+	MOV	ABSREADFLAG,1	;SET SO ALLOC ABS IS USED LATER
+READ1:
+	mov	dx,offset fcb
+	call	open
+	MOV	DX,OFFSET FCB
+	CALL	COMPUTEFILESIZE
+	CMP	BYTE PTR FCB+35,0	;CHECK R2 BYTE IN FCB
+	JNZ	TOOBIG		;FILE TOO BIG IF OVER FFFF RECORDS
+	MOV	AX,WORD PTR FCB+33	;GET FILE SIZE (IN RECORDS)
+	CMP	AX,2000H	;1FFFH RECORDS = FFF0 PARAGRAPHS, WHICH IS MAX
+	JNC	TOOBIG
+	MOV	CL,3
+	SHL	AX,CL		;* 8 TO CONVERT RECORDS TO PARAGRAPHS
+	MOV	MCBLEN,AX	;SET MEMORY REQUEST SIZE
+	mov	dx,offset mcb
+	TEST	ABSREADFLAG,0FFH
+	JNZ	READ2		;USE ALLOC ABS IF ADDRESS SPECIFIED
+	CALL	ALLOCMEM	;GET CHUNK REQUIRED FOR FILE
+	JMPS	READ3
+READ2:
+	CALL	ALLOCABSMEM
+	JMPS	READ3
+READ3:
+	TEST	ABSREADFLAG,0FFH
+	JNZ	READ4		;IF ABS READ - START, END ALREADY SET UP
+	MOV	AX,MCBBASE
+	MOV	STARTREADSEG,AX
+	MOV	ENDREADSEG,AX
+	MOV	STARTREADOFF,0
+READ4:
+	call	readfile	;read file into memory block
+	mov	ax,startreadseg
+	mov	type2seg,ax	;set default type2 segment to file just read
+	mov	type1seg,ax	;also type1 segment
+	MOV	AX,STARTREADOFF
+	mov	disloc,ax	;display pointer offset = 0
+	mov	lasloc,ax	;list pointer offset = 0
+	mov	mode,'R'	;last disk input was read (not execute)
+	call	verify
+	ret
+TOOBIG:
+	JMP	MEMERR
+;
+;	**************************
+;	*                        *
+;	*     s - set memory     *
+;	*                        *
+;	**************************
+;
+setmem:
+	CALL	CONIN
+	CMP	AL,'R'		;'SR' IS SEARCH COMMAND
+	JZ	SEARCH
+	DEC	CONPTR		;TO RESCAN THE CHAR READ ABOVE
+	call	checkword	;check for 'SW'
+	mov	di,offset type2loc
+	call	getsegandoff
+	CMP	AL,EOL
+	JNZ	SETERR		;ONLY 1 ARGUMENT ALLOWED
+set0:
+	call	crlf
+	les	di,dword ptr type2loc
+	call	printdword
+	call	blank
+	les	si,dword ptr type2loc
+	call	print8or16
+	call	blank
+	call	getline
+	call	conin
+	cmp	al,eol
+	jz	set2
+	cmp	al,'.'
+	jz	setret
+	dec	conptr		;to rescan first character
+	call	getlastoffset
+	mov	ax,bx		;get new value to ax
+	test	wmode,1
+	jnz	set1
+	or	bh,bh
+	jnz	seterr		;must be < 256 if not SW
+set1:
+	les	di,dword ptr type2loc
+	call	set8or16
+set2:
+	mov	si,offset type2loc
+	call	inc1or2
+	jnb	set0
+setret:
+	ret
+seterr:
+	jmp	err
+;
+;	***********************
+;	*                     *
+;	*     SR - SEARCH     *
+;	*                     *
+;	***********************
+;
+SRERR:
+	JMP	ERR
+;
+SEARCH:
+	MOV	DI,OFFSET TYPE2LOC
+	CALL	GETSEGANDOFF	;GET ADDRESS OF START OF SEARCH BLOCK
+	CALL	GETOFFSET	;GET OFFSET OF END OF SEARCH BLOCK
+	PUSH	BX		;SAVE END OFFSET
+	MOV	STRINGLEN,0	;CLEAR SEARCH STRING LENGTH
+SRLOOP1:
+	CALL	CONIN
+	CMP	AL,'"'		;CHECK FOR START OF ASCII STRING
+	JZ	GETSTRING	;IF SO, COLLECT STRING THRU " OR EOL
+	DEC	CONPTR		;IF NOT A STRING, RESCAN FIRST CHAR
+	CALL	GETOFFSET	;GET NUMERIC VALUE
+	PUSH	AX		;SAVE DELIMITER
+	OR	BH,BH		;TEST VALUE FOR < 256
+	JNZ	SRERR		;DON'T ALLOW VALUES OVER 255
+	MOV	AL,BL
+	CALL	PUTSTRING	;PUT VALUE INTO STRING BUFFER
+	POP	AX		;RESTORE DELIMITER
+CHKEND:
+	CMP	AL,EOL		;CHECK FOR DONE
+	JZ	SRCH		;IF EOL FOUND, PROCEED WITH SEARCH
+	JMPS	SRLOOP1		;ELSE GO BACK FOR MORE VALUES
+;
+GETSTRING:			;COLLECT STRING THRU '"' OR EOL
+	CALL	RAWCONIN
+	CMP	AL,EOL
+	JZ	SRCH		;EOL MEANS END OF SEARCH STRING
+	CMP	AL,'"'
+	JNZ	NOTQUOTE
+	CALL	CONIN		;IF WE FOUND A QUOTE, CHECK FOR DOUBLE QUOTE
+	CMP	AL,'"'
+	JNZ	CHKEND		;NOT " MEANS END OF STRING; COULD BE MORE ON LINE
+NOTQUOTE:
+	CALL	PUTSTRING	;PUT ASCII CHAR IN SEARCH BUFFER
+	JMPS	GETSTRING	;KEEP COLLECTING STRING
+;
+PUTSTRING:			;PUT CHAR IN AL INTO SEARCH BUFFER
+	MOV	BL,STRINGLEN
+	MOV	BH,0
+	MOV	STRINGBUFF[BX],AL
+	INC	STRINGLEN
+	RET
+;
+SRCH:
+	POP	BX		;GET END ADDRESS
+	LES	DI,DWORD PTR TYPE2LOC	;SET UP DEST OF SEARCH
+	CMP	BX,DI		;CHECK FOR END < START
+	JC	SRERR		;ERROR IF END < START
+	MOV	CL,STRINGLEN
+	MOV	CH,0
+	JCXZ	SRERR		;DON'T ALLOW NULL SEARCH STRING
+	SUB	BX,CX
+	INC	BX		;BX HAS LAST LOC TO TEST
+SRLOOP3:
+	MOV	SI,STRINGBUFF	;SET UP SOURCE OF SEARCH
+	CMP	BX,DI		;CHECK FOR DONE
+	JC	SRDONE
+	PUSH	CX
+	PUSH	BX		;SAVE SOME VALUES
+	PUSH	DI
+REP	CMPSB			;DO COMPARE
+	JNZ	NOMATCH		;ZERO FLAG UNSET MEANS BAD COMPARE
+	PUSH	ES		;SAVE FOR PRINTDWORD
+	CALL	CRLFCHK		;ELSE CRLF AND CHECK FOR KB INTERRUPT
+	POP	ES		;RESTORE FOR PRINTDWORD
+	POP	DI		;GET ADDRESS OF START OF STRING
+	PUSH	DI		;AND PUT IT BACK ON THE STACK
+	PUSH	ES		;SAVE FOR SEARCHING
+	CALL	PRINTDWORD	;AND PRINT MATCH ADDRESS
+	POP	ES		;RESTORE FOR SEARCHING
+NOMATCH:
+	POP	DI
+	POP	BX
+	POP	CX		;RESTORE THE REGS
+	INC	DI		;POINT TO NEXT LOCATION TO COMPARE
+	JMPS	SRLOOP3		;KEEP LOOKING
+SRDONE:
+	RET
+;
+;	***************************************
+;	*                                     *
+;	*     t - trace program execution     *
+;	*                                     *
+;	***************************************
+;
+trace:
+	mov	traceprint,1
+trace0:				;untrace enters here with traceprint = 0
+	call	conin
+	cmp	al,'S'		;check for TS
+	mov	ah,1
+	jz	tr0		;if TS, set segflag to 1
+	dec	ah		;else set segflag to 0, and
+	dec	conptr		;decrement pointer to rescan character
+tr0:
+	mov	segflag,ah	;print segment registers or not
+	mov	tracecount,1	;default to 1 instruction trace
+	call	getnumber
+	cmp	al,eol
+	jnz	traceerr	;only 1 parameter allowed
+	or	ah,ah		;see if a number was entered
+	jz	trace1		;skip if no number typed
+	mov	tracecount,bx	;store number of instructions to trace
+trace1:
+	call	xdisp		;display CPU state
+	jmp	tracerestore	;restore user's CPU state and return
+traceerr:
+	jmp	err
+;
+;	******************************************
+;	*                                        *
+;	*     u - untraced program execution     *
+;	*                                        *
+;	******************************************
+;
+untrace:
+	mov	traceprint,0
+	jmps	trace0		;common code with trace command
+;
+;	*********************************
+;	*                               *
+;	*     v - display file info     *
+;	*                               *
+;	*********************************
+;
+verify:
+	mov	al,mode
+	cmp	al,'R'
+	jz	verifyr
+	cmp	al,'E'
+	jz	verifye
+	jmp	err	;neither R nor E command done
+verifyr:
+	call	crlf
+	mov	si,offset readm
+	call	printm
+	call	crlf
+	les	di,dword ptr startreadoff
+	call	printdword
+	call	blank
+	les	di,dword ptr endreadoff
+	call	printdword
+	ret
+;
+verifye:
+	call	crlf
+	mov	cx,3
+	call	tabs
+	mov	si,offset readm
+	call	printm		;print header
+	mov	al,0		;initialize count to 0
+v0:
+	push	ax		;save it
+	pop	ax		;get count
+	push	ax		;save it
+	call	printseginfo	;print name, start, end of segment if non-zero
+	pop	ax		;get count
+	inc	al		;increment it
+	cmp	byte ptr basepagesave+5,1	;check for 8080 model
+	jz	verret		;no more segments if 8080 model
+	cmp	al,8		;max of 8 segments described in base page
+	jb	v0		;done when count = 8
+verret:
+	ret
+;
+;	******************************************
+;	*                                        *
+;	*     w - write memory block to disk     *
+;	*                                        *
+;	******************************************
+;
+write:
+	mov	ax,startreadseg
+	mov	startwriteseg,ax
+	mov	ax,startreadoff
+	mov	startwriteoff,ax
+	mov	ax,endreadseg
+	mov	endwriteseg,ax
+	mov	ax,endreadoff
+	mov	endwriteoff,ax
+	call	conin
+	cmp	al,eol		;check for no parameters
+	jz	werr		;must have a filename
+	dec	conptr		;to rescan first char
+	mov	di,offset fcb
+	call	parse		;get filename
+	jz	werr		;don't allow '?' or '*'
+	cmp	al,eol
+	jnz	w0		;not end of input - must be 2 parameters
+	cmp	mode,'R'	;see if a file was read in
+	jnz	werr		;no file read - must have start, end addresses
+	jmps	w1		;continue with write
+w0:
+	mov	ax,type1seg
+	mov	startwriteseg,ax	;set default to userds
+	mov	di,offset startwriteoff
+	call	getsegandoff	;get start address
+	cmp	al,eol
+	jz	werr		;need 2 parameters
+	mov	ax,startwriteseg
+	mov	endwriteseg,ax	;end defaults to start
+	mov	di,offset endwriteoff
+	call	getsegandoff	;get end address
+	cmp	al,eol
+	jnz	werr		;no more than 2 parameters
+w1:
+	call	writefile
+	mov	dx,offset fcb
+	call	close
+	ret
+werr:
+	jmp	err
+;
+;	***************************************
+;	*                                     *
+;	*     x - display/alter CPU state     *
+;	*                                     *
+;	***************************************
+;
+xdisp:				;display CPU state
+	test	col40,0ffh
+	jnz	xd40
+	call	printregheader
+xnohdr:				;entry point to display CPU state without header
+	test	col40,0ffh
+	jnz	xnh40
+	call	crlf
+	call	printflags
+	call	blank
+	call	printregs
+	CALL	BLANK
+	JMPS	XRET2		;PRINT INSTRUCTION AND RETURN
+;
+xd40:
+	call	preghdr1
+	mov	al,1
+	jmps	xd0
+xnh40:
+	mov	al,0
+xd0:
+	push	ax		;save header/no header flag
+	call 	crlf
+	call	printflags
+	call	blank
+	call	preg1
+	call	crlf
+	pop	ax
+	dec	al
+	jnz	xd1
+	call	preghdr2
+	call	crlf
+xd1:
+	call	preg2
+XRET2:
+	call	printinstr
+XRET1:
+	CALL	SETDEFSEG	;SET UP DEFAULT SEGMENTS
+	ret
+xcom:
+	mov	segflag,1	;display seg reg's in x command
+	call	conin
+	cmp	al,eol		;check for command by itself
+	jz	xdisp		;if so, simply display CPU state
+	mov	xtemp,al	;else save char
+	call	conin
+	cmp	al,eol		;check for single character after X
+	jz	xflag		;if so, must be a flag name
+	mov	ah,xtemp	;else it's a reg name
+	or	al,80h		;since names are declared that way
+	xchg	al,ah		;since that's how it is in memory
+	call	chkreg		;check for valid reg name + store number in regnum
+	call	conin
+	cmp	al,eol
+	jnz	xerr		;eol must follow reg name
+x0:
+	call	crlf
+	mov	cx,regnum
+	call	printregname
+	call	blank
+	mov	cx,regnum
+	call	printregval
+	call	blank
+	call	getline
+	call	conin
+	cmp	al,'.'
+	JZ	XRET1		;DONE WHEN '.' ENTERED
+	dec	conptr		;else rescan character
+	call	getnumber
+	cmp	al,eol
+	jnz	xerr		;eol must follow number
+	or	ah,ah		;see if non-blank entry
+	jz	xnext		;if blank, go to next reg
+	mov	cx,regnum
+	mov	ax,bx		;get new value
+	call	setreg
+xnext:
+	inc	regnum
+	cmp	regnum,totreg
+	jb	x0
+	JMPS	XRET1		;SET UP DEFAULT SEGMENTS AND RETURN
+xerr:
+	jmp	err
+;
+xflag:
+	mov	al,xtemp	;get flag name
+	call	checkflag	;check for valid flag name
+	call	crlf
+	mov	cx,regnum	;restore flag number
+	call	printflagname
+	call	blank
+	mov	cx,regnum
+	call	printflagval
+	call	blank
+	call	getline
+	call	getnumber
+	cmp	al,eol
+	jnz	xerr		;eol must follow number
+	or	ah,ah		;see if non-blank entry
+	jz	xret		;if blank, done
+	cmp	bx,1
+	ja	xerr		;flag value must be 0 or 1
+	mov	cx,regnum
+	call	setflag
+xret:
+	ret
+;
+	eject
+;	*********************************
+;	*				*
+;	*	d a t a   a r e a	*
+;	*				*
+;	*********************************
+;
+;	user regs must be in cseg, others may be in dseg
+;
+userax	dw	0
+userbx	dw	0
+usercx	dw	0
+userdx	dw	0
+usersp	dw	0
+userbp	dw	0
+usersi	dw	0
+userdi	dw	0
+usercs	dw	0
+userds	dw	0
+userss	dw	0
+useres	dw	0
+userip	dw	0
+userfl	dw	0
+userreg	equ	userax
+;
+savess	dw	0		;temp holder for sp
+savesp	dw	0		;temp holder for sp
+;
+breakfl	rs	1		;break/single step flag (must be in CS)
+;
+endcs	equ	$
+;
+	dseg
+	org	offset endcs
+;
+;	ccp stack location
+;
+ccpss		dw	0
+ccpsp		dw	0
+;
+;	console buffer declarations
+;
+conbuffmax	equ	64
+conbuffhdr	db	conbuffmax
+conbuffcnt	db	0
+conbuff		rs	conbuffmax+1	;leave room for eol 
+conptr		dw	0
+;
+;	a command declarations
+;
+assempresent	db	1	;assembler in memory flag
+asmspsav	rw	1	;temporary save for stack pointer
+;
+;	d command declarations
+;
+disloc		dw	0	;offset for display
+disseg		dw	0	;segment for display
+dismax		rw	1	;end offset of display
+tdisp		rw	1	;temporary storage for disloc
+linemax		db	0	;# of bytes per line
+nd80		db	16	;16 bytes per line in 80 col mode
+nd40		db	6	;6 bytes per line in 40 col mode
+ndw40		db	8	;8 bytes (4 words) for dw in 40 col mode
+nlines		db	12	;default number of lines for l, d commands
+;
+;	g command declarations
+;
+goloc		dw	0
+goseg		dw	0
+vectorsave	rs	12	;save area for bytes at 0004h to 000fh
+bpcnt		db	0	;breakpoint count
+brk1loc		dw	0
+brk1seg		dw	0
+brk1byt		db	0
+brk2loc		dw	0
+brk2seg		dw	0
+brk2byt		db	0
+;
+;	l command declarations
+;
+lasloc		dw	0
+lasseg		dw	0
+lasmax		dw	0
+lascntsw	rb	1	;# instructions specified or not
+lascnt		rb	1	;number of instructions to disassemble
+disempresent	db	1	;disassembler in memory flag
+;
+;	r command declarations
+;
+startreadoff	rw	1	;offset where file read starts
+startreadseg	rw	1	;segment where file read starts
+endreadoff	rw	1	;offset where file read ends
+endreadseg	rw	1	;segment where file read ends
+dmaoff		rw	1	;offset of 20-bit dma address
+dmaseg		rw	1	;segment of 20-bit dma address
+ABSREADFLAG	DB	0	;SET IF READING INTO ABSOLUTE SEGMENT
+;
+;	SR COMMAND DECLARATIONS
+;
+STRINGLEN	DB	0	;LENGTH OF SEARCH STRING
+STRINGBUFF	EQU	80H	;USE DEFAULT DMA BUFFER
+;
+;	t/u command declarations
+;
+tracecount	rw	1	;number of instructions to trace
+traceprint	rb	1	;display CPU state on each step flag
+skipbdos	db	0	;set when trace suspended during BDOS call
+userifoff	db	0	;set when ddt86 must reenable user if
+;
+;	w command declarations
+;
+startwriteoff	rw	1	;offset where file write starts
+startwriteseg	rw	1	;segment where file write starts
+endwriteoff	rw	1	;offset where file write ends
+endwriteseg	rw	1	;segment where file write ends
+;
+;	x command declarations
+;
+nreg		db	0	;current number of register names to display
+				;(may differ for 40 column mode)
+totreg		equ	13	;total number of register names
+nflag		equ	9	;number of flag names
+segflag		db	1	;print segment register flag
+regnum		rw	1	;temp for reg/flag number
+xtemp		rb	1	;temp for first char of reg name
+;
+type1loc	dw	0	;offset for type 1 commands
+type1seg	dw	0	;segment for type 1 commands
+type2loc	dw	0	;offset for type 2 commands
+type2seg	dw	0	;segment for type 2 commands
+usermax		rw	1
+userloc2	rw	1
+userseg2	rw	1
+;
+;	memory control block declarations
+;
+mcb		rs	0	;used in reading/writing file
+mcbbase		dw	0	;segment of memory block
+mcblen		dw	0	;length of memory block
+mcbext		db	0	;returned value from bdos memory functions
+;
+sysif		rb	1	;system interrupt flag
+numreq		rb	1	;number required or optional
+wmode		rb	1	;set for DW, FW and SW commands
+mode		db	'I'	;last disk access with 'R' or 'E' command
+savevecflag	db	0	;save/restore bp and ss vectors, or not
+col40		db	0	;patched to 1 for 40 column console
+errmode		db	0	;set if bdos return err mode set (v3.0)
+FILEOPEN	DB	0	;SET WHEN FILE IS OPEN
+;
+basepagesave	rb	48	;copy of user's base page
+;
+;	parsing declarations
+;
+delims		db	' ', '=', '.', ',', ':', ';', '[', ']', '<', '>', eol
+ndelims		equ	offset $ - offset delims
+lastchar	db	0
+fcbadr		dw	0	;temp storage for fcb address
+;
+		rs	stsize	;stack size
+stackp		rs	0	;top of stack
+;
+	end
+

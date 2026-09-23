@@ -1,0 +1,1131 @@
+$title('assembler for ddt86')
+$optimize(2)
+
+ddtasm: do;
+
+declare
+	logical literally 'byte',
+	true literally '1',
+	false literally '0',
+	tab literally '09h',
+	cr literally '0dh',
+	lf literally '0ah';
+
+declare
+	tab$ptrs (5) address external,
+	nops (5) byte external,
+	opn$in (6) byte external,
+	optab (480) byte external;
+
+declare
+	token (32) byte,       /* ASCII token */
+	token$word address at (.token),    /* used for word compares */
+	token$len byte,        /* number of chars in token */
+	token$type byte,       /* number, string, or delimiter */
+		string$type literally '0',
+		number$type literally '1',
+		delim$type literally '2',
+	token$value address,   /* value if token$type = number */
+	next$ch byte;          /* next char of input stream */
+
+declare
+	assem$ptr pointer,
+	assem$offset address at (.assem$ptr),
+	assem$segment address at (.assem$ptr+2),
+	assem$byte based assem$ptr byte;
+
+declare
+	seg$reg (8) byte external,
+	reg16 (16) byte external,
+	reg8 (16) byte external,
+	base$reg (*) byte data ('BX', 'BP'),
+	index$reg (*) byte data ('SI', 'DI');
+
+declare
+	op$base address,
+	(op1, op2, op based op$base) structure (
+		seg$reg$num byte,
+		reg$num byte,
+		base$reg$num byte,
+		index$reg$num byte,
+		seg$reg$type logical,
+		reg$16$type logical,
+		reg$8$type logical,
+		num$type logical,
+		acc$type logical,
+		null$type logical,
+		far$type logical,
+		mod$rm$type logical,
+		w$bit byte,
+		bw$prefix byte,
+		sub$type byte,
+		seg$value address,
+		value address);
+
+/*
+	op.sub$types
+
+	1	reg8
+	2	reg16
+	3	[num]
+	4	[pointer reg]
+	5	[index reg]
+	6	[pointer reg + index reg]
+	7	num [pointer reg]
+	8	num [index reg]
+	9	num [pointer reg + index reg]
+*/
+
+declare
+	prefix (3) byte,      /* up to 3 prefixes */
+	nprefix byte,         /* number of prefixes */
+	seg$prefix$flag byte,
+	lock$flag byte,
+	rep$flag byte;
+
+declare
+	mod$bits byte,
+	reg$bits byte,
+	rm$bits byte,
+	op$type byte,
+	mnemonic$index byte,
+	instr$1 byte,
+	disp$len byte,       /* number of bytes in optional disp field */
+	disp$word address;   /* value of optional disp field */
+
+declare
+	delimiters (*) byte data (',', ':', '+', cr, ' ', tab),
+	left$bracket byte data ('['),
+	right$bracket byte data (']'),
+	num$delims literally '(length (delimiters) + 2)';
+
+go$ddt: procedure external;    /* return to assem loop in ddt on error */
+	end go$ddt;
+
+ddt$set: procedure (assem$off, b) external;
+	declare assem$off address, b byte;
+	end ddt$set;
+
+ddt$getline: procedure external;
+	end ddt$getline;
+
+conin: procedure byte external;
+	end conin;
+
+conout: procedure (b) external;
+	declare b byte;
+	end conout;
+
+printm: procedure (a) external;
+	declare a address;
+	end printm;
+
+crlf: procedure;
+	call conout (cr);
+	call conout (lf);
+	end crlf;
+
+getline: procedure;
+	call ddt$getline;
+	next$ch = 0;
+	end getline;
+
+print$word: procedure (a) external;
+	declare a address;
+	end print$word;
+
+error: procedure;
+	call crlf;
+	call conout ('?');
+	call go$ddt;
+	end error;
+
+ambig: procedure;
+	call printm (.(cr,lf,'ambiguous operand$'));
+	call go$ddt;
+	end ambig;
+
+check$ambig: procedure;
+	if (op1.w$bit and op2.w$bit) = 0ffh then call ambig;
+	if (op1.w$bit xor op2.w$bit) = 1 then call error;
+	end check$ambig;
+
+compare: procedure (a, b, c) logical;
+	/* should be able to replace this with a PL/M builtin */
+	declare (a, b) address, c byte;
+	declare a1 based a byte, b1 based b byte;
+	do while (c := c - 1) <> 255;
+		if a1 <> b1 then return false;
+		a = a + 1;
+		b = b + 1;
+	end;
+	return true;
+	end compare;
+
+/*********************************/
+/*                               */
+/*   token scanning procedures   */
+/*                               */
+/*********************************/
+
+delimiter: procedure (b) logical;
+	declare b byte;
+	declare i byte;
+	do i = 0 to num$delims - 1;
+		if delimiters (i) = b then return true;
+	end;
+	return false;
+	end delimiter;
+
+number: procedure (b) logical;
+	declare b byte;
+	return (b - '0' <= 9) or (b - 'A' <= 5);
+	end number;
+
+hex: procedure (b) byte;
+	declare b byte;
+	if b - '0' <= 9 then return b - '0';
+	else return b - 'A' + 10;
+	end hex;
+
+get$token: procedure;
+	declare numeric logical;
+	token$value = 0;
+	numeric = true;
+	token$len = 0;
+	if next$ch = 0 then next$ch = conin;
+	do while true;
+		token (token$len) = next$ch;
+		if (token$len := token$len + 1) >= length (token) then
+		  call error;
+		if delimiter (next$ch) then
+			do;
+				if token$len = 1 then
+					do;
+						token$type = delim$type;
+						next$ch = 0;
+					end;
+				else
+					do;
+						token$len = token$len - 1;
+						if numeric then token$type = number$type;
+						else token$type = string$type;
+					end;
+				return;
+			end;
+		if numeric then
+			do;
+				if number (next$ch) then token$value =
+				  shl (token$value,4) or hex (next$ch);
+				else numeric = false;
+			end;
+		next$ch = conin;
+	end;
+	end get$token;
+
+get$real$token: procedure;
+	do while true;
+		call get$token;
+		if token (0) <> ' ' and token (0) <> tab then return;
+	end;
+	end get$real$token;
+
+/***********************************/
+/*                                 */
+/*   operand scanning procedures   */
+/*                                 */
+/***********************************/
+
+look$up$reg: procedure (reg$tab$ptr, tab$len, reg$num$ptr) logical;
+	declare (reg$tab$ptr, reg$num$ptr) address;
+	declare reg$word based reg$tab$ptr address;
+	declare reg$num based reg$num$ptr byte;
+	declare tab$len byte;
+	declare i byte;
+	IF TOKEN$LEN = 2 THEN
+		do i = 0 to tab$len - 1;
+			if token$word = reg$word then
+				do;
+					reg$num = i;
+					return true;
+				end;
+			reg$tab$ptr = reg$tab$ptr + 2;
+		end;
+	return false;
+	end look$up$reg;
+
+check$base$reg: procedure logical;
+	return look$up$reg (.base$reg, 2, .op.base$reg$num);
+	end check$base$reg;
+
+check$index$reg: procedure logical;
+	return look$up$reg (.index$reg, 2, .op.index$reg$num);
+	end check$index$reg;
+
+check$seg$reg: procedure logical;
+	if look$up$reg (.seg$reg, 4, .op.seg$reg$num) then
+		do;
+			op.seg$reg$type = true;
+			return true;
+		end;
+	return false;
+	end check$seg$reg;
+
+check$reg$8: procedure logical;
+	if look$up$reg (.reg$8, 8, .op.reg$num) then
+		do;
+			op.reg$8$type, op.modrm$type = true;
+			if op.reg$num = 0 then op.acc$type = true;
+			op.sub$type = 1;
+			op.w$bit = 0;
+			return true;
+		end;
+	return false;
+	end check$reg$8;
+
+check$reg$16: procedure logical;
+	if look$up$reg (.reg$16, 8, .op.reg$num) then
+		do;
+			op.reg$16$type, op.modrm$type = true;
+			if op.reg$num = 0 then op.acc$type = true;
+			op.sub$type = 2;
+			op.w$bit = 1;
+			return true;
+		end;
+	return false;
+	end check$reg$16;
+
+check$bw$prefix: procedure logical;
+	if token$type = string$type then
+		do;
+			if token$word = 'YB' then op.bw$prefix = 0;
+			else if token$word = 'OW' then op.bw$prefix = 1;
+			if op.bw$prefix <> 0ffh then return true;
+		end;
+	return false;
+	end check$bw$prefix;
+
+check$seg$prefix: procedure logical;
+	return check$seg$reg and (next$ch = ':');
+	end check$seg$prefix;
+
+set$prefix: procedure (b);
+	declare b byte;
+	prefix (nprefix) = b;
+	nprefix = nprefix + 1;
+	end set$prefix;
+
+set$seg$prefix: procedure;
+	if seg$prefix$flag then call error;
+	call set$prefix (26h or shl (op.seg$reg$num, 3));
+	seg$prefix$flag = true;
+	call get$token;   /* eat ':' */
+	op.seg$reg$type = false; /* operand is not a seg reg */
+	end set$seg$prefix;
+
+get$prefix: procedure;
+	do while true;
+		call get$real$token;
+		if token$type = delim$type then
+			do;
+				if token (0) = cr then op.null$type = true;
+				return;
+			end;
+		if check$seg$prefix then call set$seg$prefix;
+		else if check$bw$prefix then
+			do;
+				if op.w$bit <> 0ffh then call error;
+				else op.w$bit = op.bw$prefix;
+			end;
+		else return;   /* must not be a prefix */
+	end;
+	end get$prefix;
+
+reg$indirect: procedure (x);
+	declare x byte;
+	op.modrm$type = true;
+	if check$base$reg then
+		do;
+			call get$token;
+			if token (0) = right$bracket then
+				do;
+					op.modrm$type = true;
+					op.sub$type = 7 - x;
+					return;
+				end;
+			else if token (0) = '+' then
+				do;
+					op.sub$type = 9 - x;
+					call get$token;
+				end;
+			else call error;
+		end;
+	else op.sub$type = 8 - x;
+	if check$index$reg then
+		do;
+			call get$token;
+			if token (0) = right$bracket then return;
+		end;
+	call error;
+	end reg$indirect;
+
+get$operand: procedure;
+	op.seg$reg$type, op.reg$16$type, op.reg$8$type, op.num$type,
+	  op.acc$type, op.null$type, op.far$type, op.modrm$type = false;
+	op.bw$prefix, op.w$bit = 0ffh;   /* indeterminate */
+	call get$prefix;
+	if op.null$type then return;
+	if check$seg$reg then return;
+	else if check$reg$8 then return;
+	else if check$reg$16 then return;
+	else if token$type = number$type then
+		do;
+			op.value = token$value;
+			if next$ch = left$bracket then
+				do;
+					call get$token;   /* eat '[' */
+					call get$token;
+					call reg$indirect (0);
+				end;
+			else if next$ch = ':' then
+				do;
+					op.seg$value = token$value;
+					call get$token;   /* eat ':' */
+					call get$token;
+					if token$type <> number$type then call error;
+					op.value = token$value;
+					op.far$type = true;
+				end;
+			else op.num$type = true;
+		end;
+	else
+		do;
+			if token (0) <> left$bracket then call error;
+			call get$token;
+			if token$type = number$type then
+				do;
+					op.value = token$value;
+					call get$token;
+					if token (0) = right$bracket then
+						do;
+							op.sub$type = 3;
+							op.modrm$type = true;
+						end;
+					else call error;
+				end;
+			else call reg$indirect (3);
+		end;
+	end get$operand;
+
+get$operand$1: procedure;
+	op$base = .op1;
+	call get$operand;
+	call get$token;
+	if token (0) <> ',' then call error;
+	end get$operand$1;
+
+get$operand$2: procedure;
+	op$base = .op2;
+	call get$operand;
+	if op.null$type then return;
+	call get$token;
+	if token (0) <> cr then call error;
+	end get$operand$2;
+
+/**********************************/
+/*                                */
+/*   opcode scanning procedures   */
+/*                                */
+/**********************************/
+
+lookup$optab: procedure;
+	declare i address;
+	do i = 0 to last (optab) by 4;
+		if optab (i) = mnemonic$index then
+			do;
+				op$type = op$tab (i+1);
+				instr$1 = op$tab (i+2);
+				reg$bits = op$tab (i+3);
+				return;
+			end;
+	end;
+	call error;   /* should never get here */
+	end lookup$optab;
+
+valid$mnemonic: procedure logical;
+	declare
+		i byte,
+		table$base address,
+		mnemonic based table$base byte;
+	if token$len - 2 > 4 then call error;
+	table$base = tab$ptrs (token$len - 2);
+	do i = 0 to nops (token$len - 2) - 1;
+		if compare (.token, .mnemonic, token$len) then
+			do;
+				mnemonic$index = i + opn$in (token$len - 2);
+				return true;
+			end;
+		table$base = table$base + token$len;
+	end;
+	return false;
+	end valid$mnemonic;
+
+get$opcode: procedure logical;
+	nprefix = 0;
+	rep$flag, lock$flag, seg$prefix$flag = false;
+	do while true;
+		call get$real$token;
+		if token (0) = cr or token (0) = '.' then return false;   /* no opcode */
+		if check$seg$prefix then call set$seg$prefix;
+		else if valid$mnemonic then
+			do;
+				call look$up$op$tab;
+				if op$type = 0ffh then
+					do;
+						if lock$flag then call error;
+						lock$flag = true;
+						call set$prefix (instr$1);
+					end;
+				else if op$type = 0feh then    /* repeat */
+					do;
+						if rep$flag then call error;
+						rep$flag = true;
+						call set$prefix (instr$1);
+					end;
+				else return true;   /* opcode present */
+			end;
+		else call error;
+	end;
+	end get$opcode;
+
+/******************************************/
+/*                                        */
+/*   forming and output of instructions   */
+/*                                        */
+/******************************************/
+
+put$mem: procedure (b);
+	declare b byte;
+	call ddt$set (assem$offset, b);
+	assem$offset = assem$offset + 1;
+	end put$mem;
+
+put$prefix: procedure;
+	declare i byte;
+	i = 0;
+	do while (nprefix := nprefix - 1) <> 0ffh;
+		call put$mem (prefix (i));
+		i = i + 1;
+	end;
+	end put$prefix;
+
+put$instr: procedure;
+	call put$prefix;
+	call put$mem (instr$1);
+	end put$instr;
+
+set$instr: procedure (b);
+	declare b byte;
+	instr$1 = b;
+	call put$instr;
+	end set$instr;
+
+put$word: procedure (a);
+	declare a address;
+	call put$mem (low (a));
+	call put$mem (high (a));
+	end put$word;
+
+set$w$bit: procedure;
+	if (op1.w$bit and op2.w$bit) = 1 then instr$1 = instr$1 or 1;
+	end set$w$bit;
+
+set$mod: procedure;
+	if op.value > 7fh then mod$bits, disp$len = 2;
+	else mod$bits, disp$len = 1;
+	end set$mod;
+
+set$modrm: procedure;
+	disp$len = 0;
+	disp$word = op.value;
+	do case op.sub$type - 1;
+		do;   /* 1 */
+			mod$bits = 3;
+			rm$bits = op.reg$num;
+		end;
+		do;   /* 2 */
+			mod$bits = 3;
+			rm$bits = op.reg$num;
+		end;
+		do;   /* 3 */
+			mod$bits = 0;
+			rm$bits = 6;
+			disp$len = 2;
+		end;
+		do;   /* 4 */
+			if op.base$reg$num = 1 then   /* BP */
+				do;
+					mod$bits = 1;
+					rm$bits = 6;
+					disp$len = 1;
+					disp$word = 0;
+				end;
+			else
+				do;
+					mod$bits = 0;
+					rm$bits = 7;
+				end;
+		end;
+		do;   /* 5 */
+			mod$bits = 0;
+			rm$bits = op.index$reg$num + 4;
+		end;
+		do;   /* 6 */
+			mod$bits = 0;
+			rm$bits = op.base$reg$num * 2 + op.index$reg$num;
+		end;
+		do;   /* 7 */
+			call set$mod;
+			rm$bits = 7 - op.base$reg$num;
+		end;
+		do;   /* 8 */
+			call set$mod;
+			rm$bits = op.index$reg$num + 4;
+		end;
+		do;   /* 9 */
+			call set$mod;
+			rm$bits = op.base$reg$num * 2 + op.index$reg$num;
+		end;
+	end;
+	end set$modrm;
+
+do$modrm: procedure (op$ptr);
+	declare op$ptr address;
+	op$base = op$ptr;
+	call set$modrm;
+	call put$instr;
+	call put$mem (shl (mod$bits, 6) or shl (reg$bits, 3) or rm$bits);
+	if disp$len > 0 then call put$mem (low (disp$word));
+	if disp$len > 1 then call put$mem (high (disp$word));
+	end do$modrm;
+
+modrm$w: procedure (ins, reg, op$ptr);
+	declare (ins, reg) byte;
+	declare op$ptr address;
+	op$base = op$ptr;
+	if op.modrm$type then
+		do;
+			if op.w$bit = 0ffh then call ambig;
+			instr$1 = ins or op.w$bit;
+			reg$bits = reg;
+			call do$modrm (op$ptr);
+		end;
+	else call error;
+	end modrm$w;
+
+modrm$16: procedure (ins, reg);
+	declare (ins, reg) byte;
+	if op2.modrm$type and not op2.reg$8$type then
+		do;
+			instr$1 = ins;
+			reg$bits = reg;
+			call do$modrm (.op2);
+		end;
+	else call error;
+	end modrm$16;
+
+modregrm: procedure;
+	call check$ambig;
+	if op1.sub$type <= 2 then   /* first op is register */
+		do;
+			reg$bits = op1.reg$num;
+			call do$modrm (.op2);
+		end;
+	else
+		do;
+			instr$1 = instr$1 or op2.w$bit;
+			reg$bits = op2.reg$num;
+			call do$modrm (.op1);
+		end;
+	end modregrm;
+
+modregrm$w: procedure;
+	call set$w$bit;
+	call modregrm;
+	end modregrm$w;
+
+modregrm$dw: procedure;
+	if op1.modrm$type and (op1.sub$type <= 2) then instr$1 = instr$1 or 2;   /* set d bit */
+	call modregrm$w;
+	end modregrm$dw;
+
+put$immed: procedure;
+	call put$mem (low (op2.value));
+	if op1.w$bit then call put$mem (high (op2.value));
+	end put$immed;
+
+put$immed$s: procedure;
+	call put$mem (low (op2.value));
+	if (instr$1 and 3) = 1 then call put$mem (high (op2.value));
+	end put$immed$s;
+
+check$w$and$val: procedure;
+	if op1.w$bit = 0 and op2.value > 255 then call error;
+	if op1.w$bit = 0ffh then
+		do;
+			if op2.value >= 256 then op1.w$bit = 1;
+			else call ambig;
+		end;
+	end check$w$and$val;
+
+acc$immed: procedure;
+	call check$w$and$val;
+	call set$w$bit;
+	call put$instr;
+	call put$immed;
+	end acc$immed;
+
+modrm$immed: procedure;
+	call check$w$and$val;
+	call set$w$bit;
+	call do$modrm (.op1);
+	call put$immed;
+	end modrm$immed;
+
+set$instr$w: procedure (b);
+	declare b byte;
+	if op2.sub$type <= 2 then instr$1 = b or op2.w$bit;
+	else instr$1 = b or op1.w$bit;
+	end set$instr$w;
+
+check$acc$immed: procedure logical;
+	return op1.acc$type and op2.num$type;
+	end check$acc$immed;
+
+check$modrm$immed: procedure logical;
+	return op1.modrm$type and op2.num$type;
+	end check$modrm$immed;
+
+check$modrm$modrm: procedure logical;
+	return op1.modrm$type and op2.modrm$type and not
+	   (op1.sub$type > 2 and op2.sub$type > 2);
+	end check$modrm$modrm;
+
+/**************************************/
+/*                                    */
+/*   mnemonic processing procedures   */
+/*                                    */
+/**************************************/
+
+type1: procedure;
+	/*
+		mnemonics:  simple one-byte instructions
+		operands:   none
+		forms:      xxxxxxxx
+	*/
+	call get$operand$2;
+	if op2.null$type then call put$instr;
+	else call error;
+	end type1;
+
+type2: procedure;
+	/*
+		mnemonics:  aad  aam
+		operands:   none
+		forms:      xxxxxxxx   00001010
+	*/
+	call get$operand$2;
+	if op2.null$type then
+		do;
+			call put$instr;
+			call put$mem (0ah);
+		end;
+	else call error;
+	end type2;
+
+type3: procedure;
+	/*
+		mnemonics:  conditional jumps  loopxx  jmps
+		operands:   1   (number)
+		forms:      xxxxxxxx   IP-INC8
+	*/
+	call get$operand$2;
+	if op2.num$type and (op2.value - (assem$offset - 7eh) <= 255) then
+		do;
+			call put$instr;
+			call put$mem (low (op2.value - (assem$offset + 1)));
+		end;
+	else call error;
+	end type3;
+
+type4: procedure;
+	/*
+		mnemonics:  logical shifts and rotates
+		operands:   2
+		forms:      xxxxxxvw  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand$1;
+	call get$operand$2;
+	if op1.modrm$type then
+		do;
+			if op2.reg$8$type and (op2.reg$num = 1) then
+			  instr$1 = instr$1 or 2;   /* set v bit */
+			else if not (op2.num$type and (op2.value = 1)) then call error;
+			call modrm$w (instr1, reg$bits, .op1);
+		end;
+	else call error;
+	end type4;
+
+type5: procedure;
+	/*
+		mnemonics:  div  idiv  mul  imul  not  neg
+		operands:   1
+		forms:      xxxxxxxw  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand$2;
+	call modrm$w (instr$1, reg$bits, .op2);
+	end type5;
+
+type6: procedure;
+	/*
+		mnemonics:  les  lds  lea
+		operands:   2   (reg16, memory)
+		forms:      xxxxxxxx  mmregr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand$1;
+	call get$operand$2;
+	if op1.reg$16$type and op2.modrm$type and (op2.sub$type > 2) then
+	  call mod$reg$rm;
+	else call error;
+	end type6;
+
+declare
+	type$7$struc (2) structure (op$val (2) byte) initial (
+		048h,	001h,	/* dec */
+		040h,	000h);	/* inc */
+
+type7: procedure;
+	/*
+		mnemonics:  inc  dec
+		operands:   1
+		forms:      xxxxxreg
+		            xxxxxxxw  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand$2;
+	if op2.reg$16$type then call set$instr (type$7$struc (instr$1).op$val (0) or op2.reg$num);
+	else call modrm$w (0feh, type$7$struc (instr$1).op$val (1), .op2);
+	end type7;
+
+type8or8a: procedure;
+	if op2.seg$reg$type then call set$instr (type$8$struc (instr$1).op$val (0) or
+			  shl (op2.seg$reg$num, 3));
+	else if op2.reg$16$type then call set$instr (type$8$struc (instr$1).op$val (1) or op2.reg$num);
+	else call modrm$16 (type$8$struc (instr$1).op$val (2),
+	  type$8$struc (instr$1).op$val (3));
+	end type8or8a;
+
+declare
+	type$8$struc (2) structure (op$val (4) byte) initial (
+		07h,	58h,	8fh,	00h,	/* pop */
+		06h,	50h,	0ffh,	06h);	/* push */
+
+type8: procedure;
+	/*
+		mnemonics:  push
+		operands:   1
+		forms:      xxxSRxxx
+		            xxxxxreg
+		            xxxxxxxx  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand2;
+	call type8or8a;
+	end type8;
+
+type8a: procedure;
+	/*
+		mnemonics:  pop
+		operands:   1
+		forms:      xxxSRxxx
+		            xxxxxreg
+		            xxxxxxxx  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand2;
+	if op2.seg$reg$type and (op2.seg$reg$num = 1) then call error;
+	else call type8or8a;
+	end type8a;
+
+type9or10: procedure (type);
+	declare type byte;
+	call get$operand$1;
+	call get$operand$2;
+	if check$acc$immed then
+		do;
+			instr$1 = instr$1 or 4;
+			call acc$immed;
+		end;
+	else if check$modrm$immed then
+		do;
+			instr$1 = 80h;
+			if type = 9 then
+				do;
+					call check$w$and$val;
+					call set$w$bit;
+					IF OP1.W$BIT = 1 THEN
+						DO;
+							if op2.value < 80h or op2.value >= 0ff80h then
+							  instr$1 = instr$1 or 2;
+						END;
+					call do$modrm (.op1);
+					call put$immed$s;
+				end;
+			else call modrm$immed;
+		end;
+	else if check$modrm$modrm then call mod$reg$rm$dw;
+	else call error;
+	end type9or10;
+
+type9: procedure;
+	/*
+		mnemonics:  add  adc  cmp  sub  sbb
+		operands:   2
+		forms:      xxxxxxxw  data-lo   data-hi (if w=1)
+		            xxxxxxsw  mmxxxr/m  [disp-lo]  [disp-hi]  data-lo  data-hi (if sw=01)
+		            xxxxxxdw  mmregr/m  [disp-lo]  [disp-hi]
+	*/
+	call type9or10 (9);
+	end type9;
+
+type10: procedure;
+	/*
+		mnemonics:  and  or  xor
+		operands:   2
+		forms:      xxxxxxxw  data-lo   data-hi (if w=1)
+		            xxxxxxxw  mmxxxr/m  [disp-lo]  [disp-hi]  data-lo  data-hi (if w=1)
+		            xxxxxxdw  mmregr/m  [disp-lo]  [disp-hi]
+	*/
+	call type9or10 (10);
+	end type10;
+
+declare type11$struc (2) structure (op$val (2) byte) initial (
+	0e8h,	2,	/* call */
+	0e9h,	4);	/* jmp */
+
+type11: procedure;
+	/*
+		mnemonics:  call  jmp
+		operands:   1
+		forms:      xxxxxxxx  IP-INC16
+		            xxxxxxxx  mmxxxr/m  [disp-lo]  [disp-hi]
+	*/
+	call get$operand$2;
+	if op2.num$type then
+		do;
+			call set$instr (type11$struc (instr$1).op$val (0));
+			call put$word (op2.value - (assem$offset + 2));
+		end;
+	else call modrm$16 (0ffh, type$11$struc (instr$1).op$val (1));
+	end type11;
+
+type$int: procedure;
+	call get$operand$2;
+	if op2.num$type and (op2.value <= 255) then
+		do;
+			if op2.value = 3 then call set$instr (0cch);
+			else
+				do;
+					call set$instr (0cdh);
+					call put$mem (low (op2.value));
+				end;
+		end;
+	else call error;
+	end type$int;
+
+type$esc: procedure;
+	call get$operand$1;
+	call get$operand$2;
+	if op1.num$type and (op1.value < 64) and op2.modrm$type then
+		do;
+			instr$1 = instr$1 or shr (low (op1.value), 3);
+			reg$bits = low (op1.value) and 7;
+			call do$modrm (.op2);
+		end;
+	else call error;
+	end type$esc;
+
+type$ret$retf: procedure;
+	op$base = .op2;
+	call get$operand;
+	if op2.null$type then call set$instr (instr$1 or 1);
+	else if op2.num$type then
+		do;
+			call put$instr;
+			call put$word (op2.value);
+		end;
+	else call error;
+	end type$ret$retf;
+
+type$in: procedure;
+	DECLARE TEMP BYTE;
+	call get$operand$1;
+	if not op1.acc$type then call error;
+	call get$operand$2;
+	if op2.reg$16$type and (op2.reg$num = 2) /* DX */ then TEMP = 8;
+	else if op2.num$type and (op2.value <= 255) then TEMP = 0;
+	else call error;
+	call set$instr (instr$1 or TEMP or op1.w$bit);
+	IF TEMP = 0 THEN CALL PUT$MEM (LOW (OP2.VALUE));
+	end type$in;
+
+type$out: procedure;
+	declare temp byte;
+	call get$operand$1;
+	if op1.reg$16$type and (op1.reg$num = 2) /* DX */ then temp = 1;
+	else if op1.num$type and (op1.value <= 255) then temp = 0;
+	else call error;
+	call get$operand$2;
+	if not op2.acc$type then call error;
+	call put$mem (instr$1 or shl (temp,3) or op2.w$bit);
+	if temp = 0 then call put$mem (low (op1.value));
+	end type$out;
+
+declare cjstruc (2) structure (op$val (2) byte) initial (
+	09ah,	3,	/* callf */
+	0eah,	5);	/* jmpf */
+
+type$callf$jmpf: procedure;
+	call get$operand$2;
+	if op2.far$type then
+		do;
+			call set$instr (cjstruc (instr$1).op$val (0));
+			call put$word (op2.value);
+			call put$word (op2.seg$value);
+		end;
+	else call modrm$16 (0ffh, cj$struc (instr$1).op$val (1));
+	end type$callf$jmpf;
+
+type$test: procedure;
+	call get$operand$1;
+	call get$operand$2;
+	if check$acc$immed then
+		do;
+			instr$1 = 0a8h;
+			call acc$immed;
+		end;
+	else if check$modrm$immed then
+		do;
+			instr$1 = 0f6h;
+			call modrm$immed;
+		end;
+	else if check$modrm$modrm then
+		do;
+			call set$instr$w (84h);
+			call mod$reg$rm;
+		end;
+	else call error;
+	end type$test;
+
+type$xchg: procedure;
+	call get$operand$1;
+	call get$operand$2;
+	if op1.acc$type and op1.w$bit and op2.reg$16$type then
+	  call set$instr (90h + op2.reg$num);
+	else if check$modrm$modrm then
+		do;
+			call set$instr$w (86h);
+			call modregrm;
+		end;
+	else call error;
+	end type$xchg;
+
+type$mov: procedure;
+	call get$operand$1;
+	call get$operand$2;
+	if op1.seg$reg$type and op2.modrm$type and not op2.reg$8$type then
+		do;
+			instr$1 = 8eh;
+			reg$bits = op1.seg$reg$num;
+			call do$modrm (.op2);
+		end;
+	else if op1.modrm$type and not (op1.sub$type = 1) and op2.seg$reg$type then
+		do;
+			instr$1 = 8ch;
+			reg$bits = op2.seg$reg$num;
+			call do$modrm (.op1);
+		end;
+	else if op1.acc$type and op2.modrm$type and (op2.subtype = 3) then
+		do;
+			instr$1 = 0a0h or op1.w$bit;
+			call put$instr;
+			call put$word (op2.value);
+		end;
+	else if op2.acc$type and op1.modrm$type and (op1.sub$type = 3) then
+		do;
+			instr$1 = 0a2h or op2.w$bit;
+			call put$instr;
+			call put$word (op1.value);
+		end;
+	else if check$modrm$immed then
+		do;
+			if op1.sub$type <= 2 then
+				do;
+					call set$instr (0b0h or shl (op1.w$bit, 3) or op1.reg$num);
+					call put$immed;
+				end;
+			else
+				do;
+					instr$1 = 0c6h;
+					call modrm$immed;
+				end;
+		end;
+	else if check$modrm$modrm then
+		do;
+			instr$1 = 88h;
+			call mod$reg$rm$dw;
+		end;
+	else call error;
+	end type$mov;
+
+asm: procedure (loc) address public;
+	declare loc pointer;
+	assem$ptr = loc;
+	call crlf;
+	call print$word (assem$segment);
+	call conout (':');
+	call print$word (assem$offset);
+	call conout (' ');
+	call get$line;
+	op$base = .op1;   /* must be set for prefix scan */
+	if get$opcode then
+		do;
+			if op$type > 21 then call error;
+			do case optype;
+				call error;
+				call type1;
+				call type2;
+				call type3;
+				call type4;
+				call type5;
+				call type6;
+				call type7;
+				call type8;
+				call type9;
+				call type10;
+				call type11;
+				call type$int;
+				call type$esc;
+				call type$ret$retf;
+				call type$in;
+				call type$out;
+				call type$callf$jmpf;
+				call type$test;
+				call type$xchg;
+				call type$mov;
+				call type8a;
+			end;
+		end;
+	else call put$prefix;   /* may be prefix without opcode */
+	return assem$offset;
+	end asm;
+
+end ddtasm;
+

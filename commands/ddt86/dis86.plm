@@ -1,0 +1,593 @@
+$title('8086 disassembler')
+
+disem86: do;
+
+declare
+	cr literally '0dh',
+	lf literally '0ah',
+	true literally '1',
+	false literally '0';
+
+$include(optab.dat)
+
+declare
+	tab$ptrs (5) address public initial (.ops2, .ops3, .ops4, .ops5, .ops6);
+
+declare
+	left$bracket byte data ('['),
+	right$bracket byte data (']');
+
+declare
+	alt$table$base address,
+	alt$table based alt$table$base (16) byte,
+	alt$table$ptrs (8) address external;
+
+declare
+	mod$bits byte,
+	reg$bits byte,
+	rm$bits byte,
+	byte1$reg$bits byte,
+	d$bit byte,
+	s$bit byte,
+	v$bit byte,
+	w$bit byte,
+	z$bit byte;
+
+declare
+	mnemonic$index byte,    /* index into opcodes */
+	instr$type byte,
+	table$ptr address,
+	table$char based table$ptr byte,
+	disem$ptr pointer,
+	disem$offset address at (.disem$ptr),
+	disem$end address,
+	disem$byte based disem$ptr (1) byte,
+	disem$word based disem$ptr (1) address,
+	b$or$w$flag byte,
+	error$flag byte;
+
+declare instr$table (512) byte external;
+
+declare
+	ax$reg literally '0',
+	cx$reg literally '1',
+	dx$reg literally '2',
+	bx$reg literally '3',
+	sp$reg literally '4',
+	bp$reg literally '5',
+	si$reg literally '6',
+	di$reg literally '7';
+
+declare
+	al$reg literally '0',
+	cl$reg literally '1',
+	dl$reg literally '2',
+	bl$reg literally '3',
+	ah$reg literally '4',
+	ch$reg literally '5',
+	dh$reg literally '6',
+	bh$reg literally '7';
+	
+declare
+	es$reg literally '0',
+	cs$reg literally '1',
+	ss$reg literally '2',
+	ds$reg literally '3';
+
+declare
+	reg16 (*) byte public initial ('AX', 'CX', 'DX', 'BX', 'SP', 'BP', 'SI', 'DI'),
+	reg8 (*) byte public initial ('AL', 'CL', 'DL', 'BL', 'AH', 'CH', 'DH', 'BH'),
+	segreg (*) byte public initial ('ES', 'CS', 'SS', 'DS');
+
+conout: procedure (c) external;
+	declare c byte;
+	end conout;
+
+comma: procedure;
+	call conout (',');
+	end comma;
+
+printm: procedure (a) PUBLIC;
+	declare a address;
+	declare b based a byte;
+	do while b <> '$';
+		call conout (b);
+		a = a + 1;
+	end;
+	end printm;
+
+print$nibble: procedure (b);
+	declare b byte;
+	if b > 9 then call conout (b - 10 + 'A');
+	else call conout (b + '0');
+	end print$nibble;
+
+print$byte: procedure (b);
+	declare b byte;
+	call print$nibble (shr (b, 4));
+	call print$nibble (b and 0fh);
+	end print$byte;
+
+print$word: procedure (a) public;
+	declare a address;
+	call print$byte (high (a));
+	call print$byte (low (a));
+	end print$word;
+
+error: procedure;
+	call printm (.('??=    $'));
+	call print$byte (disem$byte (0));
+	disem$offset = disem$offset + 1;
+	end error;
+
+set$bits: procedure;
+	byte1$reg$bits = disem$byte (0) and 7;
+	mod$bits = shr (disem$byte (1), 6);
+	reg$bits = shr (disem$byte (1), 3) and 7;
+	rm$bits = disem$byte (1) and 7;
+	w$bit, z$bit = disem$byte (0) and 1;
+	d$bit, s$bit, v$bit = shr (disem$byte (0), 1) and 1;
+	end set$bits;
+
+print$b$or$w: procedure;
+	if w$bit then call printm (.('WORD $'));
+	else call printm (.('BYTE $'));
+	end print$b$or$w;
+
+print$reg: procedure (reg$add, reg);
+	declare reg$add address, reg byte;
+	table$ptr = reg$add + shl (reg, 1);
+	call conout (table$char);
+	table$ptr = table$ptr + 1;
+	call conout (table$char);
+	end print$reg;
+
+print$reg8: procedure (reg);
+	declare reg byte;
+	call print$reg (.reg8, reg);
+	end print$reg8;
+
+print$reg16: procedure (reg);
+	declare reg byte;
+	call print$reg (.reg16, reg);
+	end print$reg16;
+
+print$reg$8$or$16: procedure (reg$num);
+	declare reg$num byte;
+	if w$bit then call print$reg$16 (reg$num);
+	else call print$reg$8 (reg$num);
+	end print$reg$8$or$16;
+
+print$2$reg$16: procedure (r1, r2);
+	declare (r1, r2) byte;
+	call print$reg$16 (r1);
+	call conout ('+');
+	call print$reg$16 (r2);
+	end print$2$reg$16;
+
+print$A$reg: procedure;
+	if w$bit then call print$reg$16 (ax$reg);
+	else call print$reg$8 (al$reg);
+	end print$A$reg;
+
+print$seg$reg: procedure (reg);
+	declare reg byte;
+	call print$reg (.seg$reg, reg);
+	end print$seg$reg;
+
+print$data$8: procedure;
+	call print$byte (disem$byte (0));
+	disem$offset = disem$offset + 1;
+	end print$data$8;
+
+print$data$16: procedure;
+	call print$word (disem$word (0));
+	disem$offset = disem$offset + 2;
+	end print$data$16;
+
+print$data$8$or$16: procedure;
+	if w$bit then call print$data$16;
+	else call print$data$8;
+	end print$data$8$or$16;
+
+print$data$sw: procedure;
+	if rol (disem$byte (0), 1) then call print$word (0ff00h or disem$byte (0));
+	else call print$word (disem$byte (0));
+	disem$offset = disem$offset + 1;
+	end print$data$sw;
+
+print$signed$8: procedure;
+	declare a address;
+	a = disem$byte (0);
+	if low (a) >= 80h then a = a or 0ff00h;  /* sign extend to 16 bits */
+	call print$word (disem$offset + a + 1);
+	disem$offset = disem$offset + 1;
+	end print$signed$8;
+
+print$signed$16: procedure;
+	call print$word (disem$offset + disem$word (0) + 2);
+	disem$offset = disem$offset + 2;
+	end print$signed$16;
+
+print$direct$addr: procedure;
+	call conout (left$bracket);
+	call print$word (disem$word (0));
+	call conout (right$bracket);
+	disem$offset = disem$offset + 2;
+	end print$direct$addr;
+
+print$mod$rm: procedure;
+	disem$offset = disem$offset + 1;    /* point past mod/reg/rm byte */
+	if mod$bits = 3 then
+		do;
+			call print$reg$8$or$16 (rm$bits);
+			return;
+		end;
+	if b$or$w$flag then call print$b$or$w;
+	if rm$bits = 6 and mod$bits = 0 then
+		do;
+			call print$direct$addr;
+			return;
+		end;
+	if mod$bits = 1 then
+		do;
+			if (rm$bits <> 6) or (disem$byte (0) <> 0)
+			  then call print$byte (disem$byte (0));
+			disem$offset = disem$offset + 1;
+		end;
+	else if mod$bits = 2 then
+		do;
+			call print$word (disem$word (0));
+			disem$offset = disem$offset + 2;
+		end;
+	call conout (left$bracket);
+	do case rm$bits;
+		call print$2$reg$16 (3, 6);
+		call print$2$reg$16 (3, 7);
+		call print$2$reg$16 (5, 6);
+		call print$2$reg$16 (5, 7);
+		call print$reg$16 (6);
+		call print$reg$16 (7);
+		call print$reg$16 (5);
+		call print$reg$16 (3);
+	end;
+	call conout (right$bracket);
+	end print$mod$rm;
+
+print$mod$reg$rm: procedure;
+	if d$bit then
+		do;
+			call print$reg$8$or$16 (reg$bits);
+			call conout (',');
+			call print$mod$rm;
+		end;
+	else
+		do;
+			call print$mod$rm;
+			call conout (',');
+			call print$reg$8$or$16 (reg$bits);
+		end;
+	end print$mod$reg$rm;
+
+print$mnemonic: procedure;
+	declare (len, i) byte;
+	len = 2;
+	do while mnemonic$index >= opn$in (len - 1);
+		len = len + 1;
+	end;
+	table$ptr = tab$ptrs (len - 2) + (mnemonic$index - opn$in (len - 2))
+	  * len;
+	do i = 1 to 7;
+		if i <= len then
+			do;
+				call conout (table$char);
+				table$ptr = table$ptr + 1;
+			end;
+		else call conout (' ');
+	end;
+	disem$offset = disem$offset + 1;
+	end print$mnemonic;
+
+type1: procedure;
+	call print$mnemonic;
+	end type1;
+
+type2: procedure;
+	if disem$byte (1) = 0ah then
+		do;
+			call print$mnemonic;
+			disem$offset = disem$offset + 1;
+		end;
+	else error$flag = true;
+	end type2;
+
+type3: procedure;
+	call print$mnemonic;
+	call print$reg$16 (byte1$reg$bits);
+	end type3;
+
+type4: procedure;
+	declare temp byte;
+	temp = shr (disem$byte (0), 3) and 3;
+	call print$mnemonic;
+	call print$segreg (temp);
+	end type4;
+
+type5: procedure;
+	call print$mnemonic;
+	call print$signed$8;
+	end type5;
+
+type6: procedure;
+	call print$mnemonic;
+	call print$signed$16;
+	end type6;
+
+type8: procedure;   /* 7, 9 */
+	call print$mnemonic;
+	call print$mod$rm;
+	end type8;
+
+type10: procedure;
+	call print$mnemonic;
+	call print$data$8;
+	end type10;
+
+type11: procedure;
+	call print$mnemonic;
+	call print$data$16;
+	end type11;
+
+type12: procedure;
+	call print$mnemonic;
+	call conout ('3');
+	end type12;
+
+type13: procedure;
+	declare temp address;
+	call print$mnemonic;
+	temp = disem$word (0);
+	disem$offset = disem$offset + 2;
+	call print$data$16;
+	call conout (':');
+	call print$word (temp);
+	end type13;
+
+type14: procedure;    /* 15, 16, 17 */
+	call print$mnemonic;
+	call print$mod$reg$rm;
+	end type14;
+
+type18: procedure;    /* 19, 20, 21 */
+	call print$mnemonic;
+	if d$bit then
+		do;
+			call print$direct$addr;
+			call comma;
+			call print$A$reg;
+		end;
+	else
+		do;
+			call print$A$reg;
+			call comma;
+			call print$direct$addr;
+		end;
+	end type18;
+
+type22: procedure;
+	call print$mnemonic;
+	if d$bit then
+		do;
+			call print$data$8;
+			call comma;
+			call print$A$reg;
+		end;
+	else
+		do;
+			call print$A$reg;
+			call comma;
+			call print$data$8;
+		end;
+	end type22;
+
+type23: procedure;    /* 24 */
+	call print$mnemonic;
+	call print$A$reg;
+	call comma;
+	call print$data$8$or$16;
+	end type23;
+
+type25: procedure;   /* 26 */
+	call print$mnemonic;
+	if d$bit then
+		do;
+			call print$reg$16 (dx$reg);
+			call comma;
+			call print$A$reg;
+		end;
+	else
+		do;
+			call print$A$reg;
+			call comma;
+			call print$reg$16 (dx$reg);
+		end;
+	end type25;
+
+type27: procedure;   /* 28, 29, 30 */
+	call print$mnemonic;
+	b$or$w$flag = true;
+	call print$mod$rm;
+	call comma;
+	if v$bit then call print$reg$8 (cl$reg);
+	else call conout ('1');
+	end type27;
+
+type31: procedure;    /* 32 */
+	call setbits;
+	reg$bits = byte1$reg$bits;
+	w$bit = shr (disem$byte (0), 3) and 1;
+	call print$mnemonic;
+	call print$reg$8$or$16 (reg$bits);
+	call comma;
+	call print$data$8$or$16;
+	end type31;
+
+type33: procedure;
+	call print$mnemonic;
+	call print$reg$16 (ax$reg);
+	call comma;
+	call print$reg$16 (byte1$reg$bits);
+	end type33;
+
+type34: procedure;   /* 35 */
+	call print$mnemonic;
+	b$or$w$flag = true;
+	call print$mod$rm;
+	call comma;
+	call print$data$8$or$16;
+	end type34;
+
+type36: procedure;   /* 37 */
+	w$bit = true;   /* force 16 bit reg, mem */
+	if reg$bits > 3 then
+		do;
+			error$flag = true;
+			return;
+		end;
+	call print$mnemonic;
+	if d$bit then
+		do;
+			call print$seg$reg (reg$bits);
+			call comma;
+			call print$mod$rm;
+		end;
+	else
+		do;
+			call print$mod$rm;
+			call comma;
+			call print$seg$reg (reg$bits);
+		end;
+	end type36;
+
+type38: procedure;
+	call print$mnemonic;
+	call print$mod$rm;
+	call comma;
+	call print$data$8;
+	end type38;
+
+type39: procedure;
+	if mod$bits = 3 then
+		do;
+			error$flag = true;
+			return;
+		end;
+	call print$mnemonic;
+	call print$reg$16 (reg$bits);
+	call comma;
+	call print$mod$rm;
+	end type39;
+
+type40: procedure;   /* 41 */
+	if mod$bits = 3 then
+		do;
+			error$flag = true;
+			return;
+		end;
+	call print$mnemonic;
+	b$or$w$flag = true;
+	call print$mod$rm;
+	call comma;
+	call print$data$8$or$16;
+	end type40;
+
+type42: procedure;
+	call print$mnemonic;
+	call print$byte (shl (byte1$reg$bits, 3) or reg$bits);
+	call comma;
+	call print$mod$rm;
+	end type42;
+
+type44: procedure;
+	call print$mnemonic;
+	b$or$w$flag = true;
+	call print$modrm;
+	call comma;
+	if s$bit = 1 and w$bit = 1 then call print$data$sw;
+	else call print$data$8$or$16;
+	end type44;
+
+type45: procedure;
+	b$or$w$flag = true;
+	call type8;
+	end type45;
+
+dis: procedure;
+	error$flag, b$or$w$flag = false;
+	call set$bits;
+	if instr$type = 26 then
+		do;
+			alt$table$base = alt$table$ptrs (mnemonic$index);
+			mnemonic$index = alt$table (reg$bits * 2);
+			instr$type = alt$table (reg$bits * 2 + 1);
+		end;
+	if instr$type > 28 then error$flag = true;
+	else
+	do case instr$type;
+		error$flag = true;
+		call type1;
+		call type2;
+		call type3;
+		call type4;
+		call type5;
+		call type6;
+		call type8;
+		call type10;
+		call type11;
+		call type12;
+		call type13;
+		call type14;
+		call type18;
+		call type22;
+		call type23;
+		call type25;
+		call type27;
+		call type31;
+		call type33;
+		call type34;
+		call type36;
+		call type38;
+		call type39;
+		call type40;
+		call type42;
+		;
+		call type44;
+		call type45;
+	end;
+	if error$flag then call error;
+	end dis;
+
+disem: procedure (disloc) address public;
+	declare disloc pointer;
+	declare nprefix byte;
+	disem$ptr = disloc;
+	nprefix = 0;
+	do while true;
+		mnemonic$index = instr$table (disem$byte (0) * 2);
+		instr$type = instr$table (disem$byte (0) * 2 + 1);
+		if instr$type = 0ffh and nprefix < 3 then
+			do;
+				call print$mnemonic;
+				nprefix = nprefix + 1;
+			end;
+		else
+			do;
+				if instr$type = 0ffh then instr$type = 1;
+				call dis;
+				return disem$offset;
+			end;
+	end;
+	end disem;
+
+end disem86;
+

@@ -1,0 +1,42 @@
+
+declare ops2 (*) byte initial (
+	'IN', 'JA', 'JB', 'JC', 'JE', 
+	'JG', 'JL', 'JO', 'JP', 'JS', 
+	'JZ', 'OR');
+
+declare ops3 (*) byte initial (
+	'AAA', 'AAD', 'AAM', 'AAS', 'ADC', 
+	'ADD', 'AND', 'CBW', 'CLC', 'CLD', 
+	'CLI', 'CMC', 'CMP', 'CS:', 'CWD', 
+	'DAA', 'DAS', 'DEC', 'DIV', 'DS:', 
+	'ES:', 'ESC', 'HLT', 'INC', 'INT', 
+	'JAE', 'JBE', 'JGE', 'JLE', 'JMP', 
+	'JNA', 'JNB', 'JNC', 'JNE', 'JNG', 
+	'JNL', 'JNO', 'JNP', 'JNS', 'JNZ', 
+	'JPE', 'JPO', 'LDS', 'LEA', 'LES', 
+	'MOV', 'MUL', 'NEG', 'NOP', 'NOT', 
+	'OUT', 'POP', 'RCL', 'RCR', 'REP', 
+	'RET', 'ROL', 'ROR', 'SAL', 'SAR', 
+	'SBB', 'SHL', 'SHR', 'SS:', 'STC', 
+	'STD', 'STI', 'SUB', 'XOR');
+
+declare ops4 (*) byte initial (
+	'CALL', 'IDIV', 'IMUL', 'INTO', 'IRET', 
+	'JCXZ', 'JMPF', 'JMPS', 'JNAE', 'JNBE', 
+	'JNGE', 'JNLE', 'LAHF', 'LOCK', 'LOOP', 
+	'POPF', 'PUSH', 'REPE', 'REPZ', 'RETF', 
+	'SAHF', 'TEST', 'WAIT', 'XCHG', 'XLAT');
+
+declare ops5 (*) byte initial (
+	'CALLF', 'CMPSB', 'CMPSW', 'LODSB', 'LODSW', 
+	'LOOPE', 'LOOPZ', 'MOVSB', 'MOVSW', 'PUSHF', 
+	'REPNE', 'REPNZ', 'SCASB', 'SCASW', 'STOSB', 
+	'STOSW');
+
+declare ops6 (*) byte initial (
+	'LOOPNE', 'LOOPNZ');
+
+declare nops (5) byte public initial (12, 69, 25, 16, 2);
+
+declare opn$in (*) byte public initial (0, 12, 81, 106, 122, 255);
+

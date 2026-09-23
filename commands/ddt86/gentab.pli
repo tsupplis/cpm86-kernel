@@ -1,0 +1,123 @@
+gentab: proc options (main);
+
+	/* generate tables for 8086 disassembler  12/23/80 */
+	/* modified  5/14/81 */
+
+	declare
+		opcnt (2:6) fixed (7) static initial (0,0,0,0,0),
+		sum fixed (7),
+		len fixed (7),
+		line char (100) varying,
+		infile file,
+		outfile file,
+		litfile file,
+		opcode char (10) varying,
+		i fixed (7),
+		j fixed (15),
+		n fixed (7),
+		count fixed (15),
+		chars (200) char (6) varying;
+
+	open file (infile) input stream title ('OP86.DAT');
+	open file (outfile) print title ('OPTAB.DAT');
+	open file (litfile) print title ('OPTAB.LIT');
+
+	on endpage (outfile) begin; end;
+	on endpage (litfile) begin; end;
+
+	count = 0;
+
+	/* read op86.dat file into chars array */
+
+	get file (infile) list (opcode);
+	do while (opcode ^= '$');
+		count = count + 1;
+		chars (count) = opcode;
+		get file (infile) list (opcode);
+	end;
+
+	/* create ascii opcode tables, 1 for each character length */
+
+	do i = 2 to 6;
+		line = 'declare ops' || deblank (i) || ' (*) byte initial (';
+		n = 0;
+		do j = 1 to count;
+			if length (chars (j)) = i then
+				do;
+					if n > 0 then line = line || ', ';
+					if divide (n, 5, 7) * 5 = n then
+						do;
+							put file (outfile) skip list (line);
+							line = '^I';
+						end;
+					n = n + 1;
+					line = line || '''' || chars (j) || '''';
+					opcnt (i) = opcnt (i) + 1;
+				end;
+		end;
+		line = line || ');';
+		put file (outfile) skip list (line);
+		put file (outfile) skip;
+	end;
+
+	/* create array containing # of opcodes of each length */
+
+	line = 'declare nops (5) byte public initial (';
+	do i = 2 to 6;
+		line = line || deblank (opcnt (i));
+		if i < 6 then line = line || ', ';
+	end;
+	put file (outfile) skip list (line || ');');
+	put file (outfile) skip;
+
+	/* create array containing starting index for each opcode length */
+
+	line = 'declare opn$in (*) byte public initial (';
+	sum = 0;
+	do i = 2 to 6;
+		line = line || deblank (sum) || ', ';
+		sum = sum + opcnt (i);
+	end;
+	put file (outfile) skip list (line || '255);');
+
+	/* create literals for starting indexes for each opcode length */
+
+	sum = 0;
+	put file (litfile) skip list ('declare');
+	do i = 2 to 6;
+		put skip list (deblank (opcnt (i)), deblank (i) || '-character opcodes');
+		line = '^I' || 'op' || deblank (i) ||
+		  '$in literally ''' || deblank (sum) || '''';
+		if i = 6 then line = line || ';';
+		else line = line || ',';
+		put file (litfile) skip list (line);
+		sum = sum + opcnt (i);
+		opcnt (i) = 0;
+	end;
+
+	/* create literals for position in opcode tables of each opcode */
+
+	put file (litfile) skip;
+	put file (litfile) skip list ('declare');
+	do j = 1 to count;
+		len = length (chars (j));
+		if index (chars (j), ':') > 0 then
+			chars (j) = substr (chars (j), 1, len-1);
+		line = '^I' || chars (j) || '$in literally '''
+		  || 'op' || deblank (len) || '$in + '
+		  || deblank (opcnt (len)) || '''';
+		if j = count then line = line || ';';
+		else line = line || ',';
+		put file (litfile) skip list (line);
+		opcnt (len) = opcnt (len) + 1;
+	end;
+
+	deblank: proc (i) returns (char (10) varying);
+		declare i fixed (7);
+		declare temp char (10) varying;
+		temp = char (i);
+		return (substr (temp, verify (temp, ' ')));
+		end deblank;
+
+	end gentab;
+

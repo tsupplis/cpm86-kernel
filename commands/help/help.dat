@@ -1,0 +1,1392 @@
+
+
+    ///1ABORT
+    Syntax:
+
+    ABORT programname
+    ABORT programname n
+
+    ABORT immediately stops execution of  the  program  specified  by
+    programname.  If  you  want to abort a program running on another
+    console, include the  number  (n)  of  the  console  running  the
+    program.
+
+    Use CTRL-C to abort a program  running  on  the  current  virtual
+    console,  and  the  ABORT command for programs running on another
+    virtual console.  If you abort more than one program,  the  ABORT
+    commands are executed in the order given.
+
+    ///2EXAMPLES
+    Examples:
+
+    In  the  following  example, the  ABORT command stops the program  
+    TYPE which is displaying the contents of the file DOCUMENT.TXT on 
+    the screen.  Assume that the TYPE command was issued from virtual 
+    console 1, and is aborted from virtual console 3.  The drive and 
+    user number do not affect the ABORT command.
+
+    A>TYPE DOCUMENT.TXT
+
+    Dear Sir:
+    The company is pleased to inform you tha...
+
+    <switch virtual console screen>
+
+    A>ABORT type 1 
+    A>
+
+
+    ///1asm86
+    Syntax:
+
+    ASM86 filespec {$options}
+
+    Purpose:
+
+    ASM-86 assembles assembly language statements, producing  a  file
+    in hexadecimal format, a print file and a symbol table file.  The
+    assumed filetype of  source  and  included  files  is  A86.   The
+    special  characters  X,  Y  and Z indicate output to the console,
+    output to the printer,  and  zero  output,  respectively.  If  no
+    format is specified, Digital Research format (FD) is assumed.
+
+    ///2Examples
+    Examples:
+
+        A>ASM86 PROG
+        A>ASM86 PROG $SZ PX
+        A>ASM86 PROG $HB PY AC
+
+    ///2Options
+    Syntax:
+
+    ASM86 filespec ($Ad Hd Pd Sd Fd)
+
+    A   source file drive - .A86
+    d = (logical drives A-D)
+
+    H   hex file drive    - .H86
+    d = (logical drives A-D, X,Y,Z)
+
+    P   print file drive  - .LST
+    d = (logical drives A-D, X,Y,Z)
+
+    S   symbol file drive - .SYM
+    d = (logical drives A-D, X,Y,Z)
+
+    F   format of hex file- .H86
+    d = (D=Digital Research, I=Intel)
+
+
+    ///1BUFFERED
+    You can switch the current (foreground) virtual console into  the
+    background  by selecting a different virtual console for display.
+    If the switched-out virtual console  is  in  buffered  mode,  any
+    program output  to  that console is stored in a disk file.  Then,
+    when the background virtual console is again  switched  into  the
+    foreground,  any  output  stored  in the file is displayed on the
+    monitor.
+
+    The other  virtual  console mode is dynamic mode.  When a console 
+    is switched out and in dynamic mode,  output that scrolls off the
+    screen is  not saved.  Use the VCMODE command  to switch consoles
+    from one mode to the other.
+
+    ///1CHSET
+    Syntax:
+
+    CHSET {d:}filename{.CMD}
+    CHSET {d:}filename{.CMD} [field=setting{,field=setting,...}]
+    CHSET [HELP]
+
+    Explanation:
+
+    CHSET is a utility that allows you to make changes in the command
+    header  of a command file with a  .CMD filetype.  CHSET has three 
+    fields that you can display or change, corresponding to the three 
+    fields that CHSET modifies in a command header.  The three fields 
+    and their possible settings are:
+ 
+    8087 - The  8087  field  has three possible settings, ON, OFF, or
+    OPT  (optional).   Specify  ON  for programs that require an 8087 
+    processor  in  order  to run.  Choose OPT when you have a program 
+    that  can use an 8087 if it is present in your system, or emulate 
+    an  8087 if it is not present.  Specify OFF if you want to cancel 
+    a previous ON or OPT selection.
+
+    SHARED - The SHARED field has two settings, ON or OFF.  Select ON 
+    when  you  want  to modify a program's command header so that the 
+    program  can  use  Concurrent  CP/M's  shared  code capabilities.  
+    Specify OFF if you want to cancel a previous ON selection.
+
+    SUSPEND - The SUSPEND field has two options, ON or OFF.  When you 
+    select  ON,  CHSET  modifies  a  program's command header so that 
+    Concurrent  CP/M  suspends  that   program's  operation  when  it 
+    occupies a  switched-out virtual console.  OFF cancels a previous 
+    ON selection.
+
+    Changing Field Settings
+
+    You  can  change any or all of CHSET's fields in a single command
+    line.  To  change  a setting for a field or fields, enter a CHSET 
+    command  with  a filespec and the fields you want to change.  For 
+    example, if you type
+
+    B>chset calc.cmd [8087=opt,shared=on,suspend=on]
+
+    CHSET  modifies  the command header of a program contained in the 
+    file CALC.CMD.  
+
+    Displaying Field Settings
+
+    When  you  enter  a  CHSET  command  with a filespec and no field 
+    settings,  CHSET  displays the settings for the specified file or 
+    files.  For example, if you type
+
+    B>chset erase.cmd
+
+    CHSET responds with the following display:
+
+    B:ERASE   .CMD settings are [8087=OFF,SHARED=OFF,SUSPEND=OFF]
+
+    Modifying  a command header is not a trivial matter.  While CHSET
+    cannot  harm  your  .CMD files, inappropriate use of it can cause 
+    your programs to behave in unpredictable ways.  
+
+    CHSET [HELP]
+
+    If you type "help" in square brackets following the CHSET command
+    keyword  in  a command line, CHSET responds with a display giving 
+    you  a  brief  explanation  of  CHSET  and  a list of examples of 
+    correct  command  line syntax.  You can also type CHSET without a 
+    command tail to summon CHSET's HELP display.  
+
+    ///2EXAMPLES
+    Examples:
+
+    A>chset taxaid.cmd [shared=on,8087=opt,suspend=off]
+
+    The above command modifies the command header of a program called
+    TAXAID so that it can use Concurrent CP/M's facilities for shared
+    code and can either use an 8087 if it is present in the system or
+    emulate an 8087 if it is not present.  The command also turns off
+    the  SUSPEND  field for TAXAID, so that TAXAID can run when it is 
+    in  a  switched-out  virtual  console.  The inclusion of the .CMD 
+    filetype is optional.
+
+    A>chset *
+
+    The above command displays the current settings for every command
+    file  in the current directory.  CHSET does not accept a filespec 
+    of *.* because it accepts only a blank filetype or filetype .CMD.
+
+    B>chset ezesort [8087=on]
+
+    The  above  command  modifies  the  command  header for a program 
+    called EZESORT so that it can use an installed 8087 processor.
+
+    A>chset rectify.cmd
+
+    The  above  command causes CHSET to respond with a display of the
+    current settings of the fields in RECTIFY.CMD's command header.
+
+  ///1cntrlchars
+
+  Control Character                      Function
+
+  CTRL-C    stops executing program  when  entered  at  the  system
+            prompt or after CTRL-S.
+
+  CTRL-E    forces  a  physical  carriage  return  without  sending
+            command to CCP/M.
+
+  CTRL-I   same as the TAB key.
+
+  CTRL-H    delete character to the left of cursor.
+
+  CTRL-J    Line feed.  Same effect as RETURN.
+
+  CTRL-O    Suppresses console output.  Program continues running in
+            the  background.   Press  RETURN to return to the system 
+            prompt.     
+
+  CTRL-M    same as RETURN.
+
+  CTRL-P    echoes console output to the list device.
+
+  CTRL-Q    restarts screen scrolling after a CTRL-S.
+
+  CTRL-R    retypes the characters to the left of the cursor  on  a
+            new line.
+
+  CTRL-S    stops screen scrolling.
+
+  CTRL-U    cancels current command line.
+
+  CTRL-X    deletes all characters to the left of the cursor.
+
+  CTRL-Z    string separator for PIP and ED; terminates console input
+            when console is used as a source device with PIP.
+
+    ///1COMMANDS
+
+    Concurrent CP/M command line syntax:
+
+    A> <command> {command tail} <RETURN>
+
+    Concurrent CP/M  accepts the command lines you type following the
+    system prompt.  The command keyword identifies the system command 
+    or program to be executed.  The optional command tail can consist  
+    of  a  filespec or various command parameters, depending upon the 
+    specific command.  To  complete  the command, press the RETURN or 
+    ENTER key.  File  specifications in command lines are composed of 
+    the following parts:
+
+    {d:}filename{.typ}{;password}
+
+    d:              is an optional drive specifier
+    filename        is the 1- to 8-character file name
+    .typ            is an optional file type
+    ;password       is an optional 1- to 8-character password
+
+  ///1conventions
+
+               COMMAND CONVENTIONS
+
+  The following special symbols define command syntax.
+
+  {}   surrounds an optional item.
+  |    separates alternative items in a command line.
+  <cr> indicates a carriage return.
+  ^    indicates the Control Key.
+  n    substitute a number for n.
+  s    substitute a string (group) of characters for s.
+  o    substitute an option or option list for o.
+  []   type square brackets to enclose an option list.
+  ()   type parens to enclose a range of options within an option list.
+  RW   Read-Write attribute - opposite of RO
+  RO   Read-Only attribute - opposite of RW
+  SYS  System attribute - opposite of DIR
+  DIR  Directory attribute - opposite of SYS
+   ... preceding element can be repeated as many times as desired.
+  *    wildcard: replaces all or part of a filename and/or filetype.
+  ?    wildcard: replaces any single character
+       in the same position of a filename and/or filetype.
+
+    ///1DATE
+    Syntax:
+
+    DATE
+    DATE CONTINUOUS
+    DATE date/time-specification
+    DATE SET
+
+    Explanation:
+
+    The DATE  utility  allows  you  to set  the system  clock  to the
+    correct date and time. It also allows you to display the date and
+    time on the current virtual console.
+
+    The date is  represented in  conventional  month-day-year  format
+    MM/DD/YY  while the  time is represented in 24-hour clock format:
+    00:00:00  to  11:59:59  indicates  AM,  and  12:00:00 to 23:59:59
+    indicates PM.
+
+    ///2EXAMPLES
+    Examples:
+  
+    A>DATE
+
+    Displays the current date and time.
+
+    A>DATE C
+
+    Displays the date and time continuously.
+
+    A>DATE 11/28/83 10:35:45
+
+    Sets the date and time as specified.
+
+    A>DATE SET
+
+    Prompts you for date and time entries.
+
+    ///1DDT86
+    Syntax:
+
+    DDT86 {filespec}
+
+    Explanation:
+
+    DDT86  aids debugging of 8086 and 8088 programs.  DDT86 assumes a
+    default  filetype  of  CMD.   If  a  file  specification  is  not
+    included,  DDT86  is  loaded  into  User  Memory  without  a test
+    program. The test program is then loaded using the E command.  If
+    the  optional file specification is included in the command, both
+    DDT86 and the test program file specified by filespec are  loaded
+    into  memory. DDT86  does  not support passwords.  To exit DDT86,
+    press CTRL-C.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>DDT86
+    A>DDT86 PROGRAM1
+    A>DDT86 PROGRAM2.CMD
+    A>DDT86 B:PROGRAM3.CMD
+
+    DDT86 Command Examples:
+
+    -D
+    -L1008:0,4F
+    -SW23a
+    -DW50:0
+    -F100,200,FF
+    -A10C
+    -Rprog.h86
+
+    ///2COMMANDS
+    DDT86 Command Summary:
+
+    The command character can be followed by one or  more  arguments.
+    Separate  arguments  from  one  another  by  commas or spaces; no
+    spaces are allowed between the command character  and  the  first
+    argument.
+
+    As             (Assemble)      Enter Assembly Language Statements
+    Bs,f,s1        (Block Compare) Compare Blocks of Memory
+    D{W}{s{,f}}    (Display)       Display Memory in Hexadecimal and ASCII
+    Efilespec      (Execution)     Load Program for Execution
+    Fs,f,bc        (Fill)          Fill Memory Block with a byte constant
+    FWs,f,wc       (Fill Word)     Fill Memory Block with a word constant
+    G{s}{,b1{,b2}} (Go)            Begin Execution with optional breakpoints
+    Hwc1,wc2       (Hex)           Hexadecimal Sum and Difference
+    Icommand tail  (Input)         Set Up Input Command Line
+    L{s{,f}}       (List)          List Memory in Mnemonic Form
+    Ms,f,d         (Move)          Move Memory Block
+    QI{W}n                         Read From I/O Port
+    QO{W}n,v                       Write To I/O Port
+    Rfilespec      (Read)          Read Disk File into Memory
+    S{W}s          (Set)           Set Memory Values
+    SRs,f,<string>                 Search For String
+    T{n}           (Trace)         Trace Program Execution
+    TS{n}          (Trace)         Trace and Show All Registers
+    U{n}           (Untrace)       Monitor execution without Trace
+    US{n}          (Untrace)       Monitor and Show all Registers
+    V              (Verify)        Show Memory Layout after Disk Read
+    Wfilespec      (Write)         Write Content of Block to Disk
+    X{r}           (Examine)       Examine and Modify CPU Registers
+
+
+    DDT-86 Command Parameters
+    -------------------------
+    Parameter   Replace With
+
+    bc          byte constant
+    b1          breakpoint one
+    b2          breakpoint two
+    d           destination for data
+    f           final address
+    n           number of instructions
+                to execute
+    r           register or flag name
+    s           starting address
+    W           word 16-bit
+    wc          word constant
+
+    ///1DIR
+    Syntax:
+
+    DIR
+    DIR d:
+    DIR [Gn]
+    DIR [S]
+    DIR filespec
+    DIR filespec [Gn]
+    DIR filespec [S]
+
+    Explanation:
+
+    Displays the names of non-system (DIR) files in the directory  of
+    an  on-line  diskette.     Use DIR [S] to  display  the  names of
+    SYStem files (files that have the SYS attribute set). Use DIR [Gn]
+    to display non-system files in User n.    
+
+    ///2EXAMPLES
+    Examples:
+
+    A>DIR
+    A>DIR B:
+    A>DIR C:MYFILE.DAT
+    A>DIR *.CMD
+    A>DIR A*.A86
+    A>DIR PROG???.H86
+    A>DIR PROGRAM.*
+    A>DIR [S]
+    A>DIR B:UTILITY.CMD [S] 
+
+    ///1DYNAMIC
+    You can switch the current (foreground) virtual console into  the
+    background  by selecting a different virtual console for display.
+    If the switched-out virtual console is in  dynamic mode, you will
+    not  see  any  program  output that may  have  scrolled  off that
+    console while you were switched away.
+
+    If the console is  in  buffered mode, this  data  is  stored in a
+    temporary disk file and displayed when you switch back.
+
+    Use the  VCMODE  command  to switch  a  console  from  dynamic to
+    buffered mode if you anticipate  a  program  outputting more than
+    one screen of data, and you do not wish to miss it.
+
+    ///1ED
+    Syntax:
+
+    ED input-filespec {d:|output-filespec}
+
+    Explanation:
+
+    ED is the Concurrent CP/M  character file editor.  You can rename
+    or redirect the  new  version  of  the  file  by  specifying  the 
+    destination drive or destination filespec.
+
+    Section 10  of the  Concurrent  CP/M  User's  Reference  Guide is 
+    devoted to ED.
+
+    ///2COMMANDS
+    ED Command Summary:
+
+    Note: CP points to the current character in the edit buffer.
+
+    nA            append n lines from original file to memory buffer.
+    0A            append file until buffer is one-half full
+    #A            append file until buffer is full (or end of file)
+    B, -B         move CP to the beginning (B) or bottom (-B) of buffer
+    nC, -nC       move CP n characters forward (C) or back (-C) through buffer
+    nD, -nD       delete n characters before (-D) or from (D) the CP
+    E             save new file and return to Concurrent CP/M
+    Fstring^Z     find character string
+    H             save new file, re-edit using new file as the original file
+    I<RETURN>     enter insert mode
+    Istring^Z     insert string at CP
+    Jsearch_str^Zins_str^Zdel_to_str     juxtapose strings
+    nK, -nK       delete (kill) n lines from the CP
+    nL, -nL       move CP n lines
+    nMcommand     execute command n times
+    n, -n         move CP n lines and display that line
+    n:            move to line n
+    :ncommand     execute command through line n
+    Nstring       extended find string
+    O             return to original file
+    nP, -nP       move CP n lines forward and display n lines at console
+    Q             abandon new file, return to Concurrent CP/M
+    R             read X$$$$$$$.LIB file into buffer
+    Rfilespec^Z   read filespec into buffer
+    Sdelete string^Zinsert string^Z     substitute string
+    nT, -nT       type n lines
+    U, -U         upper-case translation
+    V, -V         line numbering on/off
+    0V            display free buffer space
+    nW            write n lines to new file
+    0W            write until buffer is half empty
+    nX            write or append n lines to X$$$$$$$.LIB
+    nXfilespec^Z  write n lines to filespec or append if previous X
+                  command applied to the same file
+    0X            delete file X$$$$$$$.LIB
+    0Xfilespec^Z  delete filespec
+    nZ            wait n seconds
+
+    ///2EXAMPLES
+    Examples:
+
+    A>ED TEST.DAT
+    A>ED TEST.DAT B:
+    A>ED TEST.DAT TEST2.DAT
+    A>ED TEST.DAT B:TEST2.DAT
+
+    Command Examples:
+
+    :#a
+    :p
+    :4c0tt
+    :e
+    :5K
+    :B5T
+    :Rmyfile.txt
+
+    ///1ERA
+    Syntax:
+
+    ERA filespec
+
+    Explanation:
+
+    ERA erases a file or group of files.  ERA accepts ambiguous  file
+    specifications.  The ERAQ command works like ERA, but prompts you
+    before performing the erasure.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>ERA DRAFT.BAK
+    A>ERA B:LETTER.DAT
+    A>ERA C:LETTER.*
+    A>ERA D:*.BAK
+    A>ERA B:*.*
+
+    ///1ERAQ
+    Syntax:
+
+    ERAQ filespec
+    ERAQ filespec [XFCB]
+
+    Explanation:
+
+    ERAQ erases a file or group of files, prompting you  before  each
+    deletion.  ERAQ accepts ambiguous filenames.    The [XFCB] option
+    erases only the extra directory information for passwords.
+
+    The ERA command works as ERAQ  does,  but  does  not  prompt  you
+    before performing the erasure.
+
+    ///2EXAMPLES
+    Examples:
+
+    1A>ERAQ B:*.CMD
+
+    B:ABORT      CMD ?y
+    B:FUNCTION   CMD ?n
+    B:SDIR       CMD ?y
+    B:PIP        CMD ?y
+    1A>
+
+    In the example, the user instructs ERAQ to delete all  the  files
+    except C:FUNCTION.CMD.
+
+    2B>ERAQ myfile.dat [XFCB]
+
+    The command line above erases only the password information for the 
+    file myfile.dat.  First use SET to turn off password protection. 
+
+    ///1FILESPEC
+    Concurrent CP/M  identifies   every  file   by  its  unique  file
+    specification.  The  term  "filespec" is an abbreviation for file
+    specification. A filespec can have four parts:
+
+                      d:filename.typ;password
+
+    d:         represents the optional drive specification, which can
+               range from A through P, followed by a colon.
+
+    filename   represents the required filename, which can be 1 to  8
+               alphabetic or numeric characters.
+
+    .typ       represents the optional filetype,  which can be 1 to 3
+               alphabetic or numeric characters preceded by a period.
+
+    ;password  represents the optional password,  which can be 1 to 8
+               alphabetic  or  numeric  characters,   preceded  by  a 
+               semicolon.
+
+    Valid combinations of the elements of a  file  specification  are
+    shown below:
+
+      filename
+      d:filename
+      filename.typ
+      d:filename.typ
+      filename;password
+      d:filename;password
+      filename.typ;password
+      d:filename.typ;password
+
+    Certain Concurrent CP/M commands select and process several files   
+    if  "wildcard" characters appear  in  the  filename  or filetype. 
+    The two wildcard characters are  ?, which matches a single letter  
+    in the same  position, and *, which matches any character at that 
+    position  and  any  other characters remaining in the filename or 
+    filetype.
+
+    ///1gencmd
+    Syntax:
+
+    GENCMD filespec {options}
+
+    Purpose:
+
+    Converts hexadecimal object file (filetype  assumed  to  be .H86)
+    into  executable  file  (of  type .CMD). Switches controlling the
+    type of memory model and group addresses can  be  included.   All
+    values are hexadecimal and are paragraph values.
+
+    ///2Examples
+    Examples:
+
+        A>GENCMD PROG
+        A>GENCMD PROG1 8080
+        A>GENCMD PROG2 DATA[M20]
+        A>GENCMD PROG3 DATA[B4C,M260,XFFF]
+        A>GENCMD PROG4 CODE[A40] DATA[M30]
+
+    ///2options
+    Syntax:
+
+    GENCMD filespec  {8080
+                      CODE[An,Bn,Mn,Xn]
+                      DATA[An,Bn,Mn,Xn]
+                     STACK[An,Bn,Mn,Xn]
+                     EXTRA[An,Bn,Mn,Xn]}
+
+       A = Absolute memory location
+       B = Beginning address of group in .H86 file
+       M = Minimum memory required
+       X = Maximum memory required
+
+    All values represented by n are hexadecimal paragraph addresses.
+
+
+    ///1HELP
+
+  Syntax:
+
+     HELP {topic} {subtopic1 ... subtopic8} {[NOPAGE|LIST]}
+
+  Explanation:
+
+  HELP  displays  a  list  of  topics   and   provides   summarized
+  information for CCP/M commands.
+
+  HELP topic displays information about that topic.
+  HELP topic subtopic displays information about that subtopic.
+
+  One or two letters is enough to identify the topics.  After  HELP
+  displays   information   for   your  topic,   it   displays   the
+  special  prompt  HELP> on your screen,  followed  by  a  list  of
+  subtopics.
+
+   -  Enter ? to display list of main topics.
+   -  Enter a period and subtopic name to access subtopics.
+   -  Enter a period to redisplay what you just read.
+   -  Press the RETURN key to return to the CCP/M  system prompt.
+   -  [NOPAGE] doesn't stop at 24 lines; console display keeps scrolling.
+   -  [LIST] removes extra lines between headings; use with CTRL-P to print.
+   -  Press any key to exit a display and return to the HELP> prompt.
+
+  Examples:
+
+       A>HELP
+       A>HELP DATE
+       A>HELP DIR
+       A>HELP>.EXAMPLES
+       A>HELP DIR EXAMPLES
+       HELP>SET
+       HELP>.PASSWORD
+       HELP>SET PASSWORD
+       HELP>.
+       HELP><cr>
+
+    ///1INITDIR
+    Syntax:
+
+    INITDIR d:
+
+    Explanation:
+
+    INITDIR  initializes   a   directory  to   allow  time  and  date
+    stamping on a diskette or hard disk.  Attempting to  enable  time  
+    and date stamping on a directory that has not been reformatted by  
+    INITDIR  will  result in an error message.  INITDIR only works on 
+    disks that have already been formatted according to your computer
+    manufacturer's instructions.
+    
+    ///2EXAMPLE
+    Example:
+
+    A>INITDIR C:
+
+    INITDIR WILL ACTIVATE TIME STAMPS FOR SPECIFIED DRIVE
+    Do you want to re-format the directory on drive: C (Y/N)?
+
+    Answer with a "Y" to continue.  If the specified disk was already
+    formatted for time and date stamps, INITDIR displays the message:
+
+    Directory already re-formatted
+    Do you want to recover time/date space (Y/N)?
+
+    If your directory  is  full and  you previously  enabled time and
+    date stamps, you can use INITDIR to free up the  directory space.
+    If INITDIR  finds  time and  date  stamps  in  the  directory, it
+    displays the following message:
+
+    Do you want the existing time and date stamps cleared (Y/N)?
+
+    ///1PIP (copy)
+
+  Syntax:
+
+              DESTINATION              SOURCE
+
+    PIP d:{Gn} | filespec{[Gn]} = filespec{[o]},... | d:{[o]}
+
+  Explanation:
+
+  The file copy program  PIP  copies  files,  combines  files,  and
+  transfers  files  between  disks,  printers,  consoles,  or other
+  devices attached to your computer.  The  first  filespec  is  the
+  destination. The  second filespec is the source.  Use two or more
+  source filespecs separated by commas to combine two or more files
+  into  one file.  [o] is any combination of the available options.
+  The [Gn] option in the destination filespec  tells  PIP  to  copy
+  your file to that user number.
+
+  PIP with no command tail displays an *  prompt  and  awaits  your
+  series  of  commands,  entered  and processed one line at a time.
+  The source or destination can be any CCP/M  logical device.
+
+  ///2Examples
+
+  COPY A FILE FROM ONE DISK TO ANOTHER
+
+       A>PIP b:=a:draft.txt
+       A>PIP b:draft.txt = a:
+
+       B3>PIP myfile.dat=A:[G9]
+       A9>PIP B:[G3]=myfile.dat
+
+  COPY A FILE AND RENAME IT
+
+       A5>PIP newdraft.txt=oldraft.txt
+       C8>PIP b:newdraft.txt=a:oldraft.txt
+
+  COPY MULTIPLE FILES
+
+       A>PIP b:=draft.*
+       A>PIP b:=*.*
+       B>PIP b:=c:.*.*
+       C>PIP b:=*.txt[g5]
+       C>PIP a:=*.cmd[wr]
+       B>PIP a:[g3]=c:*.*
+
+  COMBINE MULTIPLE FILES
+
+       A>PIP b:new.dat=file1.dat,file2.dat
+
+  COPY, RENAME AND PLACE IN USER 1
+
+       A>pip newdraft.txt[g1]=oldraft.txt
+
+  COPY, RENAME AND GET FROM USER 1
+
+       A>PIP newdraft.txt=oldraft.txt[g1]
+
+  COPY TO/FROM LOGICAL DEVICES
+
+       A>PIP b:funfile.sue=con:
+       A>PIP lst:=con:
+       A>PIP lst:=b:draft.txt[t8]
+       A>PIP prn:=b:draft.txt
+
+  ///2options
+
+  PIP OPTIONS
+
+  A    Archive. Copy only files that have been  changed  since  the
+        last copy.
+  C    Confirm. PIP prompts for confirmation before each file copy.
+  Dn   Delete any characters past column n.
+  E    Echo transfer to console.
+  F    Filter form-feeds from source data.
+  Gn   Get from or go to user n.
+  H    Test for valid Hex format.
+  I    Ignore :00 Hex data records and test for valid Hex format.
+  K    Kill display of filespecs on console.
+  L    Translate upper case to lower case.
+  N    Number output lines
+  O    Object file transfer, ^Z ignored.
+  Pn   Set page length to n.  (default n=60)
+  Qs^Z Quit copying from source at string s.
+  R    Read files that have been set to SYStem.
+  Ss^Z Start copying from the source at the string s.
+  Tn   Expand tabs to n spaces.
+  U    Translate lower case to upper case.
+  V    Verify that data has been written correctly.
+  W    Write over Read Only files without console query.
+  Z    Zero the parity bit.
+
+  All  options  except  C,G,K,O,R,V  and  W  force  an  ASCII  file
+  transfer, character by character, terminated by a ^Z.
+
+    ///1PRINT
+    Syntax:
+   
+    PRINT filename{[options]}{,filename{[options],...}
+
+    Explanation:
+
+    The  PRINT  utility  allows  you to send the files you enter on a 
+    PRINT command line to the printer.
+
+    You must enter at least one filespec on a PRINT command line. You
+    can enter as many filespecs as will fit on Concurrent CP/M's 128-
+    character  command  line.   PRINT  allows  you  to  use  wildcard 
+    filespecs.   On a PRINT command line, separate filespecs with one 
+    space or a comma.
+
+    PRINT Options
+
+    o S (SYSTEM) - The S option  allows you to  print a file that has 
+      the SYS attribute.
+
+    o Tn (TAB) - n is  a  number  of character spaces.   The T option
+      allows you to expand or compress tab characters. PRINT replaces 
+      each  tab in a file  with  enough  spaces  to position the next 
+      character in a column that is divisible by n.   PRINT's default 
+      setting for tab expansion is eight spaces.
+
+    o Gn (GET FROM) - n is a user number.  The G option allows you to 
+      print a file that is not in the current user number.
+
+    Enter options in square brackets following the filespec for which
+    you want to exercise the option.  
+
+    ///2EXAMPLES
+    Examples:
+
+    To print more than one copy of a file, repeat the file's filespec 
+    on the PRINT command line for each additional copy that you want.
+    
+    4B>print murphy.txt[g3],murphy.txt[g3],murphy.txt[g3]
+
+    This example prints three copies of the file MURPHY.TXT in user 3 
+    of drive B.
+
+    2B>print *.txt,example.ltr[g0],a:backup.sub[g0s]
+
+    In the above example,  PRINT  prints all the files in the current 
+    directory with a filetype of TXT, the file EXAMPLE.LTR in user 0, 
+    and the SUBMIT file  BACKUP.SUB,  which has the SYS attribute and 
+    is stored in user 0 of drive A.
+
+    10A>print abacus.del[g3],*.vrf[t10] angst.sub[sg0] milton.dun
+
+    The above  command causes  PRINT to print the file  ABACUS.DEL in 
+    user 3,  and all files  with a  filetype  of  VRF in  the current 
+    directory.   PRINT  expands the tabs in these files to 10 spaces.  
+    PRINT then continues with  ANGST.SUB,  a SUBMIT file with the SYS 
+    attribute in user 0, and finishes with the file MILTON.DUN.  Note 
+    that commas or spaces are acceptable in separating files.
+
+    B>print *.*
+
+    The above command causes PRINT to print all of the files with the 
+    DIR attribute in user 0 of drive B.
+
+    ///1PRINTER
+    Syntax:
+
+    PRINTER {n}
+
+    Explanation:
+
+    PRINTER displays or selects the printer device  attached  to  the
+    current  virtual  console. Several  consoles  can  share the same
+    printer, but only one process can use a given printer at a  time.
+    When  you  enter the PRINTER command without a number, the system
+    returns the number of the printer assigned to the current virtual
+    console. To  select a printer, enter the PRINTER command followed
+    by the  printer  number  to  be  attached.  Note:  Refer  to  the
+    instruction  manual  supplied  by  your  hardware manufacturer to
+    determine how many printers your system supports.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>PRINTER            ; displays the current printer number
+    Printer Number = 1
+
+    A>PRINTER 3          ; sets the current printer number
+    Printer Number = 3
+
+    ///1REN
+    Syntax:
+
+    REN {d:}newname{.typ}=oldname{.typ}
+
+    Explanation:
+
+    REN changes the name of the existing file (specified by  oldname)
+    to  a  new  name  (specified  by newname). You cannot specify two
+    different drives.  If  the  file  specified by newname is already
+    present in  the directory,  REN displays the following message on
+    the screen:
+
+    Not renamed: filename.ext already exists, delete (Y/N)?
+
+    ///2EXAMPLES
+    Examples:
+
+    A>REN NEWFILE.DAT=OLDFILE.DAT
+    A>REN B:NEWFILE.DAT=OLDFILE.DAT
+    A>REN B:NEWLIST=OLDLIST
+    A>REN NEWFILE.DAT=OLDFILE.DAT
+
+    Not renamed: NEWFILE.DAT already exists, delete (Y/N)? Y
+    NEWFILE.DAT=OLDFILE.DAT
+
+    In the last example, the new filename already  exists.  The  user
+    overrides the error by entering a Y at the prompt.
+
+    ///1SDIR
+    Syntax:
+
+    SDIR {d:}{filespec}{,filespec}{[option]|[option=modifier]}
+
+    The SDIR utility is an enhanced version of the DIR utility.  SDIR
+    can  search  for  files  on any or all drives, in any or all user
+    areas. Only one option list is allowed. The most efficient way to
+    become  familiar with SDIR is to use it. SDIR does not change any
+    information on diskette or in memory, so you can experiment  with
+    it freely.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>SDIR [xfcb] D:*.CMD
+    A>SDIR [nosort,ro] A: B: C:
+    A>SDIR [user=3,exclude] *.CMD
+    A>SDIR [size,rw] D:
+    A>SDIR [user=all,drive=all,sys] *.PLI *.CMD *.A86
+
+    ///2OPTIONS
+    Options:
+
+    [DRIVE=d]     Displays files on the specified drive only.
+    [DRIVE=all]   Displays files on all online drives.
+    [EXCLUDE]     Displays only files that do not match filespec.
+    [FF]          Prints a Form Feed character at the start of each header.
+    [FULL]        The default SDIR option.
+    [LENGTH=n]    Displays a new (Page) header every n lines.
+    [MESSAGE]     Causes SDIR to display where it is searching for files.
+    [NOSORT]      Displays files in the order that they are found on the disk.
+    [RO]          Displays Read-Only files only.
+    [RW]          Displays Read/Write attribute files only.
+    [SIZE]        Displays only file name and size.
+    [SYS]         Displays SYStem attribute files only.
+    [DIR]         Displays DIRectory attribute files only.
+    [USER=n]      Displays files on user n only.
+    [USER=all]    Displays files on all user numbers.
+    [XFCB]        Displays only files with XFCBs or date stamping.
+    [NONXFCB]     Displays only files without XFCBs or date stamping.
+
+///1SET
+
+  Syntax:
+
+          SET [options]
+          SET d: [options]
+          SET filespec [options]
+
+  Explanation:
+
+  SET  initiates  password   protection   and   time  stamping   of
+  files.  It  also  sets  the file and drive attributes Read-Write,
+  Read-Only, DIR and SYS.  It  lets  you  label a disk and password
+  protect  the  label.  To  enable  time  stamping  of  files,  you
+  must  first  run INITDIR to format the disk directory.
+
+  ///2Label
+
+  Syntax:
+
+          SET {d:} [NAME=labelname.typ]
+          SET [PASSWORD=password]
+          SET [PASSWORD=<cr>
+
+
+  Examples:
+
+  A>SET [NAME=DISK100]
+
+       Labels the disk on the default drive as DISK100.
+
+  A>SET [PASSWORD=SECRET]
+
+       Assigns SECRET to the  disk  label.
+
+  A>SET [PASSWORD=<cr>
+
+       Nullifies the existing password.
+
+  ///2Passwords
+
+          SET [PROTECT=ON]
+          SET [PROTECT=OFF]
+          SET filespec [PASSWORD=password]
+          SET filespec [PROTECT=READ]
+          SET filespec [PROTECT=WRITE]
+          SET filespec [PROTECT=DELETE]
+          SET filespec [PROTECT=NONE]
+
+  
+          Password Protection Modes
+
+  Mode                        Protection
+
+  READ           The password  is  required  for  reading,  copying
+                 writing, deleting or renaming the file.
+
+  WRITE          The password is required for writing, deleting  or
+                 renaming  the file.  You do not need a password to
+                 read the file.
+
+  DELETE         The password is  only  required  for  deleting  or
+                 renaming  the file.  You do not need a password to
+                 read or modify the file.
+
+  NONE           No password exists for the file.   If  a  password
+                 password  exists,  this  modifier  can  be used to
+                 delete the password.
+
+  ///2Attributes
+
+     SET filespec [attribute]
+
+  Attribute      Meaning
+
+  RO             sets the file attribute to Read-Only.
+
+  RW             sets the file attribute to Read-Write.
+
+  SYS            sets the file attribute to SYS.
+
+  DIR            sets the file attribute to DIR.
+
+  ARCHIVE=OFF    means  that  the  file  has  not  been  backed  up
+                 (archived).
+
+  ARCHIVE=ON     means that the file has been backed up (archived).
+                 The  Archive  attribute can be turned on by SET or
+                 by PIP when copying a group of files with the  PIP
+                 [A]  option.  SHOW  and  DIR  display  the Archive
+                 option.
+
+  F1=ON|OFF      turns on or off the user-definable file  attribute
+                 F1.
+
+  F2=ON|OFF      turns on or off the user-definable file  attribute
+                 F2.
+
+  F3=ON|OFF      turns on or off the user-definable file  attribute
+                 F3.
+
+  F4=ON|OFF      turns on or off the user-definable file  attribute
+                 F4.
+
+
+  Examples:
+
+  SET [PROTECT=ON]
+
+       Turns on password protection for all the files on the  disk.
+       You  must  turn on password protection before you can assign
+       passwords to files.
+
+  SET [PROTECT=OFF]
+
+       Disables password protection for the files on your disk.
+
+  A>SET MYFILE.TEX [PASSWORD=MYFIL]
+
+       MYFIL is the password assigned to file MYFILE.TEX.
+
+  B>SET *.TEX [PASSWORD=SECRET, PROTECT=WRITE]
+
+       Assigns the password SECRET to all the TEX files on drive B.
+       Each  TEX  file  is  given  a  WRITE protect mode to prevent
+       unauthorized editing.
+
+  A>SET MYFILE.TEX [RO SYS]
+
+       Sets MYFILE.TEX to Read-Only and SYStem.
+
+  ///2Default
+
+  A>SET [DEFAULT=dd]
+
+       Instructs the system to use dd as a password if you  do  not
+       enter a password for a password-protected file.
+
+  ///2Time-Stamps
+
+  Syntax:
+
+          SET [CREATE=ON|OFF]
+          SET [ACCESS=ON|OFF]
+          SET [UPDATE=ON|OFF]
+
+  Explanation:
+
+  The above SET commands allow you to keep a  record  of  the  time
+  and  date  of file creation and update, or of the last access and
+  update of your files.
+
+
+  Option         Meaning
+
+  [CREATE=ON]    turns on CREATE time stamps on  the  disk  in  the
+                 default   or   specified   drive.  To  record  the
+                 creation time of a file, the CREATE option must be
+                 turned on before the file is created.
+
+  [ACCESS=ON]    turns on ACCESS time stamps on  the  disk  in  the
+                 default  or  specified  drive.  ACCESS  and CREATE
+                 options are mutually exclusive; only one can be in
+                 effect  at a time.  If you turn on the ACCESS time
+                 stamp on  a  disk  that   previously   had  CREATE
+                 time     stamp,   the   CREATE   time   stamp   is
+                 automatically turned off.
+
+  [UPDATE=ON]    turns on UPDATE time stamps on  the  disk  in  the
+                 default  or  specified  drive.  UPDATE time stamps
+                 record the time the file was last modified.
+
+
+  Examples:
+
+          A>SET [ACCESS=ON]
+          A>SET [CREATE=ON,UPDATE=ON]
+
+  ///2Drives
+
+  Syntax:
+
+          SET {d:} [RO]
+          SET {d:} [RW]
+
+
+  Example:
+
+  A>SET B: [RO]
+
+       Sets drive B to Read-Only.
+
+    ///1SHOW
+    Syntax:
+
+    SHOW {d:}{option}
+
+    SHOW by itself displays the drive, the Read Only  or  Read  Write
+    mode  for the optionally specified drive, and the remaining space
+    in kilobytes for all logged-in drives in the system.
+
+    Use the SHOW options to  display  drive  characteristics,  active
+    user  numbers,  or the directory label. SHOW HELP displays a list
+    of available options.
+
+    ///2EXAMPLES
+    Examples:
+
+    SHOW
+    SHOW SPACE
+    SHOW DRIVES
+    SHOW USERS
+    SHOW LABEL
+    SHOW HELP
+    SHOW A:SPACE
+    SHOW B:DRIVE
+    SHOW C:USERS
+    SHOW D:LABEL
+
+    ///2OPTIONS
+    Options:
+
+    SHOW SPACE    ; Same as the SHOW display.
+
+    SHOW DRIVES   ; Displays the drive characteristics of logged-in
+                  ; drives on the system, or for a specified drive.
+
+    SHOW USERS    ; Displays the current user number and all user areas
+                  ; on the drive that have files assigned to them.
+
+    SHOW LABEL    ; Returns a display of the optional directory label,
+                  ; if it has been created.
+
+    SHOW HELP     ; Displays a list of the SHOW options.
+
+    SHOW d:       ; SHOW with the optional drive specifier displays
+                  ; information for the specified drive only.
+
+    ///1SUBMIT
+    Syntax:
+
+    SUBMIT filespec (optional parameters)
+
+    Explanation:
+
+    SUBMIT  processes  a  command  file  with  a  filetype   of  .SUB
+    consisting  of  Concurrent  CP/M  commands  given one command per 
+    line.   Any  optional  parameters  (such  as a drive or filespec)  
+    following  the  filespec  in the command line are substituted for
+    their corresponding formal parameters ($1,$2,$3...) in the SUBMIT
+    file.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>SUBMIT START
+    A>SUBMIT B:START
+    A>SUBMIT MAX.SUB data1 data2 data3
+
+    ///1systat
+    Syntax:
+
+    SYSTAT
+    SYSTAT {[option]}
+    SYSTAT {[option {C} {n}]}
+
+    Purpose:
+
+    The  SYSTAT  utility shows the internal state of Concurrent CP/M-
+    86.  It is useful for  program  and  system  development.  SYSTAT
+    displays  memory  allocation,  current  processes,  system  queue
+    activity,  and  many  parameters  associated  with  system   data
+    structures. SYSTAT  can  present  either  a  static  picture or a
+    continuous, real-time display of these system parameters.
+
+    ///2examples
+    Examples:
+
+          A>SYSTAT 
+
+    This command invokes  the  menu-driven  feature  of  SYSTAT.  The
+    utility responds by displaying the following menu:
+
+          Which Option ?
+
+             H(elp)
+             M(emory)
+             O(verview)
+             P(rocesses - All)
+             Q(ueues)
+             U(ser Processes)
+             C(onsoles)
+             E(xit)
+
+          ->_
+
+
+    Typing the appropriate letter in response to the menu obtains the
+    associated  display. To  use SYSTAT without the menu, specify the
+    menu option letter in the command, like this:
+
+          A>SYSTAT [O] 	       ; this command displays a snapshot
+                               ; overview of the system.
+          A>SYSTAT [M C]       ; this command displays a continuous
+                               ; picture of memory allocation.
+          A>SYSTAT [U C 5]     ; this command displays snapshots
+                               ; of the user processes every 5 seconds.
+
+    ///2options
+    [H]     Displays help for SYSTAT command.
+
+    [M]     Displays all memory potentially available to  users,  but
+            does  not  display restricted memory.  The partitions are
+            listed in memory-address order.
+
+    [O]     Displays an overview of the system generation parameters.
+
+    [P]     Displays all system processes and resources they use.
+
+    [Q]     Displays  all  queues  and  their  readers,  writers  and
+            owners.
+
+    [U]     Displays only user-initiated processes (similar to  [P]).
+
+    [C]     Displays physical console number, virtual console number,
+            the name of the process attached to the console, whether
+            it is a  foreground  background console, and whether the
+            console is in dynamic or buffered mode.
+
+    [E]     Returns you to the system prompt level from the menu.
+
+    [option C n]
+            Following  an  option  with a space  and a  C activates a          
+            continuous display, until you press a key.  Following the
+            C with a space and a one  or two-digit  number causes the 
+            display to update every n seconds.
+
+    ///1TYPE
+    Syntax:
+
+    TYPE filespec
+
+    Explanation:
+
+    TYPE displays  contents  of  an  ASCII (text) file on the screen.
+    Press any key to discontinue the display.  TYPE does  not  accept
+    wildcard  filespecs.  Entering  a  ^P  prior  to the type command
+    causes the output to be echoed to the printer until another ^P is
+    entered.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>TYPE letter.dat
+    B>TYPE a:document.law
+    C>TYPE program.bas
+    D>TYPE program.a86
+
+    ///1USER
+    Syntax:
+
+    USER {number 0 - 15}
+
+    Explanation:
+
+    USER displays and changes the current user number.  USER with  no
+    command  tail  displays  the  current  user  number.  USER with a
+    number from 0 to 15 changes the current user number to the number
+    specified  by n.  CP/M assumes a default user number of 0.  Files
+    set to SYStem on USER 0 are available to all USER areas as  Read-
+    Only.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>USER
+    B>USER 0
+    A>USER 15
+    A>USER 7
+
+    ///1VCMODE
+    Syntax:
+
+    VCMODE {option}
+
+    VCMODE specifies background operating modes for the four  virtual
+    consoles. When  a virtual console is switched-out, it operates in
+    either the dynamic mode or the buffered mode. See the  HELP  file
+    explanations under BUFFERED  and DYNAMIC  for more information.
+
+    ///2EXAMPLES
+    Examples:
+
+    A>VCMODE
+    A>VCMODE dynamic
+    A>VCMODE buffered
+    A>VCMODE size=5
+
+    ///2OPTIONS
+    Options:
+
+    DYNAMIC  switches the console to dynamic mode. If a console is in
+             dynamic mode and you  switch to a different console, you
+             will not see any data that  may have scrolled  off  it's
+             screen while you were switched away.
+
+    BUFFERED If a console is in buffered mode and switched out,  data
+             output from a running program goes into a buffer file on
+             disk.  Thus screen output is preserved.
+
+
+
