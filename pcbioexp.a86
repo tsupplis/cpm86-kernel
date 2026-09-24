@@ -80,12 +80,13 @@ UNDSKSEG	RW	1		; INT E6h segment
 
 ;----------------------------------------
 ; ROM BIOS data area — symbol alias into segment 0040h
-; BIOSHDW resolves at runtime as ES:BIOSHDW with ES=0040h.
-; (See the DSEG 40H directive and the code in SETCURCRT that
-;  loads AX,0040h into ES before accessing BIOSHDW.)
+; BIOSHDW resolves at runtime as ES:BIOSHDW, with ES loaded explicitly from
+; AX=0040h by SETCURCRT; only the offset declared below is ever used.
+; Must stay a bare DSEG. DSEG 40H emits an absolute segment record that gencmd
+; turns into a second CMD group descriptor (A-base 0040h at header offset 0Ch).
 ;----------------------------------------
 
-		DSEG	40H		; address segment 0040h (ROM BIOS data area)
+		DSEG			; segment supplied at runtime in ES (0040h)
 
 		ORG	10H		; offset 0010h = equipment byte
 BIOSHDW		RB	1		; ROM BIOS equipment byte (bit 5-4 = video mode)
