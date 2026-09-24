@@ -1,0 +1,4 @@
+134 001 $
+13a $$$     SUB
+9f0  copyright(c) 1977, digital research 
+a17 $Error On Line $SUBNo 'SUB' File Present$Disk Write Error$Command Buffer Overflow$Command Too Long$Parameter Error$Invalid Control Character$Directory Full$Cannot Close, Read/Only?$

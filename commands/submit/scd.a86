@@ -1,0 +1,104 @@
+name scdsub
+;
+;	CP/M-86 1.1 interface for PLM-86 with separate code and data
+;	Code org'd at 0
+;
+;	Reconstructed from base/submit.cmd.  Unlike the stock scd1 interface
+;	this module does not fall into a plain system reset on return from
+;	plm: SUBMIT has to hand control back to the CCP with the submit-mode
+;	flag set, so the CCP knows a $$$.SUB is now pending.
+
+dgroup	group	dats,stack
+cgroup	group	code
+
+assume	cs:cgroup, ds:dgroup, ss:dgroup
+
+stack	segment	word stack 'STACK'
+stack_base	label byte
+stack	ends
+
+dats	segment	para public 'DATA'	;CP/M page 0 - LOC86'd at 0H
+
+	org	5ch
+sfcb	db	33 dup (?)
+	org	80h
+buff	db	128 dup (?)
+disk	db	?
+
+	public	sfcb,buff
+
+dats	ends
+
+mdsube	equ	0805h		; CCP submit-mode flag, CCP DSEG 0800h + 5
+
+code	segment	public	'CODE'
+	public	reset,xdos,mon1,mon2,mon3,mon4
+	extrn	plm:near
+
+	org	0h		; for separate code and data
+	mov	cs:word ptr savess,ss
+	mov	cs:savesp,sp
+	mov	bx,ds
+	pushf
+	pop	ax
+	cli
+	mov	ss,bx
+	lea	sp,stack_base
+	push	ax
+	popf
+	call	plm
+
+; error handling re-enters here via a PL/M "go to reset"; SP is irrelevant
+; because the exit path reloads SS:SP from the words saved above.
+reset:
+	mov	cl,25		; return current disk
+	call	bdos
+	mov	disk,al
+	mov	dl,0ffh
+	nop
+	mov	cl,32		; get user number
+	call	bdos
+	mov	cl,4
+	shl	ax,cl
+	or	al,disk		; user<<4 or disk, for SUBFCB at 0806h
+	mov	cl,al		; ...computed but never stored, as shipped
+	pushf
+	pop	ax
+	cli
+	mov	ss,cs:word ptr savess
+	mov	sp,cs:savesp
+	push	ax
+	popf
+	mov	es,cs:word ptr savess
+	mov	es:byte ptr mdsube,0ffh
+	mov	dl,0
+	mov	cl,0
+	int	224
+	nop
+	nop
+	nop
+	nop
+	nop
+savesp	dw	?
+savess	dw	?
+
+bdos:	int	224
+	ret
+
+xdos	proc
+	push	bp
+	mov	bp,sp
+	mov	dx,[bp+4]
+	mov	cx,[bp+6]
+	int	224
+	pop	bp
+	ret	4
+xdos	endp
+
+mon1	equ	xdos		; no returned value
+mon2	equ	xdos		; returns byte in AL
+mon3	equ	xdos		; returns address or word BX
+mon4	equ	xdos		; returns pointer in BX and ES
+
+code	ends
+end
