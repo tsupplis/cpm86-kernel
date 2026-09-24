@@ -22,32 +22,32 @@ distinction is purely an assembler convention for separating code from data.
 
 | Offset | Region | File | Notes |
 |---|---|---|---|
-| `0000h` | CCP image | `ccpnew.a86` | Loaded separately; label `CCP` defined here in `pcbionew.a86` for WBOOT jump |
-| `0000h` | TOP | `ccpnew.a86` | Jump table: `CCPCLD` / `CCPABE` / `CCPHOT` |
-| `0009h` | CMBUFF | `ccpnew.a86` | 127-byte command input buffer |
-| `~0050h` | CCP code body | `ccpnew.a86` | Parser, built-in commands |
-| `0800h` | CCP data (DSEG) | `ccpnew.a86` | Variables, FCBs, stack, tables |
-| `00DAh` | CCP helper | `ccpnew.a86` | `SUBMITSELDRV`, falls through to `SELDRV` |
-| `051Fh` | CCP inline code | `ccpnew.a86` | `DIRPAT` (TS patch), falls through to `DIROUP` |
-| `09C0h` | CCP patch area | `ccpnew.a86` | Reserved for future patches |
-| `0A00h` | BDOS patch area | `bdosnew.a86` | `PATCH13`, packed `MLOADQ`/`MLOADK`, `BDOSBC`, `PATCH15` (`0A00h`–`0A7Fh`) |
-| `0A80h` | IXMAIN | `bdosnew.a86` | BDOS function dispatch table |
-| `0B00h` | BDOS image | `bdosnew.a86` | User ID bytes + official BDOS entry |
-| `0B06h` | BDOSEN | `bdosnew.a86` | Interrupt handler / BDOS dispatcher |
-| `~0B20h` | BDOS code body | `bdosnew.a86` | All 60 BDOS functions |
-| `2200h` | BDOS data (DSEG) | `bdosnew.a86` | Variables, buffers, system stack |
-| `24FFh` | End of BDOS | `bdosnew.a86` | — |
-| `2500h` | BIOS jump vector | `pcbionew.a86` | 20 × JMP + config data + copyright |
-| `~2560h` | BIOS code body | `pcbionew.a86` | Char I/O, disk I/O, interrupts |
-| `????h` | BIOS data (DSEG) | `pcbionew.a86` | I/O vectors, drive tables, DPHs, disk parameters, stacks, buffers (`data_offset`) |
-| `????h` | INIT / once-only | `pcbionew.a86` | Cold-start code + data overlaid on the disk sector buffer; freed after first boot (CSEG + DSEG at DSKBUF) (`DSKBUF` / `data_offst2`) |
-| `4980h` | HDDBUF | `pcbionew.a86` | HDD sector buffer (512 bytes) |
-| `4BE2h` | DIRBUF | `pcbionew.a86` | Directory scratch buffer (128 bytes) |
-| `4C62h` | CSV14+ | `pcbionew.a86` | Allocation vectors, grow upward |
+| `0000h` | CCP image | `ccpexp.a86` | Loaded separately; label `CCP` defined here in `pcbioexp.a86` for WBOOT jump |
+| `0000h` | TOP | `ccpexp.a86` | Jump table: `CCPCLD` / `CCPABE` / `CCPHOT` |
+| `0009h` | CMBUFF | `ccpexp.a86` | 127-byte command input buffer |
+| `~0050h` | CCP code body | `ccpexp.a86` | Parser, built-in commands |
+| `0800h` | CCP data (DSEG) | `ccpexp.a86` | Variables, FCBs, stack, tables |
+| `00DAh` | CCP helper | `ccpexp.a86` | `SUBMITSELDRV`, falls through to `SELDRV` |
+| `051Fh` | CCP inline code | `ccpexp.a86` | `DIRPAT` (TS patch), falls through to `DIROUP` |
+| `09C0h` | CCP patch area | `ccpexp.a86` | Reserved for future patches |
+| `0A00h` | BDOS patch area | `bdosexp.a86` | `PATCH13`, packed `MLOADQ`/`MLOADK`, `BDOSBC`, `PATCH15` (`0A00h`–`0A7Fh`) |
+| `0A80h` | IXMAIN | `bdosexp.a86` | BDOS function dispatch table |
+| `0B00h` | BDOS image | `bdosexp.a86` | User ID bytes + official BDOS entry |
+| `0B06h` | BDOSEN | `bdosexp.a86` | Interrupt handler / BDOS dispatcher |
+| `~0B20h` | BDOS code body | `bdosexp.a86` | All 60 BDOS functions |
+| `2200h` | BDOS data (DSEG) | `bdosexp.a86` | Variables, buffers, system stack |
+| `24FFh` | End of BDOS | `bdosexp.a86` | — |
+| `2500h` | BIOS jump vector | `pcbioexp.a86` | 20 × JMP + config data + copyright |
+| `~2560h` | BIOS code body | `pcbioexp.a86` | Char I/O, disk I/O, interrupts |
+| `????h` | BIOS data (DSEG) | `pcbioexp.a86` | I/O vectors, drive tables, DPHs, disk parameters, stacks, buffers (`data_offset`) |
+| `????h` | INIT / once-only | `pcbioexp.a86` | Cold-start code + data overlaid on the disk sector buffer; freed after first boot (CSEG + DSEG at DSKBUF) (`DSKBUF` / `data_offst2`) |
+| `4980h` | HDDBUF | `pcbioexp.a86` | HDD sector buffer (512 bytes) |
+| `4BE2h` | DIRBUF | `pcbioexp.a86` | Directory scratch buffer (128 bytes) |
+| `4C62h` | CSV14+ | `pcbioexp.a86` | Allocation vectors, grow upward |
 
 ---
 
-## ccpnew.a86 — ORG / segment detail
+## ccpexp.a86 — ORG / segment detail
 
 | ORG value | Segment | First symbol | Description |
 |-----------|---------|--------------|-------------|
@@ -83,7 +83,7 @@ distinction is purely an assembler convention for separating code from data.
 
 ---
 
-## bdosnew.a86 — ORG / segment detail
+## bdosexp.a86 — ORG / segment detail
 
 | ORG value | Segment | First symbol | Description |
 |-----------|---------|--------------|-------------|
@@ -134,7 +134,7 @@ distinction is purely an assembler convention for separating code from data.
 
 ---
 
-## pcbionew.a86 — ORG / segment detail
+## pcbioexp.a86 — ORG / segment detail
 
 ### Interrupt vector table aliases (DSEG 0, segment 0000h)
 
@@ -182,14 +182,14 @@ distinction is purely an assembler convention for separating code from data.
 *All addresses and sizes verified from the `.lst` assembler listing files.*
 *All free holes confirmed unused — no jump targets, data pointers, or references land in any gap.*
 
-### ccpnew.a86 — code and data boundaries
+### ccpexp.a86 — code and data boundaries
 
 | Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
 | CCP code (CSEG) | `0000h` | `07DAh` | `0800h` | 2048 | 2010 | 37 | `07DBh`–`07FFh` | `CMDPTR` DW 0,0 @ `07D7h` |
 | CCP data (DSEG) | `0800h` | `09B9h` | `09C0h` | 448 | 442 | 6 | `09BAh`–`09BFh` | `MODDIR` DB @ `09B9h` |
 
-### bdosnew.a86 — code and data boundaries
+### bdosexp.a86 — code and data boundaries
 
 | Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
@@ -204,11 +204,11 @@ The BDOS patch area begins at `0A00h` and ends before `IXMAIN` at `0A80h`.
 
 | Slot | File | Start | Last byte | Next ORG | Avail (dec) | Used (dec) | Free (dec) | Hole range |
 |------|------|-------|-----------|----------|-------------|------------|------------|------------|
-| `CCP patch area` | ccpnew | `09C0h` | `09FFh` | `0A00h` | 64 | 0 | 64 | `09C0h`–`09FFh` |
-| `PATCH13` | bdosnew | `0A00h` | `0A1Fh` | `0A20h` | 32 | 32 | 0 | — ⚠ full |
-| `MLOADQ + MLOADK + BDOSBC` | bdosnew | `0A20h` | `0A3Fh` | `0A40h` | 32 | 32 | 0 | — |
-| `PATCH15` | bdosnew | `0A40h` | `0A53h` | `0A80h` | 64 | 20 | 44 | `0A54h`–`0A7Fh` |
-| `IXMAIN`+stubs | bdosnew | `0A80h` | `0AF6h` | `0B00h` | 128 | 119 | 9 | `0AF7h`–`0AFFh` |
+| `CCP patch area` | ccpexp | `09C0h` | `09FFh` | `0A00h` | 64 | 0 | 64 | `09C0h`–`09FFh` |
+| `PATCH13` | bdosexp | `0A00h` | `0A1Fh` | `0A20h` | 32 | 32 | 0 | — ⚠ full |
+| `MLOADQ + MLOADK + BDOSBC` | bdosexp | `0A20h` | `0A3Fh` | `0A40h` | 32 | 32 | 0 | — |
+| `PATCH15` | bdosexp | `0A40h` | `0A53h` | `0A80h` | 64 | 20 | 44 | `0A54h`–`0A7Fh` |
+| `IXMAIN`+stubs | bdosexp | `0A80h` | `0AF6h` | `0B00h` | 128 | 119 | 9 | `0AF7h`–`0AFFh` |
 
 Notes:
 - **`SUBMITSELDRV`** is a 3-byte helper at `00DAh` that falls through to `SELDRV` at `00DDh`; its two callers resolve to `00DAh`.
@@ -218,7 +218,7 @@ Notes:
 - **`IXMAIN`** contains 54 DW dispatch entries (`0A80h`–`0AEBh`, 108 bytes) + `MRTVNO` (5 bytes @ `0AECh`) + `MGTSAD` (6 bytes @ `0AF1h`) = 119 bytes used.
 - All free holes verified against both `.lst` files — **no code, data, or references land in any hole.**
 
-### pcbionew.a86 — fixed-address buffer gaps
+### pcbioexp.a86 — fixed-address buffer gaps
 
 | Symbol | Start | End+1 | Next ORG | Gap (dec) | Gap (hex) | Hole range | Notes |
 |--------|-------|-------|----------|-----------|-----------|------------|-------|
