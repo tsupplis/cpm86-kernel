@@ -1,0 +1,49 @@
+# cpmtools disk definitions for this project.
+# cpmtools reads ./diskdefs in preference to the system-wide file and does NOT
+# merge the two, so every format used from the repo root must be listed here.
+
+# IBM CP/M-86 160K single sided (BIOS DPBK1: SPT=32, BSH=3/BLM=7, DSM=155,
+# DRM=63, OFF=1). Single sided, so CP/M track == cylinder == linear image order.
+# setfdprm /dev/fd1 sect=8 dtr=1 hd ssize=512 tpi=48 head=1
+diskdef ibmpc-514ss
+   seclen 512
+   tracks 40
+   sectrk 8
+   blocksize 1024
+   maxdir 64
+   skew 1
+   boottrk 1
+   os 2.2
+   libdsk:format ibm160
+end
+
+# IBM CP/M-86 320K double sided (BIOS DPBK2: SPT=32, BSH=4/BLM=15/EXM=1,
+# DSM=157, DRM=63, OFF=1).
+# NOTE: this describes the CP/M *logical* track order. On a physical disk the
+# BIOS lays side 1 down in reverse cylinder order (pcbios.a86 SETUP_INTREG:
+# track<40 -> cyl=track/head 0; else cyl=79-track/head 1), so a raw CHS image
+# must be run through tools/cpm86twist.py before and after using cpmtools.
+# Replaces the stock ibmpc-514ds, which assumes a linear layout and 156 blocks.
+diskdef cpm86-320
+  seclen 512
+  tracks 80
+  sectrk 8
+  blocksize 2048
+  maxdir 64
+  skew 1
+  boottrk 1
+  os 2.2
+end
+
+# CP/M-86 on 1.44MB floppies
+diskdef cpm86-144feat
+  seclen 512
+  tracks 160
+  sectrk 18
+  blocksize 4096
+  maxdir 256
+  skew 1
+  boottrk 2
+  os 3
+  libdsk:format ibm1440
+end
