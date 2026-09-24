@@ -81,7 +81,7 @@ DECLARE
     ENDFILE LITERALLY '1AH';    /* END OF FILE MARK */
 
 DECLARE COPYRIGHT(*) BYTE DATA (
-        ' (02/07/83) CCP/M-86 PIP VERS 3.1 ');
+        ' (1/8/82) CP/M-86 PIP VERS 1.1 ');
 
 
     /* LITERAL DECLARATIONS */
@@ -1490,13 +1490,13 @@ SCAN: PROCEDURE(FCBA);
         /* GET CURRENT CP/M VERSION */
         IF low(CVERSION) < VERSION THEN
             DO;
-            CALL PRINT(.('REQUIRES CP/M-86 1.1$'));
+            CALL PRINT(.('REQUIRES CP/M-86$'));
             CALL BOOT;
             END;
 
         if multcom then
             do;
-            call printx(.('CP/M-86 PIP VERSION 3.1$'));
+            call printx(.('CP/M-86 PIP VERSION 1.1$'));
             call crlf;
             end;
 
