@@ -82,7 +82,6 @@ Two further BIOSes target the V20 MBC:
 Four sets are produced. The 160K set is the reference layout; the others repack
 the same material to fit the media, except the experimental set which swaps in
 the `commands/` reconstruction.
-
 **160K single sided — 4 disks**
 
 | Image | Contents |
@@ -101,25 +100,40 @@ the `commands/` reconstruction.
 | `cpm86-320-at.img` | Bootable core + assembler tools, AT-compatible clock |
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
 
-**1.44M high density — 1 disk**
+**720K / 1.44M via the "1.44 MB Feature" — 2 disks**
 
 | Image | Contents |
 | --- | --- |
-| `cpm86-1440-at.img` | Everything above, AT-compatible clock (uses 144FEAT2 from Freek Heite) |
+| `cpm86-720-at.img` | Everything above, AT-compatible clock |
+| `cpm86-1440-at.img` | Same content on 1.44M media |
 
-**Experimental — 3 disks**
+Both use Freek Heite's 1.44 MB Feature, rebuilt from source under `extra/`.
+They carry identical content — the whole `base/` command set plus the `dev/`
+toolchain — and are produced by the same Makefile recipe, parameterised only by
+geometry. 720K leaves about 100 of its 355 blocks free.
+
+**Experimental — 4 disks**
 
 | Image | Contents |
 | --- | --- |
 | `cpm86-exp-160-1.img` | Experimental kernel with the `commands/` reconstruction in place of `base/` |
 | `cpm86-exp-160-1-at.img` | Same, AT-compatible clock |
-| `cpm86-exp-1440-at.img` | Experimental kernel plus the full reconstruction and the dev toolchain, AT-compatible clock |
+| `cpm86-exp-720-at.img` | Experimental kernel plus the full reconstruction and the dev toolchain |
+| `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
 The experimental images boot `cpmexp.sys` and carry the rebuilt tools rather
 than the `base/` binaries, so a single boot exercises both halves of the work.
-The 160K pair ships `ed`, `help`, `pip`, `stat`, `submit` and `tod`; the 1.44M
-image adds `asm86`, `ddt86` and `gencmd` for the complete set. `make test-exp`
-runs the `cpm86-exp-160-1-at.img` set under PCE.
+The 160K pair ships `ed`, `help`, `pip`, `stat`, `submit` and `tod`; the feature
+images add `asm86`, `ddt86` and `gencmd` for the complete set.
+
+They also carry their own build of the feature: `cpmexp.sys` moves the CCP and
+BDOS stack switches that the loader patches at boot, so the stock `144BLDR2`
+would fail its byte checks against it. See the `expkrnl` block in
+`extra/144pat2.asm`.
+
+PCE helper scripts exist per variant — `./cpm86`, `./cpm86-320`, `./cpm86-720`,
+`./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make
+test`, `make test-320` and `make test-exp` are shortcuts for the common ones.
 
 Images built from the blank image carry a boot loader terminating with `55AA`,
 which lets qemu load CP/M-86 properly. Beware: formatting with `dskmaint.cmd`
@@ -141,8 +155,23 @@ patched or replaced.
 `tod` is deliberately absent from `base/`: the original is superseded by the
 CP/M-86-native rewrite, so every image takes it from `commands/tod`.
 
-`extra/` holds the 1.44M support utilities. `dev/` holds the Digital Research
-and Microsoft toolchains, as shipped and unmodified:
+`extra/` holds Freek Heite's "1.44 MB Feature", which adds 720K, 1.2M and 1.44M
+diskette support to CP/M-86 1.1. It is built from source by `make -C extra`
+using MASM 5.10 and LINK 5.13 under DOS emulation, replacing the original
+`144make2.bat`:
+
+| Output | Role |
+| --- | --- |
+| `144bldr2.cmd` | Secondary loader; patches the kernel in memory at boot |
+| `144pat2.cmd` | Applies the same patches to an already-running system |
+| `144prep2.cmd` | Prepares a diskette (boot sector + loader appended) |
+| `144patx.cmd` `144prepx.cmd` `144bldrx.cmd` | The `expkrnl` builds, for `cpmexp.sys` |
+
+The rebuilt `144pat2.cmd` is byte-identical to the binary originally shipped
+here, so the toolchain reproduces upstream exactly.
+
+`dev/` holds the Digital Research and Microsoft toolchains, as shipped and
+unmodified:
 
 | Tool | Product | Version | Date | Vendor |
 | --- | --- | --- | --- | --- |
@@ -181,52 +210,41 @@ cpmtools 2.23 with libdsk is used.
 
 cpmtools can be deployed with homebrew on mac of fetched at https://www.moria.de/~michael/cpmtools/.
 
-the definitions used are:
+All four formats live in the `diskdefs` file at the root of this repository.
+cpmtools reads `./diskdefs` in preference to the system-wide file and does
+**not** merge the two, so run the `cpm*` tools from the repo root and expect
+every format used here to be listed there.
 
-```
-# IBM CP/M-86
-# setfdprm /dev/fd1 sect=8 dtr=1 hd ssize=512 tpi=48 head=1
-diskdef ibmpc-514ss
-   seclen 512
-   tracks 40
-   sectrk 8
-   blocksize 1024
-   maxdir 64
-   skew 1
-   boottrk 1
-   os 2.2
-   libdsk:format ibm160
-end
+| Format | Geometry | Block | Dir | Reserved |
+| --- | --- | --- | --- | --- |
+| `ibmpc-514ss` | 40 × 8 × 512 (160K SS) | 1K | 64 | 1 track |
+| `cpm86-320` | 80 × 8 × 512 (320K DS) | 2K | 64 | 1 track |
+| `cpm86-720feat` | 160 × 9 × 512 (720K) | 2K | 256 | 2 tracks |
+| `cpm86-144feat` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
 
-# CP/M 86 on 1.44MB floppies
-diskdef cpm86-144feat
-  seclen 512
-  tracks 160
-  sectrk 18
-  blocksize 4096
-  maxdir 256
-  skew 1
-  boottrk 2
-  os 3
-  libdsk:format ibm1440
-end
+All four use `os 2.2`, matching the kernel's BDOS level. That matters for the
+feature formats: with `os 3`, `mkfs.cpm` writes an `UNLABELED` CP/M Plus disk
+label into the directory, which this BDOS cannot use and which permanently
+occupies a directory slot.
+
+The two feature definitions come straight from the DPBs in
+[extra/144tech.md](extra/144tech.md) — for 720K, SPT=36, BSH=4/BLM=15, DSM=354,
+DRM=255, OFF=2, i.e. 355 blocks of 2K with an 8K directory starting on track 2.
+
+A blank feature diskette is only a boot sector plus an erased directory, so
+`base-720-at.img` is generated rather than checked in:
+
+```sh
+mkfs.cpm -f cpm86-720feat -b <boot-sector> base-720-at.img
 ```
 
-and, for 320K double sided disks, this project's own definition from the
-`diskdefs` file at the root of the repository (see below):
-
-```
-diskdef cpm86-320
-  seclen 512
-  tracks 80
-  sectrk 8
-  blocksize 2048
-  maxdir 64
-  skew 1
-  boottrk 1
-  os 2.2
-end
-```
+`mkfs.cpm` does not size the image, so it has to be pre-allocated to 737280
+bytes of `0xE5` first. The boot sector is `extra/144boot2.bin` with its last
+byte — the media byte, `cpmedia` in `144boot2.asm` — set to 72 for 720K rather
+than 144. Note this omits the DOS FAT camouflage and the `CP/M-86.720`
+space-claiming file that a real `144PREP` run writes; those only stop DOS and
+stock CP/M-86 writing to the disk, and nothing in the boot path reads them.
+Physical media still needs a DOS low-level format before `144PREP`.
 
 ### The 320K format (solved)
 
@@ -264,10 +282,9 @@ prints a perfect directory while every file reads back as garbage.
 The 160K format is unaffected because it is single sided, so the reverse-order
 branch never runs.
 
-The fix is a corrected definition in the `diskdefs` file at the root of this
-repository (cpmtools reads `./diskdefs` before the system-wide one, so run the
-`cpm*` tools from the repo root), plus `tools/cpm86twist.py` to convert between
-physical CHS order and CP/M logical track order:
+The fix is the corrected `cpm86-320` definition described above, plus
+`tools/cpm86twist.py` to convert between physical CHS order and CP/M logical
+track order:
 
 ```
 python3 tools/cpm86twist.py untwist disk.img work.img

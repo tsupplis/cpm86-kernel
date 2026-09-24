@@ -16,7 +16,8 @@ rom
 **/.vscode
 private/**
 **/work.img
-**/cpm*.img
+cpm*.img
+base*-at.img
 **/cpm*.cmd
 commands/**/*.mp?
 commands/**/*.loc

@@ -35,7 +35,9 @@ diskdef cpm86-320
   os 2.2
 end
 
-# CP/M-86 on 1.44MB floppies
+# CP/M-86 on 1.44MB floppies with the "1.44 MB Feature" (Freek Heite).
+# Tracks 0 and 1 are reserved for the boot sector and the DOS/stock-CP/M
+# camouflage, so the directory starts on track 2.
 diskdef cpm86-144feat
   seclen 512
   tracks 160
@@ -44,6 +46,22 @@ diskdef cpm86-144feat
   maxdir 256
   skew 1
   boottrk 2
-  os 3
+  os 2.2
   libdsk:format ibm1440
+end
+
+# Same feature on 720K 3.5" floppies (144tech.md, "DPB for 720 KB":
+# SPT=36, BSH=4/BLM=15, DSM=354, DRM=255, OFF=2).
+# os 2.2 matches the kernel's BDOS level and keeps mkfs.cpm from writing a
+# CP/M Plus disk label into the directory.
+diskdef cpm86-720feat
+  seclen 512
+  tracks 160
+  sectrk 9
+  blocksize 2048
+  maxdir 256
+  skew 1
+  boottrk 2
+  os 2.2
+  libdsk:format ibm720
 end
