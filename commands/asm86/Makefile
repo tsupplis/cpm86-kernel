@@ -13,13 +13,23 @@ TOOLS=asm86.cmd
 
 all: $(TOOLS)
 
-# determine BBB and MMM from asm86.mp2 file
-# BBB = start of const segment / 16
-# MMM = (start of memory segment - start of const segment)/ 16 + 100h
-#          (4K for sysmbol table)
-# gencmd asm86 data[bBBB,mMMM,xfff]
+# BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from asm86.mp2:
+#   BBB = start of const segment / 16
+#   MMM = (start of memory segment - start of const segment) / 16 + symbol table
+# Both segments are paragraph-aligned, so /16 is just dropping the last hex
+# digit.  DRI's note gave 100h (4K) of symbol table; this build has long used
+# 490h (~18K) instead - keep it, 4K is very tight for a macro assembler.
+# Recursively expanded on purpose: asm86.mp2 only exists once asm86.h86 is built.
+ASM86_SYMTAB = 490
+PARA = sub(/H$$/,"",s); sub(/.$$/,"",s); sub(/^0+/,"",s); print tolower(s); exit
+ASM86_BASE = $(shell awk '/CONST +CONST/{s=$$1; $(PARA)}' asm86.mp2)
+ASM86_MEM  = $(shell awk '/MEMORY +MEMORY/{s=$$1; $(PARA)}' asm86.mp2)
+ASM86_MIN  = $(shell printf '%x' $$((0x$(ASM86_MEM)-0x$(ASM86_BASE)+0x$(ASM86_SYMTAB))))
+
 asm86.cmd: asm86.h86
-	$(GENCMD) $< 'data[b490, m7e0, xfff]'
+	@test -n "$(ASM86_BASE)" -a -n "$(ASM86_MEM)" || \
+	  { echo "asm86: cannot derive CONST/MEMORY from asm86.mp2"; exit 1; }
+	$(GENCMD) $< 'data[b$(ASM86_BASE), m$(ASM86_MIN), xfff]'
 	cmdinfo $@
 
 asm86.h86: c86lnk.obj mainp.obj f21.mod f22.mod
