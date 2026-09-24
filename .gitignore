@@ -18,3 +18,10 @@ private/**
 **/work.img
 **/cpm*.img
 **/cpm*.cmd
+commands/**/*.mp?
+commands/**/*.loc
+commands/**/*.abs
+commands/**/*.lnk
+commands/**/*.cmd
+commands/**/*.mod
+commands/**/*.prn

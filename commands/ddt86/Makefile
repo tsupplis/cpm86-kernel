@@ -15,10 +15,15 @@ SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
-#  the value for the minimum code group required comes from the start of
-#  the ??seg as listed in ass86.mp2
+#  Minimum code group gencmd must record, in paragraphs: the start of ??SEG as
+#  listed in ass86.mp2.  Dividing a hex address by 16 is just dropping its last
+#  digit, and ??SEG is paragraph-aligned, so no arithmetic is needed.
+#  Recursively expanded on purpose: ass86.mp2 only exists once ddt86m.h86 is built.
+DDTMIN = $(shell awk '/\?\?SEG/{s=$$1; sub(/H$$/,"",s); sub(/.$$/,"",s); sub(/^0+/,"",s); print tolower(s); exit}' ass86.mp2)
+
 ddt86.cmd: ddt86m.h86
-	$(GENCMD) $< 8080 'code[m379]'
+	@test -n "$(DDTMIN)" || { echo "ddt86: cannot derive ??SEG from ass86.mp2"; exit 1; }
+	$(GENCMD) $< 8080 'code[m$(DDTMIN)]'
 	mv ddt86m.cmd ddt86.cmd
 
 ddt86m.h86: ddt86.h86 dis86.h86 ass86.h86
@@ -40,7 +45,7 @@ ass86.h86: ass86.abs
 
 ass86.abs: asslnk86.obj asmtab.obj ass86.obj dis86.abs
 	$(INTEL_LINK86) asslnk86.obj, asmtab.obj, ass86.obj, 'po(dis86.abs)' \
-        to $(basename $@).lnk$@
+        to $(basename $@).lnk
 	$(INTEL_LOC86) $(basename $@).lnk to $@ \
         'ad(sm(dats(0),code(0h)))' 'od(sm(dats,code,const,data))'
 
