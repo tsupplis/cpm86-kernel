@@ -8,25 +8,34 @@ CP320 = cpmcp -f cpm86-320
 # Tools rebuilt from source. tod has no base/ binary at all, so every image
 # takes it from here; the experimental images take the whole reconstructed set.
 CMDDIR = commands
-TOD    = $(CMDDIR)/tod/tod.cmd
+ASM86  = $(CMDDIR)/asm86/asm86.cmd
+DDT86  = $(CMDDIR)/ddt86/ddt86.cmd
 ED     = $(CMDDIR)/ed/ed.cmd
+GENCMD = $(CMDDIR)/gencmd/gencmd.cmd
 HELP   = $(CMDDIR)/help/help.cmd
 PIP    = $(CMDDIR)/pip/pip.cmd
 STAT   = $(CMDDIR)/stat/stat.cmd
 SUBMIT = $(CMDDIR)/submit/submit.cmd
+TOD    = $(CMDDIR)/tod/tod.cmd
 
-.PHONY: all commands clean dist check test test-exp test-320
+.PHONY: all commands extra clean dist check test test-exp test-320
 
 commands:
 	$(MAKE) -C $(CMDDIR)
 
+extra:
+	$(MAKE) -C extra
+
 cpmwk.img: base-160.img
 	cp base-160.img $@
 
-cpm86-1440-at.img: cpm.sys base-1440-at.img | commands
+cpm86-1440-at.img: cpm.sys base-1440-at.img | commands extra
 	cp base-1440-at.img $@
+	cpmrm -f cpm86-144feat $@ 0:144BLDR2.CMD
 	cpmcp -f cpm86-144feat $@ cpm.sys 0:CPM.SYS
-	cpmcp -f cpm86-144feat $@ extra/144*.* 0: 
+	cpmcp -f cpm86-144feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144pat2.cmd 0:144PAT.CMD
+	cpmcp -f cpm86-144feat $@ extra/144prep2.cmd 0:144PREP.CMD
 	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f cpm86-144feat $@ base/pip.cmd 0:
 	cpmcp -f cpm86-144feat $@ base/stat.cmd 0:
@@ -46,6 +55,48 @@ cpm86-1440-at.img: cpm.sys base-1440-at.img | commands
 	cpmcp -f cpm86-144feat $@ base/ddt86.cmd 0:
 	cpmcp -f cpm86-144feat $@ base/asm86.cmd 0:
 	cpmcp -f cpm86-144feat $@ base/gencmd.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/gendef.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/rasm86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/link86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/lib86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/xref86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/sid86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/pbasic.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/cbas86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/crun86.cmd 0:
+	cpmcp -f cpm86-144feat $@ dev/mbasic86.cmd 0:
+	cpmls -F -f cpm86-144feat $@ 0:*.*
+
+# Experimental kernel plus the full commands/ reconstruction. The 1.44M loader
+# and patcher must be the expkrnl builds, since cpmexp.sys moves the stack
+# patch sites the stock ones verify against.
+cpm86-exp-1440-at.img: cpmexp.sys base-1440-at.img | commands extra
+	cp base-1440-at.img $@
+	cpmrm -f cpm86-144feat $@ 0:144BLDR2.CMD
+	cpmcp -f cpm86-144feat $@ cpmexp.sys 0:CPM.SYS
+	cpmcp -f cpm86-144feat $@ extra/144bldrx.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144patx.cmd 0:144PAT.CMD
+	cpmcp -f cpm86-144feat $@ extra/144prepx.cmd 0:144PREP.CMD
+	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-144feat $@ $(ASM86) 0:
+	cpmcp -f cpm86-144feat $@ $(DDT86) 0:
+	cpmcp -f cpm86-144feat $@ $(ED) 0:
+	cpmcp -f cpm86-144feat $@ $(GENCMD) 0:
+	cpmcp -f cpm86-144feat $@ $(HELP) 0:
+	cpmcp -f cpm86-144feat $@ $(PIP) 0:
+	cpmcp -f cpm86-144feat $@ $(STAT) 0:
+	cpmcp -f cpm86-144feat $@ $(SUBMIT) 0:
+	cpmcp -f cpm86-144feat $@ $(TOD) 0:
+	cpmcp -f cpm86-144feat $@ base/setup.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/dskmaint.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/hdmaint.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/function.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/config.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/assign.cmd 0:
+	cpmcp -f cpm86-144feat $@ base/data.pfk 0:
+	cpmcp -f cpm86-144feat $@ base/help.hlp 0:
+	cpmcp -f cpm86-144feat $@ base/print.* 0:
+	cpmcp -f cpm86-144feat $@ base/mform.* 0:
 	cpmcp -f cpm86-144feat $@ base/gendef.cmd 0:
 	cpmcp -f cpm86-144feat $@ dev/rasm86.cmd 0:
 	cpmcp -f cpm86-144feat $@ dev/link86.cmd 0:
@@ -305,13 +356,14 @@ cpmexp.h86: ccpexp.h86 bdosexp.h86
 
 clean:
 	$(MAKE) -C $(CMDDIR) clean
+	$(MAKE) -C extra clean
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86exp.cmd cpmexp.sys 
 	rm -rf cpm86org.cmd cpmorg.sys
 	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
         cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
-	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
+	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img cpm86-exp-1440-at.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-1440-at.img
 	rm -rf *.img.wrk
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
@@ -319,7 +371,7 @@ clean:
 
 dist: cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
     cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img \
-	cpm86-exp-160-1.img cpm86-exp-160-1-at.img
+	cpm86-exp-160-1.img cpm86-exp-160-1-at.img cpm86-exp-1440-at.img
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.
 # Run after any change to pcbios.a86 to confirm parity with pcbioorg.a86.

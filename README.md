@@ -107,17 +107,19 @@ the `commands/` reconstruction.
 | --- | --- |
 | `cpm86-1440-at.img` | Everything above, AT-compatible clock (uses 144FEAT2 from Freek Heite) |
 
-**Experimental — 2 disks**
+**Experimental — 3 disks**
 
 | Image | Contents |
 | --- | --- |
 | `cpm86-exp-160-1.img` | Experimental kernel with the `commands/` reconstruction in place of `base/` |
 | `cpm86-exp-160-1-at.img` | Same, AT-compatible clock |
+| `cpm86-exp-1440-at.img` | Experimental kernel plus the full reconstruction and the dev toolchain, AT-compatible clock |
 
-The experimental images boot `cpmexp.sys` and carry the rebuilt `ed`, `help`,
-`pip`, `stat`, `submit` and `tod` rather than the `base/` binaries, so a single
-boot exercises both halves of the reconstruction. `make test-exp` runs the
-`cpm86-exp-160-1-at.img` set under PCE.
+The experimental images boot `cpmexp.sys` and carry the rebuilt tools rather
+than the `base/` binaries, so a single boot exercises both halves of the work.
+The 160K pair ships `ed`, `help`, `pip`, `stat`, `submit` and `tod`; the 1.44M
+image adds `asm86`, `ddt86` and `gencmd` for the complete set. `make test-exp`
+runs the `cpm86-exp-160-1-at.img` set under PCE.
 
 Images built from the blank image carry a boot loader terminating with `55AA`,
 which lets qemu load CP/M-86 properly. Beware: formatting with `dskmaint.cmd`

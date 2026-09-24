@@ -25,3 +25,8 @@ commands/**/*.lnk
 commands/**/*.cmd
 commands/**/*.mod
 commands/**/*.prn
+extra/*.bin
+extra/*.obj
+extra/*.com
+extra/*.tmp
+extra/*.cmd
