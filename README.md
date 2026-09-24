@@ -135,9 +135,32 @@ PCE helper scripts exist per variant — `./cpm86`, `./cpm86-320`, `./cpm86-720`
 `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make
 test`, `make test-320` and `make test-exp` are shortcuts for the common ones.
 
-Images built from the blank image carry a boot loader terminating with `55AA`,
-which lets qemu load CP/M-86 properly. Beware: formatting with `dskmaint.cmd`
-does not add the signature.
+The 160K images carry a boot loader terminating with `55AA`, which lets qemu
+load CP/M-86 properly. Beware: formatting with `dskmaint.cmd` does not add the
+signature.
+
+The other formats cannot carry it, because byte `01FFh` of the boot sector is
+already a format byte and `AAh` would collide with it:
+
+| Format | `01FFh` | Meaning |
+| --- | --- | --- |
+| 160K | `AAh` | free — second half of the `55AA` signature |
+| 320K | `01h` | selects 2K allocation blocks (`DPBK2`); any other value gives 1K (`DPBK1`) |
+| 720K / 1.44M | `48h` / `90h` | `cpmedia` media byte written by the feature's boot sector |
+
+The 320K test lives in the second-stage loader, which reads the boot sector
+still resident at `0000:7C00`:
+
+```asm
+mov ax,0x400               ; default allocation block = 1024  (160K)
+cmp byte [es:0x7dff],0x1   ; boot sector byte 01FFh == 1 ?
+jnz keep
+mov ax,0x800               ; yes -> allocation block = 2048  (320K)
+```
+
+Stamping `55AA` on a 320K image therefore makes the loader read a 2K-block
+filesystem as if it used 1K blocks; it finds `E5` fill instead of `CPM.SYS` and
+hangs after printing one dot.
 
 ### 2. Tool binaries
 
