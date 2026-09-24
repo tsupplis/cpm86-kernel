@@ -65,3 +65,34 @@ diskdef cpm86-720feat
   os 2.2
   libdsk:format ibm720
 end
+
+# CP/M-86 hard disk partition (IBM XT, 16 heads x 63 sectors, 10 MB drive).
+#
+# Unlike the floppy formats these values are not compiled into the BIOS: they
+# are read at boot from a Digital Research hard disk label. CHKHDDPAR in
+# pcbios.a86 scans the MBR for a partition of type 0DBh, reads that partition's
+# cylinder / head 0 / sector 4, verifies the 256-word checksum is zero, and
+# copies the DPB out of the label at offset 41. A different drive will carry a
+# different label, so re-read it rather than assuming these numbers.
+#
+# For this image the label yields:
+#   SPT=252 (=63 physical sectors of 512), BSH=5/BLM=31/EXM=1 (4K blocks),
+#   DSM=2015, DRM=2047, AL0=AL1=0FFh (16 dir blocks), CKS=8000h, OFF=16.
+#
+# CP/M tracks are counted from LBA 0 of the *drive*, not from the partition,
+# so OFF=16 covers the whole of cylinder 0 (16 heads x 63) and the directory
+# starts at LBA 1008. boottrk therefore replaces any offset, and the def is
+# applied to the raw disk image rather than to an extracted partition.
+#
+#   tracks = boottrk + (DSM+1) * blocksize / (seclen * sectrk)
+#          = 16 + 2016 * 4096 / 32256 = 16 + 256 = 272
+diskdef cpm86-xt-hd
+  seclen 512
+  tracks 272
+  sectrk 63
+  blocksize 4096
+  maxdir 2048
+  skew 1
+  boottrk 16
+  os 2.2
+end

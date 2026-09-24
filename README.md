@@ -233,7 +233,7 @@ cpmtools 2.23 with libdsk is used.
 
 cpmtools can be deployed with homebrew on mac of fetched at https://www.moria.de/~michael/cpmtools/.
 
-All four formats live in the `diskdefs` file at the root of this repository.
+All five formats live in the `diskdefs` file at the root of this repository.
 cpmtools reads `./diskdefs` in preference to the system-wide file and does
 **not** merge the two, so run the `cpm*` tools from the repo root and expect
 every format used here to be listed there.
@@ -244,8 +244,9 @@ every format used here to be listed there.
 | `cpm86-320` | 80 × 8 × 512 (320K DS) | 2K | 64 | 1 track |
 | `cpm86-720feat` | 160 × 9 × 512 (720K) | 2K | 256 | 2 tracks |
 | `cpm86-144feat` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
+| `cpm86-xt-hd` | 272 × 63 × 512 (8M partition) | 4K | 2048 | 16 tracks |
 
-All four use `os 2.2`, matching the kernel's BDOS level. That matters for the
+All five use `os 2.2`, matching the kernel's BDOS level. That matters for the
 feature formats: with `os 3`, `mkfs.cpm` writes an `UNLABELED` CP/M Plus disk
 label into the directory, which this BDOS cannot use and which permanently
 occupies a directory slot.
@@ -253,6 +254,20 @@ occupies a directory slot.
 The two feature definitions come straight from the DPBs in
 [extra/144tech.md](extra/144tech.md) — for 720K, SPT=36, BSH=4/BLM=15, DSM=354,
 DRM=255, OFF=2, i.e. 355 blocks of 2K with an 8K directory starting on track 2.
+
+`cpm86-xt-hd` is different in kind: a hard disk's parameters are not compiled
+into the BIOS. `CHKHDDPAR` scans the MBR for a partition of type `DBh`, reads
+that partition's cylinder / head 0 / **sector 4**, checks that the 256 words of
+that sector sum to zero, and lifts the DPB out of the Digital Research disk
+label at offset 41. The label on the IBM XT image reads SPT=252 (63 physical
+sectors), BSH=5/BLM=31/EXM=1, DSM=2015, DRM=2047, AL0=AL1=`FFh`, CKS=`8000h`
+(bit 15 = fixed media), OFF=16.
+
+CP/M tracks are counted from LBA 0 of the *drive*, not from the partition, so
+OFF=16 spans the whole of cylinder 0 (16 heads × 63) and the directory begins
+at LBA 1008. `boottrk 16` therefore stands in for a partition offset, and the
+definition applies to the raw disk image. Another drive will carry a different
+label, so re-read it rather than reusing these numbers.
 
 A blank feature diskette is only a boot sector plus an erased directory, so
 `base-720-at.img` is generated rather than checked in:

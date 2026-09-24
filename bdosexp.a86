@@ -4253,6 +4253,11 @@ CSELCT	DB	'SELECT$'
 CROFIL	DB	'FILE '
 CRODSK	DB	'R/O$'
 ;
+; Everything below here is positional: the BIOS reads USRCOD/MODABT/CURDRV and
+; the clock block at hard-coded offsets (pcbioexp.a86 ORG 24A5h/24AFh/24B7h/
+; 24BDh), and 144BLDR2 patches the BDOS stack at 248Eh. Pinned so the messages
+; above can be reworded without moving any of it.
+	ORG	23C6H
 WKFCB:
 	RS	36		;WORKING FCB OR MCB
 ;

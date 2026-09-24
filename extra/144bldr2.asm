@@ -923,16 +923,16 @@ ccpstk1	equ	00322h			;cpmexp.sys
 ccpstk2	equ	00362h
 ccpstk3	equ	00362h
 ccpstk4	equ	007B9h
-bdosoff	equ	00B31h
-bdosstk	equ	02483h
 else
 ccpstk1	equ	0031Fh			;cpm.sys / cpmorg.sys
 ccpstk2	equ	0035Fh
 ccpstk3	equ	0035Fh
 ccpstk4	equ	007DBh
+endif
+
+;Same in both kernels: bdosexp.a86 pins WKFCB so the BDOS data area cannot move.
 bdosoff	equ	00B31h
 bdosstk	equ	0248Eh
-endif
 
 ;------
 
