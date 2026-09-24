@@ -1,0 +1,14 @@
+
+declare
+        lit                literally          'literally',
+        dcl                lit                'declare',
+        true               lit                '0ffh',
+        false              lit                '0',
+        boolean            lit                'byte',
+        forever            lit                'while true',
+        cr                 lit                '13',
+        lf                 lit                '10',
+        tab                lit                '9',
+        ff                 lit                '12',
+        sectorlen          lit                '128';
+
