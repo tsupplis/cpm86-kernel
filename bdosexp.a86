@@ -271,6 +271,7 @@ BDOSES:
 	jz	BDOSEI		;FROM INSIDE
 	mov	ax,cs
 	mov	ss,ax
+FEAT144_BDOS_STK:
 	mov	sp,offset STACK	;SET SYSTEM STACK
 BDOSEI:
 	mov	bx,INSTOF

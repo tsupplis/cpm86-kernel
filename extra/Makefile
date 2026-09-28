@@ -19,29 +19,19 @@ MASM = pcdev_masm
 LINK = pcdev_link5		# 3.65 has no /tiny, 5.13 does
 HDR  = cpmhdr32.bin
 
-STOCK = 144pat2.cmd 144prep2.cmd 144bldr2.cmd
-EXP   = 144patx.cmd 144prepx.cmd 144bldrx.cmd
+CMDS = 144pat2.cmd 144prep2.cmd 144bldr2.cmd
 
-all: $(STOCK) $(EXP)
+all: $(CMDS)
 
 # 144PREP carries the boot sector and the secondary loader appended to it.
 144prep2.cmd: 144prep2.tmp 144boot2.bin 144bldr2.cmd
 	cat $^ > $@
 
-144prepx.cmd: 144prep2.tmp 144boot2.bin 144bldrx.cmd
-	cat $^ > $@
-
 144pat2.cmd: 144pat2.com $(HDR)
-	cat $(HDR) $< > $@
-
-144patx.cmd: 144patx.com $(HDR)
 	cat $(HDR) $< > $@
 
 # The secondary loader, as written to disk under the name 144BLDR2.CMD.
 144bldr2.cmd: 144bldr2.com $(HDR)
-	cat $(HDR) $< > $@
-
-144bldrx.cmd: 144bldrx.com $(HDR)
 	cat $(HDR) $< > $@
 
 %.tmp: %.com $(HDR)
@@ -51,19 +41,19 @@ all: $(STOCK) $(EXP)
 144boot2.bin: 144boot2.com
 	cp $< $@
 
-144patx.com: 144pat2.asm
-	$(MASM) "/z" "/Dexpkrnl=1" "144pat2.asm,144patx.obj,nul,nul;"
-	$(LINK) "/tiny" "144patx.obj,$@;"
+144pat2.com: 144pat2.asm 144feat.inc
+	$(MASM) "/z" "144pat2.asm,144pat2.obj,nul,nul;"
+	$(LINK) "/tiny" "144pat2.obj,$@;"
 
-144bldrx.com: 144bldr2.asm
-	$(MASM) "/z" "/Dexpkrnl=1" "144bldr2.asm,144bldrx.obj,nul,nul;"
-	$(LINK) "/tiny" "144bldrx.obj,$@;"
+144bldr2.com: 144bldr2.asm 144feat.inc
+	$(MASM) "/z" "144bldr2.asm,144bldr2.obj,nul,nul;"
+	$(LINK) "/tiny" "144bldr2.obj,$@;"
 
 %.com: %.asm
 	$(MASM) "/z" "$<,$*.obj,nul,nul;"
 	$(LINK) "/tiny" "$*.obj,$@;"
 
 clean:
-	rm -f *.obj *.com *.tmp 144boot2.bin $(STOCK) $(EXP)
+	rm -f *.obj *.com *.tmp 144boot2.bin $(CMDS)
 
 .PHONY: all clean

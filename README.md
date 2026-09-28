@@ -126,10 +126,8 @@ than the `base/` binaries, so a single boot exercises both halves of the work.
 The 160K pair ships `ed`, `help`, `pip`, `stat`, `submit` and `tod`; the feature
 images add `asm86`, `ddt86` and `gencmd` for the complete set.
 
-They also carry their own build of the feature: `cpmexp.sys` moves the CCP and
-BDOS stack switches that the loader patches at boot, so the stock `144BLDR2`
-would fail its byte checks against it. See the `expkrnl` block in
-`extra/144pat2.asm`.
+The feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime and
+adjust patch offsets accordingly (see `extra/144feat.inc`).
 
 PCE helper scripts exist per variant — `./cpm86`, `./cpm86-320`, `./cpm86-720`,
 `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make
@@ -185,10 +183,9 @@ using MASM 5.10 and LINK 5.13 under DOS emulation, replacing the original
 
 | Output | Role |
 | --- | --- |
-| `144bldr2.cmd` | Secondary loader; patches the kernel in memory at boot |
-| `144pat2.cmd` | Applies the same patches to an already-running system |
+| `144bldr2.cmd` | Secondary loader; patches the kernel in memory at boot (auto-detects stock and exp) |
+| `144pat2.cmd` | Applies the same patches to an already-running system (auto-detects stock and exp) |
 | `144prep2.cmd` | Prepares a diskette (boot sector + loader appended) |
-| `144patx.cmd` `144prepx.cmd` `144bldrx.cmd` | The `expkrnl` builds, for `cpmexp.sys` |
 
 The rebuilt `144pat2.cmd` is byte-identical to the binary originally shipped
 here, so the toolchain reproduces upstream exactly.

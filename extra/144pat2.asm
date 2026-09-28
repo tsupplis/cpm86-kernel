@@ -27,6 +27,8 @@
 
 ;============== MASM 5.1 prolog for a .COM file =======================
 
+	include 144feat.inc
+
 pat2	segment para public 'code'
 		assume	cs:pat2
 		assume	ds:pat2
@@ -679,6 +681,18 @@ r9000:
 	call	getenter		;pause
 
 r9010:
+; Dynamic detection of stock vs experimental kernel CCP stack patch sites
+	mov	es,cpmseg
+	mov	si,offset stktab_exp
+	cmp	word ptr es:[KRNL_EXP_CCPSTK1],30bch	; 'mov sp, 0930h'
+	je	r9020
+	mov	si,offset stktab_stk
+r9020:
+	mov	di,offset off6
+	mov	cx,4
+	rep	movsw
+	push	cs
+	pop	es
 	jmp	r9100			;jump past patch data
 
 ;General layout for a patch, where X is a single character patch ID:
@@ -889,25 +903,7 @@ endif
 ;------
 ;Patch sites for the CCP and BDOS stack switches.
 ;
-;These move when the kernel is rebuilt from the cleaned-up sources, so the
-;offsets and the BDOS stack value are selected at assembly time. Assemble with
-;/Dexpkrnl=1 to target cpmexp.sys instead of cpm.sys.
-
-ifndef	expkrnl
-expkrnl	equ	0
-endif
-
-if	expkrnl
-ccpstk1	equ	00322h			;cpmexp.sys
-ccpstk2	equ	00362h
-ccpstk3	equ	00362h
-ccpstk4	equ	007B9h
-else
-ccpstk1	equ	0031Fh			;cpm.sys / cpmorg.sys
-ccpstk2	equ	0035Fh
-ccpstk3	equ	0035Fh
-ccpstk4	equ	007DBh
-endif
+;The CCP stack switch sites are dynamically resolved at runtime in r9010.
 
 ;Same in both kernels: bdosexp.a86 pins WKFCB so the BDOS data area cannot move.
 bdosoff	equ	00B31h
@@ -923,7 +919,13 @@ bdosstk	equ	0248Eh
 ;This cures the scrambled status line when erasing or renaming a read-only
 ;file from the CCP command prompt.
 
-off6	equ	ccpstk1			;offset within CP/M-86 segment
+stktab_stk dw	KRNL_STOCK_CCPSTK1, KRNL_STOCK_CCPSTK2, KRNL_STOCK_CCPSTK3, KRNL_STOCK_CCPSTK4
+stktab_exp dw	KRNL_EXP_CCPSTK1, KRNL_EXP_CCPSTK2, KRNL_EXP_CCPSTK3, KRNL_EXP_CCPSTK4
+
+off6	dw	KRNL_STOCK_CCPSTK1	;offset within CP/M-86 segment (dynamic)
+off7	dw	KRNL_STOCK_CCPSTK2
+off8	dw	KRNL_STOCK_CCPSTK3
+off9	dw	KRNL_STOCK_CCPSTK4
 
 old6:					;old code fragment (3 bytes)
 	mov	sp,930h
@@ -938,17 +940,14 @@ if	len6a ne len6b
 	.err 144PAT2.ASM R9000: Old and new lengths for patch #6 are not equal
 endif
 
-off7	equ	ccpstk2			;offset within CP/M-86 segment
 old7	equ	old6			;old code fragment (3 bytes)
 new7	equ	new6			;new code
 len7a	equ	len6a
 
-off8	equ	ccpstk3			;offset within CP/M-86 segment
 old8	equ	old6			;old code fragment (3 bytes)
 new8	equ	new6			;new code
 len8a	equ	len6a
 
-off9	equ	ccpstk4			;offset within CP/M-86 segment
 old9	equ	old6			;old code fragment (3 bytes)
 new9	equ	new6			;new code
 len9a	equ	len6a

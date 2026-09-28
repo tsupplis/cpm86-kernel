@@ -1632,6 +1632,7 @@ DMA_2_DBA:
 CALC_PHYBUF:
 	mov	ax,word ptr PHY_SEC
 	call	CALC_BUFSEC
+FEAT144_BIOS_SECTRN:
 	mov	ax,offset DSKBUF
 	add	word ptr DSKBUF_ADR,ax
 	mov	word ptr DSKBUF_SEG,ds
@@ -1813,6 +1814,7 @@ RDSEC_ERR:
 ;----------------------------------------
 
 RESET_FLOPPY:
+FEAT144_BIOS_RESET:
 	push	word ptr TRK		; Save current track
 	mov	word ptr TRK,0		; Home
 	call	CHK_CACHE
@@ -1841,6 +1843,7 @@ SETUP_INTREG:
 	mov	si,dx
 	test	byte ptr DRVTYPE[si],80h	; Hard disk drive ?
 	jnz	SETUP_INTREG_HDD	; Yes
+FEAT144_BIOS_INTREG:
 	mov	ch,al
 	cmp	ch,28h
 	jb	SETUP_INTREG_FIN
@@ -1877,6 +1880,7 @@ SETUP_INTREG_BUF:
 	mov	dl,byte ptr DRVTYPE[si]
 	push	cs
 	pop	es
+FEAT144_BIOS_TRKBUF:
 	mov	bx,offset DSKBUF
 	ret
 
@@ -2097,6 +2101,7 @@ BRKINT1:
 	mov	ds,ax
 	mov	word ptr SPBREAK,sp	; Save stack pointer
 	mov	word ptr SSBREAK,ss	; and segment
+FEAT144_BIOS_CBSTK:
 	mov	sp,offset BRKSTK	; Our own stack
 	mov	ss,ax			; In this segment
 ;
@@ -3519,6 +3524,7 @@ INIT5:
 	push	cs
 	pop	ds
 	mov	cl,byte ptr DEFDRV	; Default drive
+FEAT144_BIOS_COLDJMP:
 	mov	byte ptr BDOSCURDRV,cl
 	sti
 	jmp	CCP			; Enter as for warm boot
@@ -3647,6 +3653,7 @@ INITMDSK1:
 	mov	es,ax			; Select memory disk segment
 	sub	di,di			; Offset zero
 ;
+FEAT144_BIOS_RAMDISK:
 	mov	[di],bl
 	cmp	[di],bl			; Byte set correctly ?
 	jnz	INITMDSK2		; No, exit
@@ -3711,6 +3718,7 @@ SETMDSKDPX:
 ; Setup FIDDS memory segment pointer
 ;
 SETFIDMEM:
+FEAT144_BIOS_FIDDREQ:
 	mov	ax,word ptr FIDDSMEM
 	test	ax,ax
 	jz	SETFIDMEMX		; Zero FIDDS memory required
@@ -3730,6 +3738,7 @@ SETFIDMEM:
 	mov	word ptr FIDDSSEG,ax
 	mov	si,offset SIGNFID	; 'FIDDS (Kb)'
 	call	DISP_STR8
+FEAT144_BIOS_FIDDMSG:
 	mov	ax,word ptr FIDDSMEM
 	call	DISP_LRGNUM		; Display large number (AX)
 ;

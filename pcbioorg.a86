@@ -1563,6 +1563,7 @@ DMA_2_DBA:
 ;
 X2BE5:	MOV	AX,Word Ptr X3AA8
 	CALL	X2C08
+FEAT144_BIOS_SECTRN:
 	MOV	AX,Offset DSKBUF
 	ADD	Word Ptr DSKBUF_ADR,AX
 	MOV	Word Ptr DSKBUF_SEG,DS
@@ -1718,6 +1719,7 @@ X2D15:	POP	DX
 ;----------------------------------------
 
 RESET_FLOPPY:
+FEAT144_BIOS_RESET:
 	PUSH	Word Ptr TRK		; Save current track
 	MOV	Word Ptr TRK,0		; Home
 	CALL	X2C13
@@ -1739,10 +1741,12 @@ RESET_FLOPPY2:
 
 ;----------------------------------------
 
-X2D44:	MOV	DH,0
+X2D44:
+	MOV	DH,0
 	MOV	SI,DX
 	TEST	Byte Ptr X3AB2[SI],80h	; Hard disk drive ?
 	JNZ	X2D62			; Yes
+FEAT144_BIOS_INTREG:
 	MOV	CH,AL
 	CMP	CH,28h
 	JB	X2D5C
@@ -1776,6 +1780,7 @@ X2D62:	SHL	SI,1h
 X2D8F:	MOV	DL,Byte Ptr X3AB2[SI]
 	PUSH	CS
 	POP	ES
+FEAT144_BIOS_TRKBUF:
 	MOV	BX,Offset DSKBUF
 	RET
 
@@ -1978,6 +1983,7 @@ BRKINT1:
 	MOV	DS,AX
 	MOV	Word Ptr SPBREAK,SP	; Save stack pointer
 	MOV	Word Ptr SSBREAK,SS	; and segment
+FEAT144_BIOS_CBSTK:
 	MOV	SP,Offset BRKSTK	; Our own stack
 	MOV	SS,AX			; In this segment
 ;
@@ -3380,6 +3386,7 @@ INIT5:	MOV	Word Ptr CURSOR,DX
 	PUSH	CS
 	POP	DS
 	MOV	CL,Byte Ptr DEFDRV	; Default drive
+FEAT144_BIOS_COLDJMP:
 	MOV	Byte Ptr BDOSCURDRV,CL
 	STI
 	JMP	CCP			; Enter as for warm boot
@@ -3501,6 +3508,7 @@ INITMDSK1:
 	MOV	ES,AX			; Select memory disk segment
 	SUB	DI,DI			; Offset zero
 ;
+FEAT144_BIOS_RAMDISK:
 	MOV	[DI],BL
 	CMP	[DI],BL			; Byte set correctly ?
 	JNZ	INITMDSK2		; No, exit
@@ -3565,6 +3573,7 @@ SETMDSKDPX:
 ;	Setup FIDDS memory segment pointer
 ;
 SETFIDMEM:
+FEAT144_BIOS_FIDDREQ:
 	MOV	AX,Word Ptr FIDDSMEM
 	TEST	AX,AX
 	JZ	SETFIDMEMX		; Zero FIDDS memory required
@@ -3584,6 +3593,7 @@ SETFIDMEM:
 	MOV	Word Ptr FIDDSSEG,AX
 	MOV	SI,Offset SIGNFID	; 'FIDDS (Kb)'
 	CALL	DISP_STR8
+FEAT144_BIOS_FIDDMSG:
 	MOV	AX,Word Ptr FIDDSMEM
 	CALL	DISP_LRGNUM		; Display large number (AX)
 ;

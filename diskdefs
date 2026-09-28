@@ -96,3 +96,34 @@ diskdef cpm86-xt-hd
   boottrk 16
   os 2.2
 end
+
+# Concurrent CP/M-86 3.1 partition on an IBM XT drive (4 heads x 17 sectors).
+#
+# Same DR label mechanism as cpm86-xt-hd, but this drive puts a DOS partition
+# first and the type 0DBh partition second, at cylinder 243 (LBA 16524).
+# Label at cylinder 243 / head 0 / sector 4 (LBA 16527) yields:
+#   SPT=68 (=17 physical sectors), BSH=5/BLM=31/EXM=1 (4K blocks), DSM=2625,
+#   DRM=2047, AL0=AL1=0FFh, CKS=8000h, OFF=976.
+#
+# OFF is again counted from LBA 0 of the drive, not from the partition:
+# 976 * 17 = 16592 sectors = cylinder 244, which is where the directory
+# actually starts (CCPM.ORG is the first entry). So OFF absorbs both the DOS
+# partition and the CP/M partition's own first cylinder, and no offset keyword
+# is needed -- boottrk covers the lot.
+#
+#   tracks = boottrk + (DSM+1) * blocksize / (seclen * sectrk)
+#          = 976 + 2626 * 4096 / 8704 -> 976 + 1236 = 2212
+# (2626 blocks needs 1235.8 tracks; 1236 tracks give 2626.5, truncated to 2626.)
+#
+# os 3 because this is a BDOS 3.x filesystem: it lets cpmtools read the CP/M
+# Plus directory label and date stamps rather than showing them as junk.
+diskdef ccpm86-xt-hd
+  seclen 512
+  tracks 2212
+  sectrk 17
+  blocksize 4096
+  maxdir 2048
+  skew 1
+  boottrk 976
+  os 3
+end

@@ -68,9 +68,9 @@ define feat_image
 	cp $(BASE) $@
 	-cpmrm -f $(FEAT) $@ 0:144BLDR2.CMD
 	cpmcp -f $(FEAT) $@ $(KRNL) 0:CPM.SYS
-	cpmcp -f $(FEAT) $@ extra/144bldr$(V).cmd 0:144BLDR2.CMD
-	cpmcp -f $(FEAT) $@ extra/144pat$(V).cmd 0:144PAT.CMD
-	cpmcp -f $(FEAT) $@ extra/144prep$(V).cmd 0:144PREP.CMD
+	cpmcp -f $(FEAT) $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f $(FEAT) $@ extra/144pat2.cmd 0:144PAT2.CMD
+	cpmcp -f $(FEAT) $@ extra/144prep2.cmd 0:144PREP2.CMD
 	cpmcp -f $(FEAT) $@ extra/atinit.cmd 0:ATINIT.CMD
 	cpmcp -f $(FEAT) $@ $(FTOOLS) 0:
 	cpmls -F -f $(FEAT) $@ 0:*.*
@@ -121,7 +121,6 @@ cpm86-1440-at.img: FEAT = cpm86-144feat
 cpm86-1440-at.img: BASE = base-1440-at.img
 cpm86-1440-at.img: KRNL = cpm.sys
 cpm86-1440-at.img: FTOOLS = $(STOCKTOOLS)
-cpm86-1440-at.img: V = 2
 cpm86-1440-at.img: cpm.sys base-1440-at.img | commands extra
 	$(feat_image)
 
@@ -129,18 +128,14 @@ cpm86-720-at.img: FEAT = cpm86-720feat
 cpm86-720-at.img: BASE = base-720-at.img
 cpm86-720-at.img: KRNL = cpm.sys
 cpm86-720-at.img: FTOOLS = $(STOCKTOOLS)
-cpm86-720-at.img: V = 2
 cpm86-720-at.img: cpm.sys base-720-at.img | commands extra
 	$(feat_image)
 
-# Experimental kernel plus the full commands/ reconstruction. The feature
-# loader and patcher must be the expkrnl builds, since cpmexp.sys moves the
-# stack patch sites the stock ones verify against.
+# Experimental kernel plus the full commands/ reconstruction.
 cpm86-exp-1440-at.img: FEAT = cpm86-144feat
 cpm86-exp-1440-at.img: BASE = base-1440-at.img
 cpm86-exp-1440-at.img: KRNL = cpmexp.sys
 cpm86-exp-1440-at.img: FTOOLS = $(EXPTOOLS)
-cpm86-exp-1440-at.img: V = x
 cpm86-exp-1440-at.img: cpmexp.sys base-1440-at.img | commands extra
 	$(feat_image)
 
@@ -148,7 +143,6 @@ cpm86-exp-720-at.img: FEAT = cpm86-720feat
 cpm86-exp-720-at.img: BASE = base-720-at.img
 cpm86-exp-720-at.img: KRNL = cpmexp.sys
 cpm86-exp-720-at.img: FTOOLS = $(EXPTOOLS)
-cpm86-exp-720-at.img: V = x
 cpm86-exp-720-at.img: cpmexp.sys base-720-at.img | commands extra
 	$(feat_image)
 
