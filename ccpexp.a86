@@ -3,7 +3,7 @@
 ;  Part of the CP/M-86 kernel; linked ahead of BDOS and the
 ;  BIOS into a single image by the root Makefile.
 ;
-;  Build:   make cpm86exp.sys
+;  Build:   make cpmexp.sys
 ;***********************************************************
 
 ;  BDOS function constants

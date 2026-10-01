@@ -1,16 +1,17 @@
 
-;----------------------------------------
-; IBM PC BIOS for CP/M-86 v1.1
+;***********************************************************
+;  PCBIOEXP.A86 - IBM PC BIOS for CP/M-86 v1.1 (experimental kernel)
+;  The hardware-dependent layer between CP/M-86 and the IBM PC
+;  ROM BIOS: character I/O, disk I/O, interrupt handling and
+;  system initialisation.  Part of the CP/M-86 kernel; linked
+;  after CCP and BDOS into a single image by the root Makefile.
 ;
-; This file is the PC BIOS (pcbios) component of CP/M-86.
-; It provides the hardware-dependent layer between CP/M-86
-; and the IBM PC ROM BIOS: character I/O, disk I/O,
-; Interrupt handling, and system initialisation.
+;  Build:   make cpmexp.sys
 ;
-; Note: in the original disassembly DI was used instead of SI
-; in PENRDB (light pen buffer fill) - this is a bug in the
-; Original Digital Research code, preserved here as-is.
-;----------------------------------------
+;  Note: in the original disassembly DI was used instead of SI
+;  in PENRDB (light pen buffer fill) - this is a bug in the
+;  original Digital Research code, preserved here as-is.
+;***********************************************************
 
 ; ASCII control character codes
 
