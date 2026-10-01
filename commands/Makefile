@@ -1,4 +1,5 @@
-SUBDIRS=tod asm86 ddt86 submit pip ed gencmd help submit stat
+SUBDIRS=tod asm86 ddt86 submit pip ed gencmd help submit stat \
+    mform assign function
 
 all clean:
 	for d in $(SUBDIRS); do \

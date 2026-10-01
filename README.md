@@ -216,6 +216,9 @@ guards and for calls into BDOS functions this kernel does not implement.
 | --- | --- |
 | `asm86` `gencmd` | CCP/M-86 3.1 sources. Compatible with CP/M-86 |
 | `ddt86` `ed` `help` | CCP/M-86 3.1 sources. Compatible with CP/M-86 |
+| `function` | Assembly reverse engineeering |
+| `assign` | Assembly reverse engineeering |
+| `mform` | Assembly reverse engineeering |
 | `pip` | Reconstructed from CCP/M-86 3.1 sources |
 | `stat` | Reconstructed from CP/M-80 2.2 sources |
 | `submit` | Reconstructed from CP/M-80 2.2 sources |

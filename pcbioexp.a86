@@ -186,7 +186,7 @@ CCP:					; label only; no code emitted here
 	DW	offset PFKTABLE		; -> programmable function key table
 	DW	offset DISK		; -> disk drive parameter block
 	DW	offset SER1		; -> serial port init parameters
-	DB	010h,033h		;    device capability byte (printers/serial)
+	DW	offset SYS_CONI		; -> the five I/O vectors, read by ASSIGN
 	DW	offset FIDDSMEM		; -> FIDDS memory size
 	DW	offset CRTMOD		; -> current screen mode
 

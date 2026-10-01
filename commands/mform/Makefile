@@ -18,10 +18,14 @@ mform.obj: mform.a86
 	$(LINK86) $* '[$$sz, nofill, data[additional[$(MFORM_ADD)]]]'
 	cmdinfo $@
 
+# RASM-86 exits 0 and still writes an .obj when it reports errors, so neither
+# the exit status nor the file's existence can be trusted; check the count.
 %.obj: %.a86
 	unix2dos $<
-	$(RASM86) $< $$ pz sz
-	[ -f "$@" ]
+	rm -f $@
+	@$(RASM86) $< $$ pz sz > $*.log 2>&1; cat $*.log
+	@grep -qE 'Number of errors: +0\.' $*.log || \
+	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/mform.cmd
@@ -33,5 +37,6 @@ check: mform.cmd
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn ccpmtest.img
+	rm -f *.mp? *.lnk *.log
 	rm -f *.loc *.mp? *.lnk
 

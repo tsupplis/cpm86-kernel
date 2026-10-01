@@ -1,4 +1,5 @@
 rom
+tools/__pycache/**
 **/*.lock
 **/*.lha
 **/*.zip

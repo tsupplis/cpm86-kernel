@@ -58,9 +58,9 @@ begin:
 	call	flushkb
 	mov	cl,f_sysdata
 	int	i_bdos
-; TODO verify on this kernel: xatbl is a hard-coded offset into one OEM's XIOS.
-; Nothing here checks it, and wrxios writes five words back through it on exit,
-; so a wrong pointer corrupts memory silently.
+; xatbl is the fourth slot of the XIOS configuration pointer block that starts
+; at 254eh; it holds the offset of SYS_CONI.  Verified against this kernel, but
+; nothing here checks it, and wrxios writes five words back through it on exit.
 	mov	xiossg,es
 	mov	ax,es:.xatbl
 	mov	xiosp,ax
