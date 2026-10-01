@@ -1,4153 +1,4153 @@
-;  BASIC DISK OPERATING SYSTEM  OF CP/M 86
+;  Basic disk operating system  of CP/M 86
 ;
 ;  1983.8.16.
 ;
-;  EQUATIONS OF FUNCTION
+;  Equations of function
 ;
-CLIST	EQU	5		;LIST OUT
-CRTVNO	EQU	12		;RETURN VERION NUMBER
-CREADS	EQU	20		;READ SEQUENTIAL
-CSTDMA	EQU	26		;SET DMA OFFSET
-CSTDMS	EQU	51		;SET DMA SEGMENT
-CGTMXM	EQU	53		;GET MAXIMUM MEMORY
-CGTAMX	EQU	54		;GET ABSOLUTE MAXIMUM MEOMRY
-CALMEM	EQU	55		;ALLOCATE MEMORY
-CALAME	EQU	56		;ALLOCATE ABSOLUTE MEMORY
+CLIST	equ	5		;list out
+CRTVNO	equ	12		;return verion number
+CREADS	equ	20		;read sequential
+CSTDMA	equ	26		;set DMA offset
+CSTDMS	equ	51		;set DMA segment
+CGTMXM	equ	53		;get maximum memory
+CGTAMX	equ	54		;get absolute maximum meomry
+CALMEM	equ	55		;allocate memory
+CALAME	equ	56		;allocate absolute memory
 ;
-;  EQUATIONS OF DATA
+;  Equations of data
 ;
-BS	EQU	8		;BACK SPACE
-HT	EQU	9		;HORIZONTAL TAB
-LF	EQU	0AH		;LINE FEED
-CR	EQU	0DH		;CARRIAGE RETURN
-ITBDOS	EQU	0E0H		;BDOS INTERRUPT VECTOR
-DELCOD	EQU	0E5H		;DELETED FILE DIRECTORY CODE
+BS	equ	8		;back space
+HT	equ	9		;horizontal TAB
+LF	equ	0Ah		;line feed
+CR	equ	0Dh		;carriage return
+ITBDOS	equ	0E0h		;BDOS interrupt vector
+DELCOD	equ	0E5h		;deleted file directory code
 ;
-;  EQUATIONS OF DATA
+;  Equations of data
 ;
-COMBUF	EQU	9		;COMMAND BUFFER OF CCP
-MDSUBE	EQU	0805H		;SUBMIT MODE
+COMBUF	equ	9		;command buffer of CCP
+MDSUBE	equ	0805h		;submit mode
 ;
-;  EQUATIONS OF BIOS VECTOR
+;  Equations of BIOS vector
 ;
-VBIOS	EQU	2500H		;BIOS JUMP VECTOR TOP
-VINIT	EQU	VBIOS+00H	;INITIALIZE  COLD START
-VWBOOT	EQU	VBIOS+03H	;WARM START
-VCONST	EQU	VBIOS+06H	;CONSOLE STATUS
-VCONIN	EQU	VBIOS+09H	;CONSOLE INPUT
-VCONOT	EQU	VBIOS+0CH	;CONSOLE OUTPUT
-VLIST	EQU	VBIOS+0FH	;LIST OUT
-VPUNCH	EQU	VBIOS+12H	;PUNCH OUT
-VREADR	EQU	VBIOS+15H	;READER IN
-VHOME	EQU	VBIOS+18H	;HOME
-VSLDSK	EQU	VBIOS+1BH	;SELECT DISK
-VSTTRK	EQU	VBIOS+1EH	;SET TRACK
-VSTSEC	EQU	VBIOS+21H	;SET SECTOR
-VSTDMA	EQU	VBIOS+24H	;SET DMA OFFSET
-VDREAD	EQU	VBIOS+27H	;READ ONE SECTOR
-VDWRIT	EQU	VBIOS+2AH	;WRITE ONE SECTOR
-VSCTRN	EQU	VBIOS+30H	;SECTOR TRANSLATE
-VSTDMS	EQU	VBIOS+33H	;SET DMA SEGMENT
-VGTMRT	EQU	VBIOS+36H	;GET MEMORY REGION TABLE
-VGTIOB	EQU	VBIOS+39H	;GET I/O BYTE
-VSTIOB	EQU	VBIOS+3CH	;SET I/ BYTE
+VBIOS	equ	2500h		;BIOS jump vector top
+VINIT	equ	VBIOS+00h	;initialize  cold start
+VWBOOT	equ	VBIOS+03h	;warm start
+VCONST	equ	VBIOS+06h	;console status
+VCONIN	equ	VBIOS+09h	;console input
+VCONOT	equ	VBIOS+0Ch	;console output
+VLIST	equ	VBIOS+0Fh	;list out
+VPUNCH	equ	VBIOS+12h	;punch out
+VREADR	equ	VBIOS+15h	;reader in
+VHOME	equ	VBIOS+18h	;home
+VSLDSK	equ	VBIOS+1Bh	;select disk
+VSTTRK	equ	VBIOS+1Eh	;set track
+VSTSEC	equ	VBIOS+21h	;set sector
+VSTDMA	equ	VBIOS+24h	;set DMA offset
+VDREAD	equ	VBIOS+27h	;read one sector
+VDWRIT	equ	VBIOS+2Ah	;write one sector
+VSCTRN	equ	VBIOS+30h	;sector translate
+VSTDMS	equ	VBIOS+33h	;set DMA segment
+VGTMRT	equ	VBIOS+36h	;get memory region table
+VGTIOB	equ	VBIOS+39h	;get I/O byte
+VSTIOB	equ	VBIOS+3Ch	;set i/ byte
 ;
 ;
-	CSEG
-	ORG	0
-TOP:				;DUMMY FOR TAGGED LABEL
-    ; TS: START PATCH 13 
-	ORG	0A00H
+	cseg
+	org	0
+TOP:				;dummy for tagged label
+    ; Ts: start patch 13 
+	org	0A00h
 
 PATCH13:
-    MOV     CS:FLINSD, 01
+	mov     cs:FLINSD, 01
 
-    PUSH    AX
-    MOV     AH, CS:AFWFCB
-    MOV     AL, CS:FLOMOD
-    PUSH    AX
-    INT     ITBDOS
+	push    ax
+	mov     ah, cs:AFWFCB
+	mov     al, cs:FLOMOD
+	push    ax
+	int     ITBDOS
 
-    POP     AX
-    MOV     CS:FLOMOD, AL
-    MOV     CS:AFWFCB, AH
-    POP     AX
+	pop     ax
+	mov     cs:FLOMOD, al
+	mov     cs:AFWFCB, ah
+	pop     ax
 
-    RET
-    NOP
-    ; TS: END PATCH 13
+	ret
+	nop
+    ; Ts: end patch 13
 ;
-	ORG	0A20H
+	org	0A20h
 ;
-;  PATCH AREA
+;  Patch area
 ;
-;  FOR LOAD PROGRAM
+;  For load program
 ;
-MLOADK:				;OK END
-	MOV	INSTOF,AX	;RESTORE ENTRY STACK & END FOR LOAD PROGRAM
-	POP	ES
-	RET
+MLOADK:				;OK end
+	mov	INSTOF,ax		;restore entry stack & end for load program
+	pop	es
+	ret
 ;
-	ORG	0A30H
+	org	0A30h
 ;
-MLOADQ:				;ERROR END OF LOAD PROGRAM
-	MOV	AX,FCBSEG
-	MOV	INDSEG,AX
-	MOV	OTPARA,-1
-	JMP	MLOADE
+MLOADQ:				;error end of load program
+	mov	ax,FCBSEG
+	mov	INDSEG,ax
+	mov	OTPARA,-1
+	jmp	MLOADE
 ;
-	ORG	0A50H
+	org	0A50h
 ;
-;  FOR BDOS BODY
-;  CHECK BDOS FUNCTION CODE RANGE
+;  For BDOS body
+;  Check BDOS function code range
 ;
 BDOSBC:
-	JC	BDOSBI		;IN RANGE
-	MOV	OTPARA,-1	;OVER END
-	RET
+	jc	BDOSBI			;in range
+	mov	OTPARA,-1		;over end
+	ret
 ;
-BDOSBI:				;IN RANGE
-	JMP	BDOSBS
+BDOSBI:				;in range
+	jmp	BDOSBS
 ;
 ;
-	ORG	0A60H
-    ; TS: START PATCH 15 
-	; DB	'12 january 82'
+	org	0A60h
+    ; Ts: start patch 15 
+	; Db	'12 january 82'
 PATCH15:
-    CMP WORD PTR 03[SI],0
-    JZ PATCH15_AX
-    PUSH AX
-    MOV AX, WORD PTR 03[SI]
-    MOV DGBASE,AX
-    POP AX
-    JMPS END_PATCH15
+	cmp word ptr 03[si],0
+	jz PATCH15_AX
+	push ax
+	mov ax, word ptr 03[si]
+	mov DGBASE,ax
+	pop ax
+	jmps END_PATCH15
 PATCH15_AX:
-    MOV DGBASE,AX
+	mov DGBASE,ax
 END_PATCH15:
-    JMP STLDBD
-    ; TS: END PATCH 15 
+	jmp STLDBD
+    ; Ts: end patch 15 
 ;
-    ; TS: START IBM VINIT 
-    ;CSEG
-	;ORG	0A00H
+    ; Ts: start IBM VINIT 
+    ;Cseg
+	;Org	0A00H
 
     ;PATCH_VINIT:
-    ;ADD BX, VINIT 
-    ;JMP BIOSCL
-    ; TS: END PATCH IBM VINIT
+    ;add BX, VINIT 
+    ;jmp BIOSCL
+    ; Ts: end patch IBM VINIT
 
-	ORG	0A80H
+	org	0A80h
 ;
-;  BDOS FUNCTION INDEX
+;  BDOS function index
 ;
 IXMAIN:
-	DW	MSYRST		; 0 SYSTEM RESET
-	DW	MCONIN		; 1 CONSOLE INPUT
-	DW	CONOUT		; 2 CONSOLE OUTPUT
-	DW	MREDER		; 3 READER INPUT
-	DW	VPUNCH		; 4 PUNCHER UTPUT
-	DW	BLIST		; 5 LIST OUTPUT
-	DW	MDCNIO		; 6 DIRECT CONSOLE I/O
-	DW	MGTIOB		; 7 GET I/O BYTE
-	DW	MSTIOB		; 8 SET I/O BYTE
-	DW	MBUFPR		; 9 PRINT STRING
-	DW	MRDCBF		;10 READ CONSOLE BUFFER
-	DW	MCONST		;11 CONSOLE STATUS
-	DW	MRTVNO		;12 RETURN VERSION NUMBER
-	DW	MRSDSY		;13 RESET DISK SYSTEM
-	DW	MSELDK		;14 SELECT DISK
-	DW	MOPEN		;15 OPEN FILE
-	DW	MCLOSE		;16 CLOSE FILE
-	DW	MSRCHF		;17 SEARCH FOR FIRST
-	DW	MSRCHN		;18 SEARCH FOR NEXT
-	DW	MDELET		;19 DELETE FILE
-	DW	MREADS		;20 READ SEQUENTIAL
-	DW	MWRITS		;21 WRITE SEQUENTIAL
-	DW	MMAKE		;22 MAKE FILE
-	DW	MRENAM		;23 RENAME FILE
-	DW	MRTLIV		;24 RETURN LOGIN VECTOR
-	DW	MRTCDK		;25 RETURN CURRENT DISK
-	DW	MSTDMO		;26 SET DMA OFFSET
-	DW	MGTALM		;27 GET ALLOCATION MAP ADDRESS
-	DW	MWPDSK		;28 WRITE PROTECT DISK
-	DW	MGTROV		;29 GET READ/ONLY VECTOR
-	DW	MSTFAT		;30 SET FILE ATTRIBUTE
-	DW	MGDPBA		;31 GET DISK PARAMETER BLOCK ADDRESS
-	DW	MSTUCD		;32 SET/GET USER CODE
-	DW	MREADR		;33 READ RANDOM
-	DW	MWRITR		;34 WRITE RANDOM
-	DW	MCMPFS		;35 COMPUTE FILE SIZE
-	DW	MSTRRC		;36 SET RANDOM RECORD
-	DW	MRSTDV		;37 RESET DRIVE
-	DW	NOPROC		;38 ACCESS DRIVE
-	DW	NOPROC		;39 FREE DRIVE
-	DW	MWRITZ		;40 WRITE RANDOM WITH ZERO FILL
-	DW	MCHAIN		;47 CHAIN TO PROGRAM
-	DW	MFLUSH		;48 FLUSH BUFFERS
-	DW	MGTSAD		;49 GET SYSTEM ADDRESS
-	DW	MDBIOS		;50 DIRECT BIOS CALL
-	DW	MSTDMS		;51 SET DMA SEGMENT
-	DW	MGTDMS		;52 GET DMA ADDRESS
-	DW	MGTMXM		;53 GET MAXIMUM MEMORY
-	DW	MGTAMX		;54 GET ABSOLUTE MAXIMUM MEMORY
-	DW	MALMEM		;55 ALLOCATE MEMORY SEGMENT
-	DW	MALAME		;56 ALLOCATE ABSOLUTE MEMORY SEGMENT
-	DW	MFRMEM		;57 FREE SPECIFIED MEMORY SEGMENT
-	DW	MFRALM		;58 FREE ALL MEMORY
-	DW	MLOADP		;59 PROGRAM LOAD
+	dw	MSYRST		; 0 system reset
+	dw	MCONIN		; 1 console input
+	dw	CONOUT		; 2 console output
+	dw	MREDER		; 3 reader input
+	dw	VPUNCH		; 4 puncher utput
+	dw	BLIST		; 5 list output
+	dw	MDCNIO		; 6 direct console I/O
+	dw	MGTIOB		; 7 get I/O byte
+	dw	MSTIOB		; 8 set I/O byte
+	dw	MBUFPR		; 9 print string
+	dw	MRDCBF		;10 read console buffer
+	dw	MCONST		;11 console status
+	dw	MRTVNO		;12 return version number
+	dw	MRSDSY		;13 reset disk system
+	dw	MSELDK		;14 select disk
+	dw	MOPEN		;15 open file
+	dw	MCLOSE		;16 close file
+	dw	MSRCHF		;17 search for first
+	dw	MSRCHN		;18 search for next
+	dw	MDELET		;19 delete file
+	dw	MREADS		;20 read sequential
+	dw	MWRITS		;21 write sequential
+	dw	MMAKE		;22 make file
+	dw	MRENAM		;23 rename file
+	dw	MRTLIV		;24 return login vector
+	dw	MRTCDK		;25 return current disk
+	dw	MSTDMO		;26 set DMA offset
+	dw	MGTALM		;27 get allocation map address
+	dw	MWPDSK		;28 write protect disk
+	dw	MGTROV		;29 get read/only vector
+	dw	MSTFAT		;30 set file attribute
+	dw	MGDPBA		;31 get disk parameter block address
+	dw	MSTUCD		;32 set/get user code
+	dw	MREADR		;33 read random
+	dw	MWRITR		;34 write random
+	dw	MCMPFS		;35 compute file size
+	dw	MSTRRC		;36 set random record
+	dw	MRSTDV		;37 reset drive
+	dw	NOPROC		;38 access drive
+	dw	NOPROC		;39 free drive
+	dw	MWRITZ		;40 write random with zero fill
+	dw	MCHAIN		;47 chain to program
+	dw	MFLUSH		;48 flush buffers
+	dw	MGTSAD		;49 get system address
+	dw	MDBIOS		;50 direct BIOS call
+	dw	MSTDMS		;51 set DMA segment
+	dw	MGTDMS		;52 get DMA address
+	dw	MGTMXM		;53 get maximum memory
+	dw	MGTAMX		;54 get absolute maximum memory
+	dw	MALMEM		;55 allocate memory segment
+	dw	MALAME		;56 allocate absolute memory segment
+	dw	MFRMEM		;57 free specified memory segment
+	dw	MFRALM		;58 free all memory
+	dw	MLOADP		;59 program load
 ;
-;  12:RETURN VERSION NUMBER
+;  12:return version number
 ;
 MRTVNO:
-	MOV	AL,022H		;2.2 IS VERSION NUMBER
-    ;TS: START FIX WRONG ARCH
-    ;MOV AX,01022h     ;return 8086 instead of 8080
-    ;TS: END FIX
-	JMP	BTPRST		;H=0 SIMPLE CP/M
+	mov	al,022h			;2.2 is version number
+    ;Ts: start fix wrong arch
+    ;mov AX,01022h     ;return 8086 instead of 8080
+    ;Ts: end fix
+	jmp	BTPRST			;H=0 simple CP/M
 ;
-;  49:GET SYSTEM ADDRESS
+;  49:get system address
 ;
 MGTSAD:
-	MOV	BX,OFFSET DMAADD ;SYSTEM DATA AREA TOP
-	JMP	WDPRST
+	mov	bx,offset DMAADD	;system data area top
+	jmp	WDPRST
 ;
-;  BDOS NORMAL TOP
+;  BDOS normal top
 ;
-	ORG	0B00H
+	org	0B00h
 ;
-;  USER ID CODE OF BDOS
+;  User ID code of BDOS
 ;
-    ;TS: START PATCH ALIGN ON REF VERSION
-	;DB	1		;OEM CODE
-	;DB	10		;VERSION NUMBER
-	;DB	0
-	;DB	0,0,0	;USER ID
-	DB	0		;OEM CODE
-	DB	0Ah		;VERSION NUMBER
-	DB	0
-	DB	0,9,9Ah	;USER ID
-    ;TS: END PATCH ALIGN ON REF VERSION
+    ;Ts: start patch align on ref version
+	;Db	1		;oem code
+	;Db	10		;version number
+	;Db	0
+	;Db	0,0,0	;user ID
+	db	0		;oem code
+	db	0Ah		;version number
+	db	0
+	db	0,9,9Ah	;user ID
+    ;Ts: end patch align on ref version
 ;
-;  BDOS ENTRY
+;  BDOS entry
 ;
 BDOSEN:
-	PUSH	DS
-	MOV	AX,CS
-	MOV	DS,AX
-	POP	INDSEG		;SAVE ENTRY DATA SEGMENT
-	CMP	CL,CLIST
-	JZ	BDOSEC
-	CMP	CL,CRTVNO+1
-	JC	BDOSES		;SIMPLE BDOS CALL
-BDOSEC:				;COMPLICATED I/O FUNCTION
-	MOV	MDCONF,-1	;SET COMPLICATED I/O MODE
+	push	ds
+	mov	ax,cs
+	mov	ds,ax
+	pop	INDSEG			;save entry data segment
+	cmp	cl,CLIST
+	jz	BDOSEC
+	cmp	cl,CRTVNO+1
+	jc	BDOSES			;simple BDOS call
+BDOSEC:				;complicated I/O function
+	mov	MDCONF,-1		;set complicated I/O mode
 BDOSES:
-	MOV	INSTSG,SS
-	MOV	INSTOF,SP	;SAVE ENTRY STACK
-	CMP	FLINSD,1
-	JZ	BDOSEI		;FROM INSIDE
-	MOV	AX,CS
-	MOV	SS,AX
+	mov	INSTSG,ss
+	mov	INSTOF,sp		;save entry stack
+	cmp	FLINSD,1
+	jz	BDOSEI			;from inside
+	mov	ax,cs
+	mov	ss,ax
 FEAT144_BDOS_STK:
-	MOV	SP,OFFSET STACK	;SET SYSTEM STACK
+	mov	sp,offset STACK		;set system stack
 BDOSEI:
-	MOV	BX,INSTOF
-	MOV	ES,INSTSG
-	MOV	BX,ES:4[BX]
-	AND	BX,200H		;GET INTERRUPT FALG
-	JZ	$+3		;DI
-	STI			;EI
-	MOV	AX,DS
-	PUSH	BP
-	PUSH	DI
-	PUSH	SI
-	PUSH	CS
-	POP	ES
-	MOV	CURSEG,ES	;SAVE CURRENT SEGMENT
-	CALL	BDOSB		;CALL BDOS BODY
-	POP	SI
-	POP	DI
-	POP	BP
-	MOV	ES,CURSEG
-	CLI
-	MOV	SS,INSTSG	;RESTORE STACK
-	MOV	SP,INSTOF
-	MOV	MDCONF,0	;CLEAR COMPLICATED I/O MODE
-	MOV	DS,INDSEG
-	IRET
+	mov	bx,INSTOF
+	mov	es,INSTSG
+	mov	bx,es:4[bx]
+	and	bx,200h			;get interrupt falg
+	jz	$+3			;DI
+	sti				;ei
+	mov	ax,ds
+	push	bp
+	push	di
+	push	si
+	push	cs
+	pop	es
+	mov	CURSEG,es		;save current segment
+	call	BDOSB			;call BDOS body
+	pop	si
+	pop	di
+	pop	bp
+	mov	es,CURSEG
+	cli
+	mov	ss,INSTSG		;restore stack
+	mov	sp,INSTOF
+	mov	MDCONF,0		;clear complicated I/O mode
+	mov	ds,INDSEG
+	iret
 ;
-;  BDOS BODY
+;  BDOS body
 ;
 BDOSB:
-	MOV	INPARA,DX
-	MOV	INPARB,DL
-	XOR	AX,AX
-	MOV	OTPARA,AX	;CLEAR OUTPUT PARAMETER
-	MOV	AFWFCB,AL
-	MOV	ENTTYP,AL
-	MOV	FLOMOD,AL
-	MOV	BX,OFFSET ENDPRC
-	PUSH	BX		;SET RETURN ADDRESS
-	CMP	CL,41
-	JC	BDOSBS		;0 TO 40
-	SUB	CL,6
-	CMP	CL,60-6		;47 TO 59
-	JMP	BDOSBC		;CHECK OVER
+	mov	INPARA,dx
+	mov	INPARB,dl
+	xor	ax,ax
+	mov	OTPARA,ax		;clear output parameter
+	mov	AFWFCB,al
+	mov	ENTTYP,al
+	mov	FLOMOD,al
+	mov	bx,offset ENDPRC
+	push	bx			;set return address
+	cmp	cl,41
+	jc	BDOSBS			;0 to 40
+	sub	cl,6
+	cmp	cl,60-6			;47 to 59
+	jmp	BDOSBC			;check over
 ;
 BDOSBS:
-	MOV	BL,CL
-	MOV	BH,0
-	MOV	CL,DL		;SET BYTE PARAMETER
-	ADD	BX,BX
-	JMP	WORD PTR IXMAIN[BX] ;TO EACH ROUTINE
+	mov	bl,cl
+	mov	bh,0
+	mov	cl,dl			;set byte parameter
+	add	bx,bx
+	jmp	word ptr IXMAIN[bx]	;to each routine
 ;
-;  ERROR ROUTINES
+;  Error routines
 ;
-;  BAD SECTOR ERROR
+;  Bad sector error
 ;
 EBADSC:
-	MOV	BX,OFFSET CBADSC ;BAD SECTOR
-	CALL	ERPROC
-	CMP	AL,'C'-40H
-	JNZ	STWFCE		;CONTINUE
-	JMPS	EROFIE		;ABORT
+	mov	bx,offset CBADSC	;bad sector
+	call	ERPROC
+	cmp	al,'C'-40h
+	jnz	STWFCE			;continue
+	jmps	EROFIE			;abort
 ;
-;  SELECT ERROR
+;  Select error
 ;
 ESELCT:
-	MOV	BX,OFFSET CSELCT
-	JMPS	EROFIS
+	mov	bx,offset CSELCT
+	jmps	EROFIS
 ;
-;  R/O DISK
+;  R/O disk
 ;
 ERODSK:
-	MOV	BX,OFFSET CRODSK
-	JMPS	EROFIS
+	mov	bx,offset CRODSK
+	jmps	EROFIS
 ;
-;  R/O FILE
+;  R/O file
 ;
 EROFIL:
-	MOV	BX,OFFSET CROFIL
+	mov	bx,offset CROFIL
 EROFIS:
-	CALL	ERPROC		;OUT COMMENT & WAIT RESPONSE
+	call	ERPROC			;out comment & wait response
 EROFIE:
-	JMP	MSYRSA
+	jmp	MSYRSA
 ;
-;  ERROR TRAP PROCESS
-;  INPUT
-;  BX:COMMENT POINT
+;  Error trap process
+;  Input
+;  BX:comment point
 ;
 ERPROC:
-	PUSH	BX		;SAVE EACH COMMNET POINT
-	CALL	CRLF
-	MOV	AL,CURDSK
-	ADD	AL,'A'
-	MOV	CERRDK,AL	;SET DRIVE NAME
-	MOV	CX,OFFSET CERROR
-	CALL	BUFPRN		;BDOS ERROR ON X:
-	POP	CX
-	CALL	BUFPRN		;OUT EACH COMMENT
-	JMP	CONINC		;RESPONSE WAIT
+	push	bx			;save each commnet point
+	call	CRLF
+	mov	al,CURDSK
+	add	al,'A'
+	mov	CERRDK,al		;set drive name
+	mov	cx,offset CERROR
+	call	BUFPRN			;BDOS error on X:
+	pop	cx
+	call	BUFPRN			;out each comment
+	jmp	CONINC			;response wait
 ;
-;  SET INPUT DATA TO WORK FCB OR MCB
-;  INPUT
-;  CL:COPY COUNT
+;  Set input data to work FCB or mcb
+;  Input
+;  CL:copy count
 ;
 STWFCB:
-	PUSH	DS
-	PUSH	AX
-	PUSH	CX
-	MOV	AFWFCB,0FFH
-	MOV	CNFCBC,CL	;SAVE COPY LENGTH
-	XOR	CH,CH
-	MOV	SI,INPARA	;OFFSET OF INPUT PARAMETER
-	MOV	PTUFCB,SI
-	MOV	DI,OFFSET WKFCB ;OFFSET OF WORK
-	MOV	INPARA,DI
-	MOV	DS,INDSEG	;SEGMENT OF INPUT PARAMETER
-	CLD
-	REP	MOVSB		;GET DATA
-	POP	CX
-	POP	AX
-	POP	DS
+	push	ds
+	push	ax
+	push	cx
+	mov	AFWFCB,0FFh
+	mov	CNFCBC,cl		;save copy length
+	xor	ch,ch
+	mov	si,INPARA		;offset of input parameter
+	mov	PTUFCB,si
+	mov	di,offset WKFCB		;offset of work
+	mov	INPARA,di
+	mov	ds,INDSEG		;segment of input parameter
+	cld
+	rep	movsb			;get data
+	pop	cx
+	pop	ax
+	pop	ds
 STWFCE:
-	RET
+	ret
 ;
-;  SET SEQUENTIAL FCB
+;  Set sequential FCB
 ;
 STWFCS:
-	PUSH	CX
-	MOV	CL,33		;SEQUENTIAL FCB LENGTH IS 33
-	JMPS	STWFCC
+	push	cx
+	mov	cl,33			;sequential FCB length is 33
+	jmps	STWFCC
 ;
-;  SET RANDOM FCB
+;  Set random FCB
 ;
 STWFCR:
-	PUSH	CX
-	MOV	CL,36		;RANDOM FCB LENGTH IS 36
+	push	cx
+	mov	cl,36			;random FCB length is 36
 STWFCC:
-	CALL	STWFCB
-	POP	CX
-	RET
+	call	STWFCB
+	pop	cx
+	ret
 ;
-;  RESTORE FCB DATA
+;  Restore FCB data
 ;
 RSTFCB:
-	PUSH	ES
-	PUSH	AX
-	PUSH	CX
-	MOV	CL,CNFCBC	;GET LENGTH
-	XOR	CH,CH
-	MOV	ES,INDSEG	;SEGMENT OF INPUT PARAMETER
-	MOV	SI,OFFSET WKFCB
-	MOV	DI,PTUFCB	;OFFSET OF ORIGINAL
-	MOV	INPARA,DI
-	CLD
-	REP	MOVSB		;RESTORE FCB DATA
-	POP	CX
-	POP	AX
-	POP	ES
-	RET
+	push	es
+	push	ax
+	push	cx
+	mov	cl,CNFCBC		;get length
+	xor	ch,ch
+	mov	es,INDSEG		;segment of input parameter
+	mov	si,offset WKFCB
+	mov	di,PTUFCB		;offset of original
+	mov	INPARA,di
+	cld
+	rep	movsb			;restore FCB data
+	pop	cx
+	pop	ax
+	pop	es
+	ret
 ;
-;  READ BY FAR ADDRESS FCB
+;  Read by far address FCB
 ;
 READFR:
-	MOV	CL,CREADS
-	MOV	DX,UFCBOF	;USER FCB OFFSET
-	MOV	DS,FCBSEG	;USER FCB SEGMENT
-	CALL	BDOSIS		;READ SEQUENTIAL
-	MOV	AX,CS
-	MOV	DS,AX		;RESTORE SEGMENT
-	RET
+	mov	cl,CREADS
+	mov	dx,UFCBOF		;user FCB offset
+	mov	ds,FCBSEG		;user FCB segment
+	call	BDOSIS			;read sequential
+	mov	ax,cs
+	mov	ds,ax			;restore segment
+	ret
 ;
-;   BDOS CALL FROM INSIDE OF BDOS
+;   BDOS call from inside of BDOS
 ;
-;  MUST BE SAVE STACK SAVE AREA
-;  & CLEAR INSIDE FLAG AT END  ???
+;  Must be save stack save area
+;  & clear inside flag AT end  ???
 ;
 BDOSIS:
-    ; TS: START PATCH 13
-	; MOV	CS:FLINSD,1	;SET INSIDE FLAG
-	; INT	ITBDOS
-	; RET
-    JMP	  PATCH13
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    ; TS: END PATCH 13
+    ; Ts: start patch 13
+	; mov	CS:FLINSD,1	;set inside flag
+	; int	ITBDOS
+	; ret
+	jmp	PATCH13
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+    ; Ts: end patch 13
 ;
-;  INTERNAL BDOS CALL FOR MEMORY MANAGEMENT
-;  INPUT
-;  CL:FUNCTION CODE
+;  Internal BDOS call for memory management
+;  Input
+;  CL:function code
 ;
 BDOSMM:
-	PUSH	BX
-	MOV	DX,OFFSET SYSMCB
-	CALL	BDOSIS
-	POP	BX
-	RET
+	push	bx
+	mov	dx,offset SYSMCB
+	call	BDOSIS
+	pop	bx
+	ret
 ;
-;  MEMORY MANAGEMENT UTILITY
+;  Memory management utility
 ;
-;  COMPARE MEMORY REQUEST BETWEEN MAX-MIN
-;  INPUT
-;  SI:GROUP DESCRIPTOR TOP
-;  DI:GROUP DESCRIPTOR TOP
-;  OUTPUT
-;  SI:SMALLER GD
-;  DI:LARGER GD
+;  Compare memory request between max-min
+;  Input
+;  SI:group descriptor top
+;  DI:group descriptor top
+;  Output
+;  SI:smaller gd
+;  DI:larger gd
 ;
 CMPMRQ:
-	PUSH	AX
-	PUSH	BX
-	MOV	BX,7[SI]
-	SUB	BX,5[SI]	;GET MAX-MIN
-	MOV	AX,7[DI]
-	SUB	AX,5[DI]
-	CMP	BX,AX
-	JBE	$+4		;(DI) > (SI)
-	XCHG	SI,DI
-	POP	BX
-	POP	AX
-	RET
+	push	ax
+	push	bx
+	mov	bx,7[si]
+	sub	bx,5[si]		;get max-min
+	mov	ax,7[di]
+	sub	ax,5[di]
+	cmp	bx,ax
+	jbe	$+4			;(DI) > (SI)
+	xchg	si,di
+	pop	bx
+	pop	ax
+	ret
 ;
-;  ALLOCATE MEMORY FOR LOAD PROGRAM
-;  OUTPUT
-;  AL:0 OK  -1 CANNOT ALLOCATE
+;  Allocate memory for load program
+;  Output
+;  AL:0 OK  -1 cannot allocate
 ;
 ALMEMR:
-	SUB	BX,BX		;CLEAR MIN SIZE
-	SUB	DX,DX		;CLEAR MAX SIZE
-	MOV	FMODEL,0FFH	;SET 8080 MODEL FLAG
-	MOV	CX,8		;COUNT OF GROUP DESCRIPTOR
-	MOV	SI,OFFSET BFGRDC ;BUFFER TOP
-ALMEML:				;LOOP OF ONE GROUP DESCRIPTOR
-	CMP	BYTE PTR [SI],0
-	JZ	ALMEMN		;NOT ACTIVE DESCRIPTOR
-	CMP	BYTE PTR [SI],2
-	JNZ	ALMEMD		;NOT DATA GROUP
-	MOV	FMODEL,0	;DATA GROUP  SO NOT 8080 MODEL
+	sub	bx,bx			;clear min size
+	sub	dx,dx			;clear max size
+	mov	FMODEL,0FFh		;set 8080 model flag
+	mov	cx,8			;count of group descriptor
+	mov	si,offset BFGRDC	;buffer top
+ALMEML:				;loop of one group descriptor
+	cmp	byte ptr [si],0
+	jz	ALMEMN			;not active descriptor
+	cmp	byte ptr [si],2
+	jnz	ALMEMD			;not data group
+	mov	FMODEL,0		;data group  so not 8080 model
 ALMEMD:
-	CMP	WORD PTR 3[SI],0
-	JZ	ALMEMG		;RELOCATABLE
-	MOV	AX,3[SI]	;ABSOLUTE
-	MOV	SYSMCB,AX	;SET ABSOLUTE BASE
-	CMP	WORD PTR 7[SI],0
-	MOV	AX,5[SI]	;MIN
-	JZ	$+5		;NO MAX SO DO BY MIN
-	MOV	AX,7[SI]	;WITH MAX SO DO BY MAX
-	MOV	SYSMCB+2,AX	;SET LENGTH
-	PUSH	CX
-	MOV	CL,CALAME
-	PUSH	DX
-	CALL	BDOSMM		;ALLOCATE ABSOLUTE MEMORY SEGMENT
-	POP	DX
-	POP	CX
-	CMP	OTPARB,0
-	JZ	ALMEMN		;OK ALLOCATED
-	PUSH	CX		;NOT ALLOCATED
-	MOV	CL,CGTAMX
-	CALL	BDOSMM		;GET AVAILABLE MAXIMUM SIZE
-	POP	CX
-	MOV	AX,SYSMCB+2
-	CMP	5[SI],AX
-	JNC	ALMEME		;SMALLER THAN MIN  SO ERROR END
-	MOV	7[SI],AX	;SET AVAILABLE MAX AS LENGTH
-	MOV	CL,CALAME
-	CALL	BDOSMM		;ALLOCATE
-	JMPS	ALMEMN		;TO NEXT
+	cmp	word ptr 3[si],0
+	jz	ALMEMG			;relocatable
+	mov	ax,3[si]		;absolute
+	mov	SYSMCB,ax		;set absolute base
+	cmp	word ptr 7[si],0
+	mov	ax,5[si]		;min
+	jz	$+5			;NO max so do by min
+	mov	ax,7[si]		;with max so do by max
+	mov	SYSMCB+2,ax		;set length
+	push	cx
+	mov	cl,CALAME
+	push	dx
+	call	BDOSMM			;allocate absolute memory segment
+	pop	dx
+	pop	cx
+	cmp	OTPARB,0
+	jz	ALMEMN			;OK allocated
+	push	cx			;not allocated
+	mov	cl,CGTAMX
+	call	BDOSMM			;get available maximum size
+	pop	cx
+	mov	ax,SYSMCB+2
+	cmp	5[si],ax
+	jnc	ALMEME			;smaller than min  so error end
+	mov	7[si],ax		;set available max as length
+	mov	cl,CALAME
+	call	BDOSMM			;allocate
+	jmps	ALMEMN			;to next
 ;
-ALMEMG:				;RELOCATABLE GROUP
-	ADD	BX,5[SI]	;GET TOTAL BY MIN
-	CMP	WORD PTR 7[SI],0
-	JZ	ALMEMM		;NO MAX   SO DO BY MIN
-	ADD	DX,7[SI]	;GET TOTAL MAX
-	JNC	ALMEMN		;NOT OVER
-	MOV	DX,0FFF0H	;OVER SO DO BY ABSOLUTE MAX VALUE
-	JMPS	ALMEMN
+ALMEMG:				;relocatable group
+	add	bx,5[si]		;get total by min
+	cmp	word ptr 7[si],0
+	jz	ALMEMM			;NO max   so do by min
+	add	dx,7[si]		;get total max
+	jnc	ALMEMN			;not over
+	mov	dx,0FFF0h		;over so do by absolute max value
+	jmps	ALMEMN
 ;
-ALMEME:				;ERROR
-	JMPS	SRTGFF
+ALMEME:				;error
+	jmps	SRTGFF
 ;
-ALMEMM:				;NO MAX SPECIFIED SO MIN USED AS MAX
-	ADD	DX,5[SI]	;GET MAX TOTAL
-ALMEMN:				;END OF ONE GROUP DESCRIPTOR
-	ADD	SI,9
-	LOOP	ALMEML		;TO NEXT GD
-	OR	DX,DX
-	JZ	ALMEMF		;NO RELOCATABLE LENGTH
-	MOV	SYSMCB+2,DX	;SET MAX LENGTH
-	MOV	CL,CALMEM
-	CALL	BDOSMM		;ALLOCATE RELOCATABLE MEMORY
-	CMP	OTPARB,0
-	JZ	ALMEMF		;OK ALLOCATED
-	MOV	CL,CGTMXM
-	CALL	BDOSMM		;GET MAX SIZE
-	CMP	BX,SYSMCB+2
-	JA	ALMEME		;SMALLER THAN MIN  SO ERROR END
-	MOV	CL,CALMEM
-	CALL	BDOSMM		;ALLOCATE BY MAXIMUM AVAILABLE SIZE
-	MOV	DX,SYSMCB+2
-	SUB	DX,BX		;GET SPACE BETWEEN AVAIL TO MIN
-	CALL	STMXGD		;SET AVAILABLE MAX TO GD
+ALMEMM:				;NO max specified so min used as max
+	add	dx,5[si]		;get max total
+ALMEMN:				;end of one group descriptor
+	add	si,9
+	loop	ALMEML			;to next gd
+	or	dx,dx
+	jz	ALMEMF			;NO relocatable length
+	mov	SYSMCB+2,dx		;set max length
+	mov	cl,CALMEM
+	call	BDOSMM			;allocate relocatable memory
+	cmp	OTPARB,0
+	jz	ALMEMF			;OK allocated
+	mov	cl,CGTMXM
+	call	BDOSMM			;get max size
+	cmp	bx,SYSMCB+2
+	ja	ALMEME			;smaller than min  so error end
+	mov	cl,CALMEM
+	call	BDOSMM			;allocate by maximum available size
+	mov	dx,SYSMCB+2
+	sub	dx,bx			;get space between avail to min
+	call	STMXGD			;set available max to gd
 ALMEMF:
-	MOV	DI,PNUMCB
-	MOV	AX,FCBSEG
-	MOV	CX,CS
-	CMP	AX,CX
-	JNZ	ALMEMS		;NOT SYSTEM
-	MOV	BYTE PTR 4[DI],1 ;SYSTEM
-	INC	CNUMCB
+	mov	di,PNUMCB
+	mov	ax,FCBSEG
+	mov	cx,cs
+	cmp	ax,cx
+	jnz	ALMEMS			;not system
+	mov	byte ptr 4[di],1	;system
+	inc	CNUMCB
 ALMEMS:
-	JMPS	SRTGFG
+	jmps	SRTGFG
 ;
-;  SEARCH TARGET GROUP FORM
-;  INPUT
-;  AL:TARGET GROUP FORM
-;  OUTPUT
-;  SI:GD TOP
-;  AL:0 OK  -1 NOT FOUND
+;  Search target group form
+;  Input
+;  AL:target group form
+;  Output
+;  SI:gd top
+;  AL:0 OK  -1 not found
 ;
 SRTGFM:
-	MOV	SI,OFFSET BFGRDC
-	MOV	CX,8
+	mov	si,offset BFGRDC
+	mov	cx,8
 SRTGFL:
-	CMP	[SI],AL
-	JZ	SRTGFG		;GET MATCHED GD
-	ADD	SI,9
-	LOOP	SRTGFL		;TO NEXT
-SRTGFF:				;FAIL END
-	MOV	AL,0FFH
-	RET
+	cmp	[si],al
+	jz	SRTGFG			;get matched gd
+	add	si,9
+	loop	SRTGFL			;to next
+SRTGFF:				;fail end
+	mov	al,0FFh
+	ret
 ;
-SRTGFG:				;OK END
-	MOV	AL,0
-	RET
+SRTGFG:				;OK end
+	mov	al,0
+	ret
 ;
-;  SETUP MAXIMUM VALUE OF GROUP DESCRIPTOR
-;  INPUT
-;  DX:EXTRA SPACE
+;  Setup maximum value of group descriptor
+;  Input
+;  DX:extra space
 ;
 STMXGD:
-	CMP	FMODEL,0FFH
-	JNZ	STMXGN		;NOT 8080 MODEL
-	MOV	BX,BFGRDC+5	;8080 MODEL
-	ADD	BX,DX
-	MOV	BFGRDC+7,BX	;SO SET IN TOP GD
-	RET
+	cmp	FMODEL,0FFh
+	jnz	STMXGN			;not 8080 model
+	mov	bx,BFGRDC+5		;8080 model
+	add	bx,dx
+	mov	BFGRDC+7,bx		;so set in top gd
+	ret
 ;
-STMXGN:				;NOT 8080 MODEL
-	MOV	AL,2
-	CALL	SRTGFM		;SEARCH DATA GROUP
-	CMP	WORD PTR 7[SI],0
-	JZ	STMXGX		;NO REQUEST OF MAX
-	MOV	DI,SI
-	MOV	AX,3
-	CALL	SRTGFM		;SEARCH EXTRA GROUP
-	CMP	WORD PTR 7[SI],0
-	JZ	STMXGS		;NO REQUEST OF MAX
-	CALL	CMPMRQ		;GET LARGER REQUESTED GROUP
-	SHR	DX,1		;GET HALF SPACE
-	MOV	BX,DX
-	ADD	BX,5[SI]
-	CMP	BX,7[SI]
-	JBE	STMXGR		;REQUESTED IS LARGER THAN AVAIL HALF
-	SUB	BX,7[SI]	;REQUESTED IS SMALLER
-	ADD	DX,BX		;SO GET LEFT AVAIL SPACE
-	JMPS	STMXGS
+STMXGN:				;not 8080 model
+	mov	al,2
+	call	SRTGFM			;search data group
+	cmp	word ptr 7[si],0
+	jz	STMXGX			;NO request of max
+	mov	di,si
+	mov	ax,3
+	call	SRTGFM			;search extra group
+	cmp	word ptr 7[si],0
+	jz	STMXGS			;NO request of max
+	call	CMPMRQ			;get larger requested group
+	shr	dx,1			;get half space
+	mov	bx,dx
+	add	bx,5[si]
+	cmp	bx,7[si]
+	jbe	STMXGR			;requested is larger than avail half
+	sub	bx,7[si]		;requested is smaller
+	add	dx,bx			;so get left avail space
+	jmps	STMXGS
 ;
-STMXGR:				;REQUESTED IS LARGER 
-	MOV	7[SI],BX	;SET HALF SPACE
+STMXGR:				;requested is larger 
+	mov	7[si],bx		;set half space
 STMXGS:
-	ADD	DX,5[DI]
-	MOV	7[DI],DX	;SET LEFT SPACE
-	RET
+	add	dx,5[di]
+	mov	7[di],dx		;set left space
+	ret
 ;
-STMXGX:				;DATA GROUP HAS NO REQUEST
-	MOV	AL,3
-	CALL	SRTGFM		;SEARCH EXTRA GROUP
-	ADD	DX,5[SI]
-	MOV	7[SI],DX	;SET LEFT SPACE
-	RET
+STMXGX:				;data group has NO request
+	mov	al,3
+	call	SRTGFM			;search extra group
+	add	dx,5[si]
+	mov	7[si],dx		;set left space
+	ret
 ;
-;  ADD GROUP LENGTH
-;  INPUT
-;  SI:GD POINT
-;  AX:TOTAL
-;  OUTPUT
-;  AX:TOTAL
+;  add group length
+;  Input
+;  SI:gd point
+;  AX:total
+;  Output
+;  AX:total
 ;
 ADDGLN:
-	CMP	WORD PTR 7[SI],0
-	JZ	ADDGLS		;NO MAX  SO DO BY MIN
-	ADD	AX,7[SI]	;ADD MAX
-	RET
+	cmp	word ptr 7[si],0
+	jz	ADDGLS			;NO max  so do by min
+	add	ax,7[si]		;add max
+	ret
 ;
-ADDGLS:				;DO BY MIN
-	ADD	AX,5[SI]	;ADD MIN
-	RET
+ADDGLS:				;do by min
+	add	ax,5[si]		;add min
+	ret
 ;
-;  SETUP LOADING BASE
+;  Setup loading base
 ;
 STLDBS:
-	MOV	MODE80,0
-	MOV	AX,SYSMCB	;GET LOADING BASE OF RELOCATABLE
-	CMP	FMODEL,0FFH
-	JNZ	STLDBM		;NOT 8080 MODEL
-	MOV	MODE80,1	;8080 MODEL
-	MOV	BFGRDC+3,AX	;SET BASE OF TOP GD
-	MOV	DGBASE,AX	;SET SAME BASE TO DATA SEGMENT BASE
-	JMPS	STLDBF
+	mov	MODE80,0
+	mov	ax,SYSMCB		;get loading base of relocatable
+	cmp	FMODEL,0FFh
+	jnz	STLDBM			;not 8080 model
+	mov	MODE80,1		;8080 model
+	mov	BFGRDC+3,ax		;set base of top gd
+	mov	DGBASE,ax		;set same base to data segment base
+	jmps	STLDBF
 ;
-STLDBM:				;NOT 8080 MODEL
-	MOV	SI,OFFSET BFGRDC
-	MOV	CX,8
-STLDBL:				;ONE GD LOOP
-	CMP	BYTE PTR [SI],0
-	JZ	STLDBA		;NOT ACTIVE
-	CMP	BYTE PTR [SI],2
-	JNZ	STLDBD		;NO DATA GROUP
-    ; TS: START PATCH 15 
-	; MOV	DGBASE,AX	;SAVE DATA SEGMENT BASE
-    JMP PATCH15
-    ; TS: END PATCH 15 
+STLDBM:				;not 8080 model
+	mov	si,offset BFGRDC
+	mov	cx,8
+STLDBL:				;one gd loop
+	cmp	byte ptr [si],0
+	jz	STLDBA			;not active
+	cmp	byte ptr [si],2
+	jnz	STLDBD			;NO data group
+    ; Ts: start patch 15 
+	; mov	DGBASE,AX	;save data segment base
+	jmp PATCH15
+    ; Ts: end patch 15 
 STLDBD:
-	CMP	WORD PTR 3[SI],0
-	JNZ	STLDBN		;ABSOULTE
-	MOV	3[SI],AX	;RELOCATABLE SO SET BASE
-	CMP	BYTE PTR [SI],9
-	JNZ	STLDBA
-	MOV	BYTE PTR [SI],1	;SHARED CODE GROUP  SO TO CODE GROUP
+	cmp	word ptr 3[si],0
+	jnz	STLDBN			;absoulte
+	mov	3[si],ax		;relocatable so set base
+	cmp	byte ptr [si],9
+	jnz	STLDBA
+	mov	byte ptr [si],1		;shared code group  so to code group
 STLDBA:
-	CALL	ADDGLN		;ADD GROUP LENGTH
+	call	ADDGLN			;add group length
 STLDBN:
-	ADD	SI,9
-	LOOP	STLDBL		;TO NEXT GD
+	add	si,9
+	loop	STLDBL			;to next gd
 STLDBF:
-	RET
+	ret
 ;
-;  GET ONE PARAGRAPH DATA
-;  INPUT
-;  BP:COUNT
-;  OUTPUT
-;  SI:DATA POINT
+;  Get one paragraph data
+;  Input
+;  BP:count
+;  Output
+;  SI:data point
 ;
 GOPGDT:
-	CMP	BP,16*7
-	JNZ	GOPGDS		;NOT END
-	PUSH	BX		;END OF ONE SECTOR  SO GET NEXT SECTOR
-	PUSH	ES
-	CALL	READFR		;GET ONE SECTOR
-	POP	ES
-	POP	BX
-	MOV	BP,0		;CLEAR COUNT
-	MOV	SI,OFFSET BFLDPR ;SET DATA TOP POINT
-	RET
+	cmp	bp,16*7
+	jnz	GOPGDS			;not end
+	push	bx			;end of one sector  so get next sector
+	push	es
+	call	READFR			;get one sector
+	pop	es
+	pop	bx
+	mov	bp,0			;clear count
+	mov	si,offset BFLDPR	;set data top point
+	ret
 ;
-GOPGDS:				;NOT END
-	ADD	BP,16		;UP COUNT
-	RET
+GOPGDS:				;not end
+	add	bp,16			;up count
+	ret
 ;
-;  MAKE LENGTH BY BYTE
-;  INPUT
-;  AX:LENGTH BY PARAGRAPH
-;  OUTPUT
-;  AH,BX:BYTE LENGTH
+;  Make length by byte
+;  Input
+;  AX:length by paragraph
+;  Output
+;  AH,BX:byte length
 ;
 MKBTLG:
-	MOV	BX,AX
-	AND	AX,0F000H
-	MOV	CL,4
-	SHR	AH,CL		;GET HIGHER 4 BITS
-	MOV	CL,4
-	SHL	BX,CL
-	SUB	BX,1
-	JNC	$+4
-	DEC	AH
-	RET
+	mov	bx,ax
+	and	ax,0F000h
+	mov	cl,4
+	shr	ah,cl			;get higher 4 bits
+	mov	cl,4
+	shl	bx,cl
+	sub	bx,1
+	jnc	$+4
+	dec	ah
+	ret
 ;
-;  59:LOAD PROGRAM
+;  59:load program
 ;
 MLOADP:
-	MOV	AX,INDSEG
-	MOV	FCBSEG,AX	;SET FCB SEGMENT
-	PUSH	ES
-	NOP
-	MOV	UFCBOF,DX	;SET FCB OFFSET
-	MOV	AX,INSTSG
-	MOV	LPSTSG,AX
-	MOV	AX,INSTOF
-	MOV	LPSTOF,AX	;SAVE ENTRY STACK POINTER
-	MOV	DX,CS
-	MOV	CL,CSTDMS
-	CALL	BDOSIS		;SET DATA SEGMENT
-	MOV	DX,OFFSET BFGRDC
-	MOV	CL,CSTDMA
-	CALL	BDOSIS		;SET DMA OFFSET TO GD WORK
-	CALL	READFR		;GET GROUP DESCRIPTOR
-	CMP	OTPARB,0
-	JZ	MLOADS		;OK
-MLOADM:				;ERROR END
-	JMP	MLOADR
+	mov	ax,INDSEG
+	mov	FCBSEG,ax		;set FCB segment
+	push	es
+	nop
+	mov	UFCBOF,dx		;set FCB offset
+	mov	ax,INSTSG
+	mov	LPSTSG,ax
+	mov	ax,INSTOF
+	mov	LPSTOF,ax		;save entry stack pointer
+	mov	dx,cs
+	mov	cl,CSTDMS
+	call	BDOSIS			;set data segment
+	mov	dx,offset BFGRDC
+	mov	cl,CSTDMA
+	call	BDOSIS			;set DMA offset to gd work
+	call	READFR			;get group descriptor
+	cmp	OTPARB,0
+	jz	MLOADS			;OK
+MLOADM:				;error end
+	jmp	MLOADR
 ;
 MLOADS:
-	CALL	ALMEMR		;ALLOCATE REQUESTED MEMORY
-	TEST	AL,AL
-	JNZ	MLOADM		;CANNOT ALLOCATE
-	CALL	STLDBS		;SETUP LOADING BASE OF EACH GD
-	MOV	DX,OFFSET BFLDPR
-	MOV	CL,CSTDMA
-	CALL	BDOSIS		;SET DMA OFFSET TO READ WORK
-	MOV	BP,16*7
-	MOV	CX,8
-	MOV	BX,OFFSET BFGRDC
-MLOADL:				;ONE GD LOOP
-	PUSH	CX
-	CMP	BYTE PTR [BX],0
-	JZ	MLOADN		;NOT ACTIVE GD
-	MOV	ES,3[BX]	;GET BASE
-	MOV	DI,0
-	MOV	CX,1[BX]	;GET PARAGRAPH LENGTH
-	JCXZ	MLOADN		;NO LENGTH
-MLOADG:				;ONE PARAGRAPH LOADING LOOP
-	PUSH	CX
-	CALL	GOPGDT		;GET DATA
-	MOV	CX,8
-	CLD
-	REP	MOVSW		;MOVE TO TARGET
-	CMP	DI,0
-	JNZ	MLOADB		;NOT 64K BAUNDARY
-	MOV	DX,ES		;UP SEGMENT
-	ADD	DH,010H
-	MOV	ES,DX
+	call	ALMEMR			;allocate requested memory
+	test	al,al
+	jnz	MLOADM			;cannot allocate
+	call	STLDBS			;setup loading base of each gd
+	mov	dx,offset BFLDPR
+	mov	cl,CSTDMA
+	call	BDOSIS			;set DMA offset to read work
+	mov	bp,16*7
+	mov	cx,8
+	mov	bx,offset BFGRDC
+MLOADL:				;one gd loop
+	push	cx
+	cmp	byte ptr [bx],0
+	jz	MLOADN			;not active gd
+	mov	es,3[bx]		;get base
+	mov	di,0
+	mov	cx,1[bx]		;get paragraph length
+	jcxz	MLOADN			;NO length
+MLOADG:				;one paragraph loading loop
+	push	cx
+	call	GOPGDT			;get data
+	mov	cx,8
+	cld
+	rep	movsw			;move to target
+	cmp	di,0
+	jnz	MLOADB			;not 64K baundary
+	mov	dx,es			;up segment
+	add	dh,010h
+	mov	es,dx
 MLOADB:
-	POP	CX
-	LOOP	MLOADG		;TO NEXT
+	pop	cx
+	loop	MLOADG			;to next
 MLOADN:
-	POP	CX
-	ADD	BX,9
-	LOOP	MLOADL		;TO NEXT GD
-	MOV	ES,DGBASE	;GET DATA GROUP SEGMENT
-	MOV	OTPARA,ES
-	MOV	DI,0
-	MOV	CX,48
-	MOV	AL,0
-	CLD
-	REP	STOSB		;CLEAR BASE PAGE
-	MOV	DI,0
-	MOV	AL,MODE80
-	MOV	ES:5[DI],AL	;SET 8080 MODEL MODE
-	MOV	DL,1		;CODE GROUP FORM
-MLOADF:				;ONE FORM TYPE PARAMETER SETUP LOOP
-	MOV	SI,OFFSET BFGRDC
-	MOV	CX,8
-MLOADC:				;GD SEARCH LOOP
-	CMP	[SI],DL
-	JZ	MLOADT		;GET TARGET GD
-	ADD	SI,9
-	LOOP	MLOADC		;TO NEXT GD
-	JMPS	MLOADX		;NOT MATCH SO TO NEXT FORM
+	pop	cx
+	add	bx,9
+	loop	MLOADL			;to next gd
+	mov	es,DGBASE		;get data group segment
+	mov	OTPARA,es
+	mov	di,0
+	mov	cx,48
+	mov	al,0
+	cld
+	rep	stosb			;clear base page
+	mov	di,0
+	mov	al,MODE80
+	mov	es:5[di],al		;set 8080 model mode
+	mov	dl,1			;code group form
+MLOADF:				;one form type parameter setup loop
+	mov	si,offset BFGRDC
+	mov	cx,8
+MLOADC:				;gd search loop
+	cmp	[si],dl
+	jz	MLOADT			;get target gd
+	add	si,9
+	loop	MLOADC			;to next gd
+	jmps	MLOADX			;not match so to next form
 ;
-MLOADT:				;GET TARGET GD
-	MOV	AX,3[SI]
-	MOV	ES:3[DI],AX	;SET BASE PARAGRAPH ADDRESS
-	MOV	AX,5[SI]
-	CMP	WORD PTR 7[SI],0
-	JZ	$+5		;NO MAX  SO BY MIN
-	MOV	AX,7[SI]	;GET MAX SIZE
-	CALL	MKBTLG		;TO BYTE LENGTH
-	MOV	ES:2[DI],AH	;SET HIGHER 4 BITS
-	MOV	ES:[DI],BX	;SET LOWER 16 BITS
-	CMP	FMODEL,0FFH
-	JNZ	MLOADX		;NOT 8080 MODEL
-	ADD	DI,6		;8080 MODEL
-	MOV	ES:2[DI],AH	;SET ALSO IN DATA SEGMENT PARAMETER
-	MOV	ES:[DI],BX
-	JMPS	MLOADE
+MLOADT:				;get target gd
+	mov	ax,3[si]
+	mov	es:3[di],ax		;set base paragraph address
+	mov	ax,5[si]
+	cmp	word ptr 7[si],0
+	jz	$+5			;NO max  so by min
+	mov	ax,7[si]		;get max size
+	call	MKBTLG			;to byte length
+	mov	es:2[di],ah		;set higher 4 bits
+	mov	es:[di],bx		;set lower 16 bits
+	cmp	FMODEL,0FFh
+	jnz	MLOADX			;not 8080 model
+	add	di,6			;8080 model
+	mov	es:2[di],ah		;set also in data segment parameter
+	mov	es:[di],bx
+	jmps	MLOADE
 ;
-MLOADX:				;TO NEXT FORM
-	INC	DL
-	ADD	DI,6
-	CMP	DL,8
-	JBE	MLOADF		;TO NEXT FORM
-MLOADE:				;END OF LOADING
-	MOV	AX,UFCBOF
-	MOV	INPARA,AX
-	MOV	FLINSD,0	;CLEAR INSIDE MODE
-	MOV	AX,LPSTSG
-	MOV	INSTSG,AX	;RESTORE ENTRY STACK
-	MOV	AX,LPSTOF
-	JMP	MLOADK		;TO RETSTORE & END
+MLOADX:				;to next form
+	inc	dl
+	add	di,6
+	cmp	dl,8
+	jbe	MLOADF			;to next form
+MLOADE:				;end of loading
+	mov	ax,UFCBOF
+	mov	INPARA,ax
+	mov	FLINSD,0		;clear inside mode
+	mov	ax,LPSTSG
+	mov	INSTSG,ax		;restore entry stack
+	mov	ax,LPSTOF
+	jmp	MLOADK			;to retstore & end
 ;
-	NOP
+	nop
 ;
-MLOADR:				;ERROR END
-	JMP	MLOADQ
+MLOADR:				;error end
+	jmp	MLOADQ
 ;
-;  NOT USED BY PATCH
+;  not used by patch
 ;
-	DB		24H,0FFH,0FFH
-	JMPS	MLOADE
+	db		24h,0FFh,0FFh
+	jmps	MLOADE
 ;
-;  0:SYSTEM RESET
-;  INPUT PARAMETER:ABORT CODE	BYTE
+;  0:system reset
+;  Input parameter:abort code	byte
 ;
 MSYRST:
-	MOV	AL,INPARB	;GET ABORT MODE
-	CMP	AL,1
-	JZ	MSYRSR		;MEMORY REMAINING ABORT
+	mov	al,INPARB		;get abort mode
+	cmp	al,1
+	jz	MSYRSR			;memory remaining abort
 MSYRSA:
-	MOV	BYTE PTR .COMBUF+1,0
+	mov	byte ptr .COMBUF+1,0
 MSYRSF:
-	CMP	CNUMCB,001H
-	JA	MSYRSC		;SOME MEMORY AREA ACTIVE
-	CALL	MFRALM		;FREE ALL MEMORY
-	JMPS	MSYRSR
+	cmp	CNUMCB,001h
+	ja	MSYRSC			;some memory area active
+	call	MFRALM			;free all memory
+	jmps	MSYRSR
 ;
-MSYRSC:				;FREE CURRENT MEMORY
-	CALL	FRCRAR
-	MOV	BX,PNUMCB	;GET USED MCB BUFFER POINT
-	CALL	FREMEM		;FREE LAST MEMORY AREA
-	DEC	CNUMCB		;DOWN USED MCB COUNT
+MSYRSC:				;free current memory
+	call	FRCRAR
+	mov	bx,PNUMCB		;get used mcb buffer point
+	call	FREMEM			;free last memory area
+	dec	CNUMCB			;down used mcb count
 MSYRSR:
-	MOV	FLINSD,0	;CLEAR BDOS INSIDE MODE
-	MOV	BX,VWBOOT
-	JMP	BIOSCL		;WARM BOOT
+	mov	FLINSD,0		;clear BDOS inside mode
+	mov	bx,VWBOOT
+	jmp	BIOSCL			;warm boot
 ;
-;  50:DIRECT BIOS CALL
+;  50:direct BIOS call
 ;
 MDBIOS:
-	PUSH	DS
-	MOV	DS,INDSEG
-	MOV	BX,DX
-	MOV	AL,[BX]		;GET FUNCTION NUMBER
-	MOV	CX,1[BX]	;GET CX
-	MOV	DX,3[BX]	;GET DX
-	POP	DS
-	POP	BX		;CANCEL END PROCESS DIRECT RETURN TO BDOS MAIN
-	XOR	BX,BX
-	MOV	BL,AL
-	ADD	AL,AL
-	ADD	BL,AL		;*3
-	ADD	BX,VINIT	;GET VECTOR
-	JMP	BX		;TO BIOS ROUTINE
+	push	ds
+	mov	ds,INDSEG
+	mov	bx,dx
+	mov	al,[bx]			;get function number
+	mov	cx,1[bx]		;get CX
+	mov	dx,3[bx]		;get DX
+	pop	ds
+	pop	bx			;cancel end process direct return to BDOS main
+	xor	bx,bx
+	mov	bl,al
+	add	al,al
+	add	bl,al			;*3
+	add	bx,VINIT		;get vector
+	jmp	bx			;to BIOS routine
 ;
-;  51:SET DMA SEGMNET
+;  51:set DMA segmnet
 ;
 MSTDMS:
-	MOV	DMASEG,DX	;SAVE SEGMENT
-	MOV	CX,DX
-	CALL	TOP+VSTDMS	;SET IN BIOS
-	RET
+	mov	DMASEG,dx		;save segment
+	mov	cx,dx
+	call	TOP+VSTDMS		;set in BIOS
+	ret
 ;
-;  52:GET DMA SEGMENT
+;  52:get DMA segment
 ;
 MGTDMS:
-	MOV	BX,DMASEG	;GET SEGMENT
-	MOV	CURSEG,BX	;SAVE SEGMENT
-	MOV	BX,DMAADD	;GET OFFSET
-	JMP	WDPRST
+	mov	bx,DMASEG		;get segment
+	mov	CURSEG,bx		;save segment
+	mov	bx,DMAADD		;get offset
+	jmp	WDPRST
 ;
-;  SAVE MCB DATA TO BUFFER
-;  INPUT
-;  BX:MCB POINT
+;  Save mcb data to buffer
+;  Input
+;  BX:mcb point
 ;
 SVMCBD:
-	SUB	PNUMCB,5	;DOWN USED MCB BUFFER POINTER
-	MOV	DI,PNUMCB
-	MOV	AX,[BX]		;GET BASE
-	MOV	[DI],AX
-	MOV	AX,2[BX]	;GET LENGTH
-	MOV	2[DI],AX
-	MOV	BYTE PTR 4[DI],0 ;SET AS CURRENT MODE
-	ADD	CNTREG,1	;UP COUNT
-	RET
+	sub	PNUMCB,5		;down used mcb buffer pointer
+	mov	di,PNUMCB
+	mov	ax,[bx]			;get base
+	mov	[di],ax
+	mov	ax,2[bx]		;get length
+	mov	2[di],ax
+	mov	byte ptr 4[di],0	;set as current mode
+	add	CNTREG,1		;up count
+	ret
 ;
-;  53:GET MAXIMUM AVAILABLE MEMORY
+;  53:get maximum available memory
 ;
 MGTMXM:
-	CALL	CGBSPR		;CHECK & GET BASE
-	JNZ	MGTMXS		;NO SPACE
-	CMP	SIZREG,0
-	JZ	MALAMR		;NO REGION DATA
-	CALL	GMXRTP		;GET MAXIMUM REGION POINT
+	call	CGBSPR			;check & get base
+	jnz	MGTMXS			;NO space
+	cmp	SIZREG,0
+	jz	MALAMR			;NO region data
+	call	GMXRTP			;get maximum region point
 MGTMXS:
-	JNZ	MALAMR		;NO SPACE
-	MOV	AX,2[SI]
-	CMP	2[BX],AX
-	JC	$+5		;ENOUGH LENGTH
-	MOV	2[BX],AX	;SHORT SO SET LENGTH
-	MOV	AX,[SI]
-	MOV	[BX],AX		;SET BASE
-	JMPS	MALAMS
+	jnz	MALAMR			;NO space
+	mov	ax,2[si]
+	cmp	2[bx],ax
+	jc	$+5			;enough length
+	mov	2[bx],ax		;short so set length
+	mov	ax,[si]
+	mov	[bx],ax			;set base
+	jmps	MALAMS
 ;
-;  54:GET ABSOLUTE MAXIMUM ADDRESS
+;  54:get absolute maximum address
 ;
 MGTAMX:
-	CALL	CGBSPR		;CHECK & GET BASE
-	JNZ	MALAMR		;NO SPACE
-MGTAML:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	MALAMR		;ALL OVER
-	CALL	CKABAR		;CHECK REQUESTED AREA WITH TABLE
-	JNZ	MGTAML		;NOT MATCH TO NEXT
-	MOV	AX,2[SI]	;GET MATCHED AREA
-	ADD	AX,[SI]		;GET MAXIMUM ADDRESS
-	SUB	AX,[BX]
-	CMP	2[BX],AX
-	JC	MGTAME		;ENOUGH LENGTH
-	MOV	2[BX],AX	;SET LENGTH
+	call	CGBSPR			;check & get base
+	jnz	MALAMR			;NO space
+MGTAML:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	MALAMR			;all over
+	call	CKABAR			;check requested area with table
+	jnz	MGTAML			;not match to next
+	mov	ax,2[si]		;get matched area
+	add	ax,[si]			;get maximum address
+	sub	ax,[bx]
+	cmp	2[bx],ax
+	jc	MGTAME			;enough length
+	mov	2[bx],ax		;set length
 MGTAME:
-	JMPS	MALAMS
+	jmps	MALAMS
 ;
-;  55:ALLOCATE MEMORY AREA
+;  55:allocate memory area
 ;
 MALMEM:
-	CALL	CGBSPR		;CHECK & GET BASE
-	JNZ	MALAMR		;NO SPACE
-	CALL	SRSTRG		;SEARCH SUITABLE REGION
-	JNZ	MALAMR		;NO SPACE
-	CALL	GSREGN		;GET & SET REGION
-	CALL	SVMCBD		;SAVE IN USED MCB BUFFER
-	JMPS	MALAMS
+	call	CGBSPR			;check & get base
+	jnz	MALAMR			;NO space
+	call	SRSTRG			;search suitable region
+	jnz	MALAMR			;NO space
+	call	GSREGN			;get & set region
+	call	SVMCBD			;save in used mcb buffer
+	jmps	MALAMS
 ;
-;  56:ALLOCATE ABSOLUTE MEMORY AREA
+;  56:allocate absolute memory area
 ;
 MALAME:
-	CALL	CGBSPR		;CHECK & GET BASE
-	JNZ	MALAMR		;NO SPACE
-MALAML:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	MALAMR		;ALL OVER
-	CALL	CKABAR		;CHECK REQUESTED AREA WITH TABLE
-	JNZ	MALAML		;NOT MATCH TO NEXT
-	CALL	SRTAAL		;SETUP REGION TABLE
-	CALL	SVMCBD		;SAVE IN USED MCB BUFFER
+	call	CGBSPR			;check & get base
+	jnz	MALAMR			;NO space
+MALAML:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	MALAMR			;all over
+	call	CKABAR			;check requested area with table
+	jnz	MALAML			;not match to next
+	call	SRTAAL			;setup region table
+	call	SVMCBD			;save in used mcb buffer
 MALAMS:
-	MOV	AL,SIZREG
-	MOV	4[BX],AL	;SET REGION NUMBER
-	XOR	AL,AL
-	JMPS	MALAMN		;OK END
+	mov	al,SIZREG
+	mov	4[bx],al		;set region number
+	xor	al,al
+	jmps	MALAMN			;OK end
 ;
-MALAMR:				;ERROR END
-	MOV	AL,0FFH
+MALAMR:				;error end
+	mov	al,0FFh
 MALAMN:
-	MOV	OTPARB,AL
-	RET
+	mov	OTPARB,al
+	ret
 ;
-;  FREE MCB BUFFERED MEMORY AREA
-;  INPUT
-;  BX:MCB SAVE BUFFER POINT
+;  Free mcb buffered memory area
+;  Input
+;  BX:mcb save buffer point
 ;
 FREMEM:
-	MOV	AX,2[BX]
-	MOV	SYSMCB+2,AX	;SET LENGTH
-	MOV	AX,[BX]
-	MOV	SYSMCB,AX	;SET BASE
-	MOV	BX,OFFSET SYSMCB
-	CALL	CGBSPA		;CHECK AVAIL
-	JMPS	MFRMES		;FREE SPECIFIED MEMORY ABORT
+	mov	ax,2[bx]
+	mov	SYSMCB+2,ax		;set length
+	mov	ax,[bx]
+	mov	SYSMCB,ax		;set base
+	mov	bx,offset SYSMCB
+	call	CGBSPA			;check avail
+	jmps	MFRMES			;free specified memory abort
 ;
-;  57:FREE MEMORY AREA
+;  57:free memory area
 ;
 MFRMEM:
-	CALL	CGBSPR
-	CMP	BYTE PTR 4[BX],0FFH
-	JNZ	MFRMES		;SPECIFIED AREA MODE
-	CALL	FRCRAR		;FREE MEMORY AREA ONLY ALLOCATED BY CURRENT PRO
-	JMPS	MALAMS
+	call	CGBSPR
+	cmp	byte ptr 4[bx],0FFh
+	jnz	MFRMES			;specified area mode
+	call	FRCRAR			;free memory area only allocated by current pro
+	jmps	MALAMS
 ;
-MFRMES:				;FREE SPECIFIED MEMORY AREA
-	CMP	WORD PTR 2[BX],0
-	JZ	MALAMR		;NO LENGTH
-	CALL	CKMRTB		;CHECK WITH BASE TABLE
-	JNZ	MALAMR		;NOT IN RANGE ERROR
-	CALL	CKOVRG		;CHECK OVERLAPPED REGION
-	JZ	MALAMR		;OVERLAPPED SO ERROR
-	CALL	MDUMCB		;MODIFY USED MCB TABLE
-	CMP	AL,0
-	JNZ	MALAMR		;ERROR
-	CALL	CKLMCB		;CHECK MATCHED MCB TABLE BY LOWER
-	JNZ	MFRMEN		;NOT MACTH
-	MOV	DI,SI
-	MOV	CH,CL		;SAVE PARAMETERS
-	CALL	CKUMCB		;CHECK BY UPER
-	JZ	MFRMEE		;EACH SIDE MATCH
-	MOV	AX,2[BX]	;LOWER SIDE MATCH
-	ADD	2[DI],AX	;UP LENGTH
-	JMPS	MALAMS
+MFRMES:				;free specified memory area
+	cmp	word ptr 2[bx],0
+	jz	MALAMR			;NO length
+	call	CKMRTB			;check with base table
+	jnz	MALAMR			;not in range error
+	call	CKOVRG			;check overlapped region
+	jz	MALAMR			;overlapped so error
+	call	MDUMCB			;modify used mcb table
+	cmp	al,0
+	jnz	MALAMR			;error
+	call	CKLMCB			;check matched mcb table by lower
+	jnz	MFRMEN			;not macth
+	mov	di,si
+	mov	ch,cl			;save parameters
+	call	CKUMCB			;check by uper
+	jz	MFRMEE			;each side match
+	mov	ax,2[bx]		;lower side match
+	add	2[di],ax		;up length
+	jmps	MALAMS
 ;
-MFRMEE:				;EACH SIDE MATCH
-	CALL	CHNMCB		;CHAIN TO ONE MCB
-	JMPS	MALAMS
+MFRMEE:				;each side match
+	call	CHNMCB			;chain to one mcb
+	jmps	MALAMS
 ;
-MFRMEN:				;NOT MATCH BY LOWER
-	CALL	CKUMCB		;CHECK BY UPER
-	JNZ	MFRMEI		;NOT MATCH
-	MOV	AX,[BX]		;MATCH BY LOWER
-	MOV	[SI],AX		;CHANGE BASE
-	MOV	AX,2[BX]
-	ADD	2[SI],AX	;UP LENGTH
+MFRMEN:				;not match by lower
+	call	CKUMCB			;check by uper
+	jnz	MFRMEI			;not match
+	mov	ax,[bx]			;match by lower
+	mov	[si],ax			;change base
+	mov	ax,2[bx]
+	add	2[si],ax		;up length
 MFRMEK:
-	JMPS	MALAMS
+	jmps	MALAMS
 ;
-MFRMEI:				;NO MATCH DATA
-	CALL	UGMRTP		;MAKE SPACE IN TABLE
-	MOV	AX,[BX]
-	MOV	[SI],AX		;SET BASE
-	MOV	AX,2[BX]
-	MOV	2[SI],AX	;SET LENGTH
-	JMPS	MFRMEK
+MFRMEI:				;NO match data
+	call	UGMRTP			;make space in table
+	mov	ax,[bx]
+	mov	[si],ax			;set base
+	mov	ax,2[bx]
+	mov	2[si],ax		;set length
+	jmps	MFRMEK
 ;
-;  58:FREE ALL MEMORY
+;  58:free all memory
 ;
 MFRALM:
-	XOR	AX,AX
-	MOV	CNTREG,AL	;CLEAR REGION COUNT
-	MOV	CNUMCB,AL	;CLEAR USED MCB BUFFER COUNT
-	MOV	AX,OFFSET TBUMCB+40
-	MOV	PNUMCB,AX	;SET USED MCB BUFFER POINTER TO BOTTOM
-	CALL	TOP+VGTMRT	;GET MEMORY REGION TABLE POINT
-	MOV	SI,BX
-	MOV	CL,[SI]		;GET REGION COUNT
-	SHL	CL,1
-	SHL	CL,1
-	INC	CL		;GET AREA LENGTH
-	XOR	CH,CH
-	MOV	DI,OFFSET SIZREG
-	CLD
-	REP	MOVSB		;INITIALIZE REGION TABLE
-	RET
+	xor	ax,ax
+	mov	CNTREG,al		;clear region count
+	mov	CNUMCB,al		;clear used mcb buffer count
+	mov	ax,offset TBUMCB+40
+	mov	PNUMCB,ax		;set used mcb buffer pointer to bottom
+	call	TOP+VGTMRT		;get memory region table point
+	mov	si,bx
+	mov	cl,[si]			;get region count
+	shl	cl,1
+	shl	cl,1
+	inc	cl			;get area length
+	xor	ch,ch
+	mov	di,offset SIZREG
+	cld
+	rep	movsb			;initialize region table
+	ret
 ;
-;  MODIFY USED MCB BUFFER
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
+;  Modify used mcb buffer
+;  Input
+;  BX:requested mcb point
+;  Output
 ;  AL:0 OK
 ;
 MDUMCB:
-	MOV	CL,CNTREG
-	MOV	CH,000H
-	MOV	DI,OFFSET TBUMCB+35 ;FIRST USED MCB
-MDUMCL:				;CHECK LOOP
-	MOV	AX,[BX]
-	CMP	[DI],AX
-	JZ	MDUMCS		;SAME BASE
-	JNC	MDUMCN		;REQUESTED BASE < TABLE BASE SO TO NEXT
-	MOV	DX,[DI]		;REQUESTED BASE > TABLE BASE
-	ADD	DX,2[DI]	;GET MAXIMUM SEGMENT OF TABLE
-	ADD	AX,2[BX]	;GET MAXIMUM SEGMENT OF REQUESTED
-	CMP	AX,DX
-	JNZ	MDUMCN		;NOT MATCH
-	MOV	AX,2[DI]
-	SUB	AX,2[BX]
-	MOV	2[DI],AX	;DOWN USED MCB TABLE DATA
-	JMPS	MDUMCE
+	mov	cl,CNTREG
+	mov	ch,000h
+	mov	di,offset TBUMCB+35	;first used mcb
+MDUMCL:				;check loop
+	mov	ax,[bx]
+	cmp	[di],ax
+	jz	MDUMCS			;same base
+	jnc	MDUMCN			;requested base < table base so to next
+	mov	dx,[di]			;requested base > table base
+	add	dx,2[di]		;get maximum segment of table
+	add	ax,2[bx]		;get maximum segment of requested
+	cmp	ax,dx
+	jnz	MDUMCN			;not match
+	mov	ax,2[di]
+	sub	ax,2[bx]
+	mov	2[di],ax		;down used mcb table data
+	jmps	MDUMCE
 ;
-MDUMCN:				;CHECK NEXT
-	SUB	DI,5
-	LOOP	MDUMCL
-MDUMCF:				;NOT FOUND END
-	MOV	AL,0FFH
-	RET
+MDUMCN:				;check next
+	sub	di,5
+	loop	MDUMCL
+MDUMCF:				;not found end
+	mov	al,0FFh
+	ret
 ;
-MDUMCS:				;SAME BASE
-	MOV	AX,2[BX]
-	CMP	AX,2[DI]
-	JZ	MDUMCV		;SAME LENGTH
-	JNC	MDUMCF		;REQUESTED IS TOO LONG
-	ADD	AX,[DI]
-	MOV	[DI],AX		;UP BASE
-	MOV	AX,2[DI]
-	SUB	AX,2[BX]
-	MOV	2[DI],AX	;DOWN LENGTH
-	JMPS	MDUMCE		;OK END
+MDUMCS:				;same base
+	mov	ax,2[bx]
+	cmp	ax,2[di]
+	jz	MDUMCV			;same length
+	jnc	MDUMCF			;requested is too long
+	add	ax,[di]
+	mov	[di],ax			;up base
+	mov	ax,2[di]
+	sub	ax,2[bx]
+	mov	2[di],ax		;down length
+	jmps	MDUMCE			;OK end
 ;
-MDUMCV:				;EVEN REGION
-	MOV	AX,-5[DI]	;COMPRESS USED MCB TABLE
-	MOV	[DI],AX
-	MOV	AX,-3[DI]
-	MOV	2[DI],AX
-	MOV	AL,-1[DI]
-	MOV	4[DI],AL
-	SUB	DI,5		;TO NEXT BLOCK
-	LOOP	MDUMCS
-	DEC	CNTREG		;DOWN COUNT
-	ADD	PNUMCB,5		;UP POINTER
+MDUMCV:				;even region
+	mov	ax,-5[di]		;compress used mcb table
+	mov	[di],ax
+	mov	ax,-3[di]
+	mov	2[di],ax
+	mov	al,-1[di]
+	mov	4[di],al
+	sub	di,5			;to next block
+	loop	MDUMCS
+	dec	CNTREG			;down count
+	add	PNUMCB,5		;up pointer
 MDUMCE:
-	MOV	AL,0
-	RET
+	mov	al,0
+	ret
 ;
-;  FREE MEMORY AREA ONLY ALLOCATED BY CURRENT PROGRAM
+;  Free memory area only allocated by current program
 ;
 FRCRAR:
-	CMP	CNTREG,0
-	JZ	FRCRAE		;NO REGION
-	MOV	BX,PNUMCB
-	CMP	BYTE PTR 4[BX],0
-	JNZ	FRCRAE		;NOT CURRENT
-	CALL	FREMEM		;FREE THIS REGION
-	JMPS	FRCRAR		;TO NEXT
+	cmp	CNTREG,0
+	jz	FRCRAE			;NO region
+	mov	bx,PNUMCB
+	cmp	byte ptr 4[bx],0
+	jnz	FRCRAE			;not current
+	call	FREMEM			;free this region
+	jmps	FRCRAR			;to next
 ;
 FRCRAE:
-	RET
+	ret
 ;
-;  CHECK & GET BASE PARAMETERS
-;  OUTPUT
-;  AL:0 OK  -1 NO SPACE
-;  SI:REGION TABLE TOP-4
-;  CL:BLOCK COUNT-1
+;  Check & get base parameters
+;  Output
+;  AL:0 OK  -1 NO space
+;  SI:region table top-4
+;  CL:block count-1
 ;
 CGBSPR:
-	MOV	CL,5
-	CALL	STWFCB		;GET MCB
-	MOV	BX,INPARA
+	mov	cl,5
+	call	STWFCB			;get mcb
+	mov	bx,INPARA
 CGBSPA:
-	MOV	CL,0FFH
-	MOV	SI,OFFSET TBLREG-4
-	MOV	AL,0FFH
-	CMP	CNTREG,8
-	JNC	CGBSPE		;NO SPACE IN TABLE
-	CMP	WORD PTR 2[BX],0
-	JZ	CGBSPE		;LENGTH ZERO
-	INC	AL
+	mov	cl,0FFh
+	mov	si,offset TBLREG-4
+	mov	al,0FFh
+	cmp	CNTREG,8
+	jnc	CGBSPE			;NO space in table
+	cmp	word ptr 2[bx],0
+	jz	CGBSPE			;length zero
+	inc	al
 CGBSPE:
-	OR	AL,AL
-	RET
+	or	al,al
+	ret
 ;
-;  GET & SET REGION
-;  INPUT
-;  SI:TABLE POINT-4
-;  BX:REQUESTED MCB POINT
-;  CL:POINT OF TABLE
+;  Get & set region
+;  Input
+;  SI:table point-4
+;  BX:requested mcb point
+;  CL:point of table
 ;
 GSREGN:
-	PUSH	CX
-	MOV	AX,2[SI]
-	SUB	AX,2[BX]	;GET LENGTH DIFFERENCE
-	JNZ	GSREGS		;SAME DIFFERENCE
-	MOV	AX,[SI]		;EVEN
-	MOV	[BX],AX		;SAVE BASE
-	CALL	CMPRTB		;COMPRESS
-	JMPS	GSREGE
+	push	cx
+	mov	ax,2[si]
+	sub	ax,2[bx]		;get length difference
+	jnz	GSREGS			;same difference
+	mov	ax,[si]			;even
+	mov	[bx],ax			;save base
+	call	CMPRTB			;compress
+	jmps	GSREGE
 ;
 GSREGS:
-	MOV	2[SI],AX	;SAVE LEFT LENGTH
-	ADD	AX,[SI]		;GET BOTTOM
-	MOV	[BX],AX		;SET AS BASE
+	mov	2[si],ax		;save left length
+	add	ax,[si]			;get bottom
+	mov	[bx],ax			;set as base
 GSREGE:
-	POP	CX
-	RET
+	pop	cx
+	ret
 ;
-;  COMPRESS REGION TABLE
-;  INPUT
-;  CL:TABLE POINT COUNT
-;  SI:TABLE POINT
+;  Compress region table
+;  Input
+;  CL:table point count
+;  SI:table point
 ;
 CMPRTB:
-	PUSH	CX
-	PUSH	SI
-	PUSH	DI
-	MOV	AL,SIZREG
-	DEC	AL
-	MOV	SIZREG,AL	;DOWN COUNT OF TABLE SIZE
-	SUB	AL,CL
-	JZ	CMPRTE		;LAST DATA SO END
-	MOV	CL,AL
-	XOR	CH,CH
-	ADD	CX,CX		;GET LEFT LENGTH COUNT
-	MOV	DI,SI
-	ADD	SI,4
-	CLD
-	REP	MOVSW		;COMPRESS LEFT DATA
+	push	cx
+	push	si
+	push	di
+	mov	al,SIZREG
+	dec	al
+	mov	SIZREG,al		;down count of table size
+	sub	al,cl
+	jz	CMPRTE			;last data so end
+	mov	cl,al
+	xor	ch,ch
+	add	cx,cx			;get left length count
+	mov	di,si
+	add	si,4
+	cld
+	rep	movsw			;compress left data
 CMPRTE:
-	POP	DI
-	POP	SI
-	POP	CX
-	RET
+	pop	di
+	pop	si
+	pop	cx
+	ret
 ;
-;  GET MAXIMUM REGION TABLE POINT
-;  INPUT
-;  SI:REGION TABLE POINT TOP-4
-;  CL:BLOCK POSITION COUNT -1
-;  OUTPUT
-;  SI:MAXIMUM REGION TABLE POINT
-;  CL:MAXIMUM REGION POINT COUNT
-;  AL:0 GET  -1 NOT FOUND
+;  Get maximum region table point
+;  Input
+;  SI:region table point top-4
+;  CL:block position count -1
+;  Output
+;  SI:maximum region table point
+;  CL:maximum region point count
+;  AL:0 get  -1 not found
 ;
 GMXRTP:
-	PUSH	DX
-	PUSH	DI
-	XOR	DX,DX		;CLEAR LENGTH
-	MOV	CH,0FFH
-GMXRTL:				;SEARCH LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	GMXRTV		;ALL OVER
-	MOV	AX,2[SI]	;GET LENGTH
-	CMP	AX,DX
-	JC	GMXRTL		;TOO SHORT
-	MOV	DX,AX		;SET CURRENT MAX
-	MOV	CH,CL
-	MOV	DI,SI
-	JMPS	GMXRTL		;TO NEXT
+	push	dx
+	push	di
+	xor	dx,dx			;clear length
+	mov	ch,0FFh
+GMXRTL:				;search loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	GMXRTV			;all over
+	mov	ax,2[si]		;get length
+	cmp	ax,dx
+	jc	GMXRTL			;too short
+	mov	dx,ax			;set current max
+	mov	ch,cl
+	mov	di,si
+	jmps	GMXRTL			;to next
 ;
 GMXRTV:
-	MOV	AL,0FFH
-	MOV	SI,DI
-	MOV	CL,CH
-	INC	CH
-	JZ	GMXRTE		;NO SPACE
-	INC	AL
+	mov	al,0FFh
+	mov	si,di
+	mov	cl,ch
+	inc	ch
+	jz	GMXRTE			;NO space
+	inc	al
 GMXRTE:
-	OR	AL,AL
-	POP	DI
-	POP	DX
-	RET
+	or	al,al
+	pop	di
+	pop	dx
+	ret
 ;
-;  SEARCH SUITABLE REGION
-;  INPUT
-;  SI:TABLE-4
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
-;  SI:NEAR OR EVEN REGION POINT
-;  CL:COUNT OF REGION
+;  Search suitable region
+;  Input
+;  SI:table-4
+;  BX:requested mcb point
+;  Output
+;  SI:near or even region point
+;  CL:count of region
 ;  AL:0 OK
 ;
 SRSTRG:
-	PUSH	DX
-	PUSH	DI
-	MOV	DX,-1
-	MOV	CH,0FFH
-SRSTRL:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	SRSTRV		;OVER
-	MOV	AX,2[SI]
-	SUB	AX,2[BX]
-	JZ	SRSTRE		;EVEN LENGTH SO GET
-	JC	SRSTRL		;TOO SHORT
-	CMP	AX,DX
-	JNC	SRSTRL		;TOO LONG
-	MOV	DX,AX		;SET CURRENT
-	MOV	CH,CL
-	MOV	DI,SI
-	JMPS	SRSTRL		;TO NEXT
+	push	dx
+	push	di
+	mov	dx,-1
+	mov	ch,0FFh
+SRSTRL:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	SRSTRV			;over
+	mov	ax,2[si]
+	sub	ax,2[bx]
+	jz	SRSTRE			;even length so get
+	jc	SRSTRL			;too short
+	cmp	ax,dx
+	jnc	SRSTRL			;too long
+	mov	dx,ax			;set current
+	mov	ch,cl
+	mov	di,si
+	jmps	SRSTRL			;to next
 ;
 SRSTRV:
-	MOV	AL,0FFH
-	MOV	SI,DI
-	MOV	CL,CH
-	INC	CH
-	JZ	SRSTRE		;NOT FOUND
-	INC	AL
+	mov	al,0FFh
+	mov	si,di
+	mov	cl,ch
+	inc	ch
+	jz	SRSTRE			;not found
+	inc	al
 SRSTRE:
-	OR	AL,AL
-	POP	DI
-	POP	DX
-	RET
+	or	al,al
+	pop	di
+	pop	dx
+	ret
 ;
-;  GET TOTAL DATA
-;  INPUT
-;  BX:MCB POINT
-;  OUTPUT
-;  AX:TOTAL DATA
+;  Get total data
+;  Input
+;  BX:mcb point
+;  Output
+;  AX:total data
 ;
 GTTODT:
-	MOV	AX,2[BX]
-	ADD	AX,[BX]
-	RET
+	mov	ax,2[bx]
+	add	ax,[bx]
+	ret
 ;
-;  GET EACH MAXIMUM ADDRESS
-;  INPUT
-;  BP:PARAMETER BUFFER POINT +0 REQUESTED  +2 TABLE DATA
-;  BX:REQUESETED MCB POINT
-;  SI:TABLE POINT
+;  Get each maximum address
+;  Input
+;  BP:parameter buffer point +0 requested  +2 table data
+;  BX:requeseted mcb point
+;  SI:table point
 ;
 GTEMXA:
-	PUSH	BX
-	CALL	GTTODT
-	MOV	2[BP],AX	;GET REQUESTED MAX
-	MOV	BX,SI
-	CALL	GTTODT
-	MOV	0[BP],AX	;GET TABLE MAX
-	POP	BX
-	RET
+	push	bx
+	call	GTTODT
+	mov	2[bp],ax		;get requested max
+	mov	bx,si
+	call	GTTODT
+	mov	0[bp],ax		;get table max
+	pop	bx
+	ret
 ;
-;  CHECK ABSOLUTE AREA
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  SI:TABLE POINT
-;  OUTPUT
-;  AL:0 OK -1 FAIL
+;  Check absolute area
+;  Input
+;  BX:requested mcb point
+;  SI:table point
+;  Output
+;  AL:0 OK -1 fail
 ;
 CKABAR:
-	PUSH	BP
-	SUB	SP,4
-	MOV	BP,SP		;MAKE WORK
-	PUSH	CX
-	MOV	CH,0FFH
-	CALL	GTEMXA		;GET EACH MAX
-	MOV	AX,[BX]
-	CMP	AX,[SI]
-	JC	CKABAE		;REQUESTED BASE < TABLE BASE
-	MOV	AX,0[BP]
-	CMP	AX,2[BP]
-	JC	CKABAE		;REQUESTED MAX < TABLE MAX
-	MOV	CH,0		;OK GET
+	push	bp
+	sub	sp,4
+	mov	bp,sp			;make work
+	push	cx
+	mov	ch,0FFh
+	call	GTEMXA			;get each max
+	mov	ax,[bx]
+	cmp	ax,[si]
+	jc	CKABAE			;requested base < table base
+	mov	ax,0[bp]
+	cmp	ax,2[bp]
+	jc	CKABAE			;requested max < table max
+	mov	ch,0			;OK get
 CKABAE:
-	MOV	AL,CH
-	POP	CX
-	ADD	SP,4
-	POP	BP
-	OR	AL,AL
-	RET
+	mov	al,ch
+	pop	cx
+	add	sp,4
+	pop	bp
+	or	al,al
+	ret
 ;
-;  UP & GET MAXIMUM REGION TABLE POINT
-;  OUTPUT
-;  SI:LAST REGION DATA POINT
+;  Up & get maximum region table point
+;  Output
+;  SI:last region data point
 ;
 UGMRTP:
-	MOV	AL,SIZREG
-	INC	SIZREG		;UP COUNT
-	MOV	AH,4
-	MUL	AH
-	MOV	SI,AX		;GET BIAS
-	LEA	SI,TBLREG[SI]	;GET TABLE POINT
-	RET
+	mov	al,SIZREG
+	inc	SIZREG			;up count
+	mov	ah,4
+	mul	ah
+	mov	si,ax			;get bias
+	lea	si,TBLREG[si]		;get table point
+	ret
 ;
-;  SETUP REGION TABLE FOR ABSOLUTE ALLOCATION
-;  INPUT
-;  SI:TABLE POINT
-;  BX:REQUESTED MCB POINT
-;  CL:TABLE CUNT
+;  Setup region table for absolute allocation
+;  Input
+;  SI:table point
+;  BX:requested mcb point
+;  CL:table cunt
 ;
 SRTAAL:
-	PUSH	BP
-	SUB	SP,4
-	MOV	BP,SP		;MAKE WORK
-	PUSH	DX
-	PUSH	CX
-	CALL	GTEMXA		;GET EACH MAX
-	MOV	AX,[BX]
-	CMP	AX,[SI]
-	JNZ	SRTAAD		;NOT SAME BASE
-	MOV	AX,2[BP]
-	CMP	AX,0[BP]
-	JNZ	SRTAAM		;NOT EVEN
-	POP	CX		;EVEN
-	PUSH	CX
-	CALL	CMPRTB		;COMPRESS CURRENT REGION
-	JMPS	SRTAAE
+	push	bp
+	sub	sp,4
+	mov	bp,sp			;make work
+	push	dx
+	push	cx
+	call	GTEMXA			;get each max
+	mov	ax,[bx]
+	cmp	ax,[si]
+	jnz	SRTAAD			;not same base
+	mov	ax,2[bp]
+	cmp	ax,0[bp]
+	jnz	SRTAAM			;not even
+	pop	cx			;even
+	push	cx
+	call	CMPRTB			;compress current region
+	jmps	SRTAAE
 ;
-SRTAAM:				;LENGTH MISS MATCH
-	MOV	[SI],AX		;SET NEW BASE
-	MOV	AX,2[BX]
-	SUB	2[SI],AX	;SET NEW LENGTH
-	JMPS	SRTAAE
+SRTAAM:				;length miss match
+	mov	[si],ax			;set new base
+	mov	ax,2[bx]
+	sub	2[si],ax		;set new length
+	jmps	SRTAAE
 ;
-SRTAAD:				;DIFFERENT BASE
-	MOV	AX,0[BP]
-	SUB	AX,2[BP]
-	JNZ	SRTAAB		;NOT EVEN END
-	MOV	AX,[BX]		;EVEN END
-	SUB	AX,[SI]
-	MOV	2[SI],AX	;DOWN ONLY LENGTH
-	JMPS	SRTAAE
+SRTAAD:				;different base
+	mov	ax,0[bp]
+	sub	ax,2[bp]
+	jnz	SRTAAB			;not even end
+	mov	ax,[bx]			;even end
+	sub	ax,[si]
+	mov	2[si],ax		;down only length
+	jmps	SRTAAE
 ;
-SRTAAB:				;MISS MATCH BOTH
-	MOV	AX,[BX]
-	SUB	AX,[SI]
-	MOV	2[SI],AX	;SET LOWER SPACE LENGTH
-	CALL	UGMRTP		;GET NEW DATA SPACE
-	MOV	AX,2[BP]
-	MOV	[SI],AX		;SET UPER BASE
-	SUB	AX,0[BP]
-	NEG	AX
-	MOV	2[SI],AX	;SAVE LENGTH
+SRTAAB:				;miss match both
+	mov	ax,[bx]
+	sub	ax,[si]
+	mov	2[si],ax		;set lower space length
+	call	UGMRTP			;get new data space
+	mov	ax,2[bp]
+	mov	[si],ax			;set uper base
+	sub	ax,0[bp]
+	neg	ax
+	mov	2[si],ax		;save length
 SRTAAE:
-	POP	CX
-	POP	DX
-	ADD	SP,4
-	POP	BP
-	RET
+	pop	cx
+	pop	dx
+	add	sp,4
+	pop	bp
+	ret
 ;
-;  CHAIN TO ONE MCB
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  SI:UPER MATCH TABLE POINT
-;  DI:LOWER MATCH TABLE POINT
+;  Chain to one mcb
+;  Input
+;  BX:requested mcb point
+;  SI:uper match table point
+;  DI:lower match table point
 ;
 CHNMCB:
-	MOV	AX,2[BX]
-	ADD	AX,2[SI]
-	ADD	2[DI],AX	;SET TOTAL LENGTH
-	CALL	CMPRTB		;COMPRESS TABLE
-	RET
+	mov	ax,2[bx]
+	add	ax,2[si]
+	add	2[di],ax		;set total length
+	call	CMPRTB			;compress table
+	ret
 ;
-;  CHECK MEMORY REGION TABLE
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
-;  AL:0 GET
+;  Check memory region table
+;  Input
+;  BX:requested mcb point
+;  Output
+;  AL:0 get
 ;
 CKMRTB:
-	PUSH	CX
-	PUSH	DX
-	PUSH	SI
-	PUSH	BX
-	CALL	TOP+VGTMRT	;GET MEMORY REGION TABLE BASE
-	MOV	CH,[BX]		;GET TABLE SIZE
-	MOV	SI,BX
-	SUB	SI,3		;TABLE TOP -4
-	POP	BX
-	MOV	CL,0FFH
-CKMRTL:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,CH
-	JNC	CKMRTN		;OVER ALL
-	CALL	CKABAR		;CHECK ABSOLUTE AREA
-	JNZ	CKMRTL		;NOT MATCH
-	MOV	AL,0		;GET
-	JMPS	CKMRTE
+	push	cx
+	push	dx
+	push	si
+	push	bx
+	call	TOP+VGTMRT		;get memory region table base
+	mov	ch,[bx]			;get table size
+	mov	si,bx
+	sub	si,3			;table top -4
+	pop	bx
+	mov	cl,0FFh
+CKMRTL:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,ch
+	jnc	CKMRTN			;over all
+	call	CKABAR			;check absolute area
+	jnz	CKMRTL			;not match
+	mov	al,0			;get
+	jmps	CKMRTE
 ;
-CKMRTN:				;NOT MATCH END
-	MOV	AL,0FFH
+CKMRTN:				;not match end
+	mov	al,0FFh
 CKMRTE:
-	POP	SI
-	POP	DX
-	POP	CX
-	OR	AL,AL
-	RET
+	pop	si
+	pop	dx
+	pop	cx
+	or	al,al
+	ret
 ;
-;  CHECK OVERLAPPED REGION
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
-;  AL:0 OVERLAPPED
+;  Check overlapped region
+;  Input
+;  BX:requested mcb point
+;  Output
+;  AL:0 overlapped
 ;
 CKOVRG:
-	PUSH	BP
-	SUB	SP,4
-	MOV	BP,SP
-	PUSH	SI
-	PUSH	CX
-	MOV	SI,OFFSET TBLREG-4
-	MOV	CL,0FFH
-CKOVRL:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	CKOVRV		;ALL OVER
-	CALL	GTEMXA		;GET EACH MAX
-	MOV	AX,[BX]
-	CMP	AX,[SI]
-	JNC	CKOVRR		;REQUESTED BASE > TABLE BASE
-	MOV	AX,2[BP]
-	CMP	AX,[SI]
-	JA	CKOVRF		;REQUESTED MAX > TABLE BASE   SO OVERLAP
-	JMPS	CKOVRL		;CHECK NEXT
+	push	bp
+	sub	sp,4
+	mov	bp,sp
+	push	si
+	push	cx
+	mov	si,offset TBLREG-4
+	mov	cl,0FFh
+CKOVRL:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	CKOVRV			;all over
+	call	GTEMXA			;get each max
+	mov	ax,[bx]
+	cmp	ax,[si]
+	jnc	CKOVRR			;requested base > table base
+	mov	ax,2[bp]
+	cmp	ax,[si]
+	ja	CKOVRF			;requested max > table base   so overlap
+	jmps	CKOVRL			;check next
 ;
-CKOVRR:				;REQUESETD BASE > TABLE BASE
-	CMP	AX,0[BP]
-	JNC	CKOVRL		;REQUESTED BASE > TABLE MAX
-CKOVRF:				;GET OVERLAPPED REGION
-	MOV	AL,0
-	JMPS	CKOVRE
+CKOVRR:				;requesetd base > table base
+	cmp	ax,0[bp]
+	jnc	CKOVRL			;requested base > table max
+CKOVRF:				;get overlapped region
+	mov	al,0
+	jmps	CKOVRE
 ;
 CKOVRV:
-	MOV	AL,0FFH
+	mov	al,0FFh
 CKOVRE:
-	POP	CX
-	POP	SI
-	ADD	SP,4
-	POP	BP
-	OR	AL,AL
-	RET
+	pop	cx
+	pop	si
+	add	sp,4
+	pop	bp
+	or	al,al
+	ret
 ;
-;  CHECK MATCHED MCB TABLE BY LOWER
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
-;  SI:MATCHED TABLE POINT
-;  CL:MATCHED TABLE COUNT
-;  AL:0 GET
+;  Check matched mcb table by lower
+;  Input
+;  BX:requested mcb point
+;  Output
+;  SI:matched table point
+;  CL:matched table count
+;  AL:0 get
 ;
 CKLMCB:
-	PUSH	BP
-	SUB	SP,4
-	MOV	BP,SP
-	MOV	SI,OFFSET TBLREG-4
-	MOV	CL,0FFH
-CKLMCL:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	CKLMCV		;ALL OVER
-	CALL	GTEMXA		;GET EACH MAX
-	MOV	AX,[BX]
-	SUB	AX,0[BP]
-	JNZ	CKLMCL		;NOT MATCH
-	JMPS	CKLMCE		;MATCH
+	push	bp
+	sub	sp,4
+	mov	bp,sp
+	mov	si,offset TBLREG-4
+	mov	cl,0FFh
+CKLMCL:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	CKLMCV			;all over
+	call	GTEMXA			;get each max
+	mov	ax,[bx]
+	sub	ax,0[bp]
+	jnz	CKLMCL			;not match
+	jmps	CKLMCE			;match
 ;
 CKLMCV:
-	MOV	AL,0FFH
+	mov	al,0FFh
 CKLMCE:
-	ADD	SP,4
-	POP	BP
-	OR	AL,AL
-	RET
+	add	sp,4
+	pop	bp
+	or	al,al
+	ret
 ;
-;  CHECK MATCHED TABLE BY UPER
-;  INPUT
-;  BX:REQUESTED MCB POINT
-;  OUTPUT
-;  SI:MATCHED TABLE POINT
-;  CL:MATCHED TABLE COUNT
-;  AL:0 GET
+;  Check matched table by uper
+;  Input
+;  BX:requested mcb point
+;  Output
+;  SI:matched table point
+;  CL:matched table count
+;  AL:0 get
 ;
 CKUMCB:
-	PUSH	BP
-	SUB	SP,4
-	MOV	BP,SP
-	MOV	SI,OFFSET TBLREG-4
-	MOV	CL,0FFH
-CKUMCL:				;CHECK LOOP
-	ADD	SI,4
-	INC	CL
-	CMP	CL,SIZREG
-	JNC	CKUMCV		;OVER
-	CALL	GTEMXA		;GET MAX
-	MOV	AX,2[BP]
-	SUB	AX,[SI]
-	JNZ	CKUMCL		;NOT MATCH
-	JMPS	CKUMCE		;MATCHED
+	push	bp
+	sub	sp,4
+	mov	bp,sp
+	mov	si,offset TBLREG-4
+	mov	cl,0FFh
+CKUMCL:				;check loop
+	add	si,4
+	inc	cl
+	cmp	cl,SIZREG
+	jnc	CKUMCV			;over
+	call	GTEMXA			;get max
+	mov	ax,2[bp]
+	sub	ax,[si]
+	jnz	CKUMCL			;not match
+	jmps	CKUMCE			;matched
 ;
 CKUMCV:
-	MOV	AL,0FFH
+	mov	al,0FFh
 CKUMCE:
-	ADD	SP,4
-	POP	BP
-	OR	AL,AL
-	RET
+	add	sp,4
+	pop	bp
+	or	al,al
+	ret
 ;
-;  CONSOLE I/O ROUTINES
+;  Console I/O routines
 ;
-;  CONSOLE INPUT WITH STORED DATA CHECKING
-;  OUTPUT
-;  AL:DATA
+;  Console input with stored data checking
+;  Output
+;  AL:data
 ;
 CONINC:
-	MOV	BX,OFFSET BFCONC
-	MOV	AL,[BX]		;GET BUFFERED DATA
-	MOV	BYTE PTR [BX],0	;CLEAR DATA
-	OR	AL,AL
-	JNZ	CONCHE		;GET SOME CODE
-	JMP	BCONIN		;GET INPUT BY BIOS CONSOLE INPUT
+	mov	bx,offset BFCONC
+	mov	al,[bx]			;get buffered data
+	mov	byte ptr [bx],0		;clear data
+	or	al,al
+	jnz	CONCHE			;get some code
+	jmp	BCONIN			;get input by BIOS console input
 ;
-;  CONSOLE INPUT BODDY
-;  OUTPUT
-;  AL:CODE
+;  Console input boddy
+;  Output
+;  AL:code
 ;
 CONINP:
-	CALL	CONINC		;GET CONSOLE INPUT CODE
-	CALL	CONCHK		;CHECK CONTROL CODE
-	JC	CONCHE		;CONTROL CODE SO NO ECHO
-	PUSH	AX
-	MOV	CL,AL
-	CALL	CONOUT		;ECHO BACK
-	POP	AX
-	RET
+	call	CONINC			;get console input code
+	call	CONCHK			;check control code
+	jc	CONCHE			;control code so NO echo
+	push	ax
+	mov	cl,al
+	call	CONOUT			;echo back
+	pop	ax
+	ret
 ;
-;  CHECK CONTROL CODE
-;  INPUT
-;  AL:CODE
-;  OUTPUT
-;  CF:OFF VISIBLE OR VALID CONTROL
+;  Check control code
+;  Input
+;  AL:code
+;  Output
+;  Cf:off visible or valid control
 ;
 CONCHK:
-	CMP	AL,CR
-	JZ	CONCHE
-	CMP	AL,LF
-	JZ	CONCHE
-	CMP	AL,HT
-	JZ	CONCHE
-	CMP	AL,BS
-	JZ	CONCHE
-	CMP	AL,' '
+	cmp	al,CR
+	jz	CONCHE
+	cmp	al,LF
+	jz	CONCHE
+	cmp	al,HT
+	jz	CONCHE
+	cmp	al,BS
+	jz	CONCHE
+	cmp	al,' '
 CONCHE:
-	RET
+	ret
 ;
-;  GET CONSOLE STATUS
-;  OUTPUT
-;  AL:STATUS  0 NOT READY  1 READY
+;  Get console status
+;  Output
+;  AL:status  0 not ready  1 ready
 ;
 CONSTS:
-	MOV	AL,BFCONC
-	OR	AL,AL
-	JNZ	CONSTD		;EXIST SOME CODE SO READY
-	CALL	BCONST		;CHECK STATUS
-	AND	AL,1
-	JZ	CONCHE		;NO READY
-	CALL	BCONIN		;READY SO GET CODE
-	CMP	AL,'S'-40H
-	JNZ	CONSTG		;NORMAL CODE
-	CALL	BCONIN		;FREEZE MODE WAIT NEXT INPUT
-	CMP	AL,'C'-40H
-	JZ	CONSTA		;ABORT
-	XOR	AL,AL
-	RET			;NOT READY END
+	mov	al,BFCONC
+	or	al,al
+	jnz	CONSTD			;exist some code so ready
+	call	BCONST			;check status
+	and	al,1
+	jz	CONCHE			;NO ready
+	call	BCONIN			;ready so get code
+	cmp	al,'S'-40h
+	jnz	CONSTG			;normal code
+	call	BCONIN			;freeze mode wait next input
+	cmp	al,'C'-40h
+	jz	CONSTA			;abort
+	xor	al,al
+	ret				;not ready end
 ;
-CONSTA:				;ABORT
-	MOV	PCARIG,0	;CLEAR CARRIAGE POSITION
-    ; TS: PATCH START INLINE WITH ORDER IN ORIG CP/M-86 FOR XT;
-	;CMP	CNUMCB,0
-	;JNZ	CONSTM		;SOME MEMORY USED
-	;CALL	MRSDSY		;RESET SYSTEM DISK
-	CALL	MRSDSY		;RESET SYSTEM DISK
-	CMP 	CNUMCB,0
-    JNE	    CONSTM		;SOME MEMORY USED
-    ; TS: PATCH END INLINE WITH ORDER IN ORIG CP/M-86 FOR XT;
-	MOV	AL,OTPARB	;GET SUBMIT FILE MODE
-	MOV	.MDSUBE,AL	;SET SUBMIT MODE
-	JMPS	CONSTR
+CONSTA:				;abort
+	mov	PCARIG,0		;clear carriage position
+    ; Ts: patch start inline with order in orig CP/M-86 for XT;
+	;cmp	CNUMCB,0
+	;jnz	CONSTM		;some memory used
+	;call	MRSDSY		;reset system disk
+	call	MRSDSY			;reset system disk
+	cmp 	CNUMCB,0
+	jne	CONSTM			;some memory used
+    ; Ts: patch end inline with order in orig CP/M-86 for XT;
+	mov	al,OTPARB		;get submit file mode
+	mov	.MDSUBE,al		;set submit mode
+	jmps	CONSTR
 ;
-CONSTM:				;SOME MEMORY USED
-	TEST	MODABT,0FFH	;		NOT SETUP ?????
-	JZ	CONSTE
-	CMP	CNUMCB,1
-	JNZ	CONSTE		;NOT SIMPLE SO RESET ALL
+CONSTM:				;some memory used
+	test	MODABT,0FFh		;		not setup ?????
+	jz	CONSTE
+	cmp	CNUMCB,1
+	jnz	CONSTE			;not simple so reset all
 CONSTR:
-	MOV	BYTE PTR .COMBUF+1,0 ;CLEAR COMMAND COUNT
-	JMP	MSYRSR		;RESET SYSTEM WITH MEMORY REMAINDING
+	mov	byte ptr .COMBUF+1,0	;clear command count
+	jmp	MSYRSR			;reset system with memory remainding
 ;
-CONSTE:				;RESET ALL SYSTEM
-	JMP	MSYRSA
+CONSTE:				;reset all system
+	jmp	MSYRSA
 ;
-CONSTG:				;GET CODE
-	MOV	BFCONC,AL	;SAVE CODE
+CONSTG:				;get code
+	mov	BFCONC,al		;save code
 CONSTD:
-	MOV	AL,1		;READY END
-	RET
+	mov	al,1			;ready end
+	ret
 ;
-;  CONSOLE OUT DIRECT
-;  INPUT
-;  CL:CODE
+;  Console out direct
+;  Input
+;  CL:code
 ;
 CONOTS:
-	MOV	AL,ECHKIL
-	OR	AL,AL
-	JNZ	CONOTT		;NO ECHO MODE
-	PUSH	CX
-	CALL	CONSTS		;CHECK CONSOLE IN
-	POP	    CX
-	PUSH	CX
-	CALL	BCONOT		;OUT BY BIOS ROUTINE
-	POP	CX
-	PUSH	CX
-	CMP	LSTTGL,0	;LIST OUT TOGGLE
-	JZ	$+5		;NO OUT
-	CALL	BLIST		;WITH LIST OUT
-	POP	CX
+	mov	al,ECHKIL
+	or	al,al
+	jnz	CONOTT			;NO echo mode
+	push	cx
+	call	CONSTS			;check console in
+	pop	cx
+	push	cx
+	call	BCONOT			;out by BIOS routine
+	pop	cx
+	push	cx
+	cmp	LSTTGL,0		;list out toggle
+	jz	$+5			;NO out
+	call	BLIST			;with list out
+	pop	cx
 CONOTT:
-	MOV	AL,CL
-	MOV	BX,OFFSET PCARIG
-	CMP	AL,07FH
-	JZ	CONOTE		;DELETE CODE SO NOT UP
-	INC	BYTE PTR [BX]	;UP CARRIAGE POSITION
-	CMP	AL,' '
-	JNC	CONOTE		;OK VISIBLE CODE
-	DEC	BYTE PTR [BX]	;DOWN AS CONTROL CODE
-	MOV	AL,[BX]
-	OR	AL,AL
-	JZ	CONOTE		;TOP SO OK
-	MOV	AL,CL
-	CMP	AL,BS
-	JNZ	CONOTL		;NOT BACK SPACE
-	DEC	BYTE PTR [BX]	;DOWN AS BACK SPACE
+	mov	al,cl
+	mov	bx,offset PCARIG
+	cmp	al,07Fh
+	jz	CONOTE			;delete code so not up
+	inc	byte ptr [bx]		;up carriage position
+	cmp	al,' '
+	jnc	CONOTE			;OK visible code
+	dec	byte ptr [bx]		;down as control code
+	mov	al,[bx]
+	or	al,al
+	jz	CONOTE			;top so OK
+	mov	al,cl
+	cmp	al,BS
+	jnz	CONOTL			;not back space
+	dec	byte ptr [bx]		;down as back space
 CONOTE:
-	RET
+	ret
 ;
 CONOTL:
-	CMP	AL,LF
-	JNZ	CONOTE
-	MOV	BYTE PTR [BX],0	;LINE FEED SO TOP
-	RET
+	cmp	al,LF
+	jnz	CONOTE
+	mov	byte ptr [bx],0		;line feed so top
+	ret
 ;
-;  CONSOLE OUT WITH CONTROL CODE VISIBLE
-;  INPUT
-;  CL:CODE
+;  Console out with control code visible
+;  Input
+;  CL:code
 ;
 CONOTC:
-	MOV	AL,CL
-	CALL	CONCHK		;CHECK CONTROL CODE
-	JNC	CONOUT		;VISIBLE OR VALID CONTROL CODE
-	PUSH	AX		;UNVISIBLE
-	MOV	CL,'^'
-	CALL	CONOTS		;OUT CONTROL CODE MARK
-	POP	CX
-	OR	CL,040H		;TO VISIBLE CODE
+	mov	al,cl
+	call	CONCHK			;check control code
+	jnc	CONOUT			;visible or valid control code
+	push	ax			;unvisible
+	mov	cl,'^'
+	call	CONOTS			;out control code mark
+	pop	cx
+	or	cl,040h			;to visible code
 ;
-;  CONSOLE OUT WITH TAB EXPANSION
-;  INPUT
-;  CL:CODE
+;  Console out with TAB expansion
+;  Input
+;  CL:code
 ;
 CONOUT:
-	CMP	CL,HT
-	JNZ	CONOTS		;OTHER CODE
-CONOUL:				;TAB EXPAND LOOP
-	MOV	CL,' '
-	CALL	CONOTS		;OUT SPACE
-	MOV	AL,PCARIG
-	AND	AL,07H
-	JNZ	CONOUL		;NOT TAB POINT
+	cmp	cl,HT
+	jnz	CONOTS			;other code
+CONOUL:				;TAB expand loop
+	mov	cl,' '
+	call	CONOTS			;out space
+	mov	al,PCARIG
+	and	al,07h
+	jnz	CONOUL			;not TAB point
 CONOUE:
-	RET
+	ret
 ;
-;  BACK SPACE WITH ERASE
+;  Back space with erase
 ;
 BACKS:
-	CALL	BACK
-	MOV	CL,' '
-	CALL	BCONOT		;ERASE
+	call	BACK
+	mov	cl,' '
+	call	BCONOT			;erase
 BACK:
-	MOV	CL,BS
-	JMP	BCONOT
+	mov	cl,BS
+	jmp	BCONOT
 ;
-;  TO NEW LINE WITH END MARK '#'  FOR ^U OR SO
+;  To new line with end mark '#'  for ^U or so
 ;
 NCRLF:
-	MOV	CL,'#'
-	CALL	CONOTS
-	CALL	CRLF
-NCRLFL:				;TO CURRENT PROMPT POSITION
-	MOV	AL,PCARIG
-	CMP	AL,PPROMP
-	JNC	CONOUE
-	MOV	CL,' '
-	CALL	CONOTS
-	JMPS	NCRLFL
+	mov	cl,'#'
+	call	CONOTS
+	call	CRLF
+NCRLFL:				;to current prompt position
+	mov	al,PCARIG
+	cmp	al,PPROMP
+	jnc	CONOUE
+	mov	cl,' '
+	call	CONOTS
+	jmps	NCRLFL
 ;
-;  CARRIAGE RETURN & LINE FEED
+;  Carriage return & line feed
 ;
 CRLF:
-	MOV	CL,CR
-	CALL	CONOTS
-	MOV	CL,LF
-	JMP	CONOTS
+	mov	cl,CR
+	call	CONOTS
+	mov	cl,LF
+	jmp	CONOTS
 ;
-;  OUT STRING  END BY '$'
-;  INPUT
-;  CX:STRING POINTER
+;  out string  end by '$'
+;  Input
+;  CX:string pointer
 ;
 BUFPRN:
-	MOV	SI,CX
-	LODSB			;GET CODE
-	CMP	AL,'$'
-	JZ	CONOUE		;END
-	INC	CX		;ACTIVE CODE
-	PUSH	CX
-	MOV	CL,AL
-	PUSH	DS
-	PUSH	SS
-	POP	DS
-	CALL	CONOUT		;OUT CODE
-	POP	DS
-	POP	CX
-	JMPS	BUFPRN		;TO NEXT CODE
+	mov	si,cx
+	lodsb				;get code
+	cmp	al,'$'
+	jz	CONOUE			;end
+	inc	cx			;active code
+	push	cx
+	mov	cl,al
+	push	ds
+	push	ss
+	pop	ds
+	call	CONOUT			;out code
+	pop	ds
+	pop	cx
+	jmps	BUFPRN			;to next code
 ;
-;  READ CONSOLE BUFFER
-;  INPUT
-;  ES:BUFFER SEGMENT
+;  Read console buffer
+;  Input
+;  ES:buffer segment
 ;
 RDCNBF:
-	MOV	AL,PCARIG
-	MOV	PPROMP,AL	;SET PROMPT POSITION
-	MOV	BX,INPARA	;GET BUFFER OFFSET
-	MOV	CL,ES:[BX]	;GET MAX LENGTH
-	INC	BX
-	PUSH	BX		;SAVE LENGTH COUNTER ADDRESS
-	MOV	CH,0		;CLEAR COUNT
-RDCNBL:				;ONE CHARACTER LOOP
-	PUSH	CX
-	PUSH	BX
+	mov	al,PCARIG
+	mov	PPROMP,al		;set prompt position
+	mov	bx,INPARA		;get buffer offset
+	mov	cl,es:[bx]		;get max length
+	inc	bx
+	push	bx			;save length counter address
+	mov	ch,0			;clear count
+RDCNBL:				;one character loop
+	push	cx
+	push	bx
 RDCNBD:
-	CALL	CONINC		;GET CODE
-	POP	BX
-	POP	CX
-	CMP	AL,CR
-	JNZ	$+5		;NOT END
-RDCNBQ:				;END OF INPUT
-	JMP	RDCNBE
+	call	CONINC			;get code
+	pop	bx
+	pop	cx
+	cmp	al,CR
+	jnz	$+5			;not end
+RDCNBQ:				;end of input
+	jmp	RDCNBE
 ;
-	CMP	AL,LF
-	JZ	RDCNBQ		;END CODE
-	CMP	AL,BS
-	JNZ	RDCNBK
-	OR	CH,CH		;BACK SPACE
-	JZ	RDCNBL		;TOP SO DO NOTHING
-	DEC	CH		;DOWN COUNT
-	MOV	AL,PCARIG
-	MOV	ECHKIL,AL	;SAVE CURRENT POINT
-	JMPS	RDCNBI
+	cmp	al,LF
+	jz	RDCNBQ			;end code
+	cmp	al,BS
+	jnz	RDCNBK
+	or	ch,ch			;back space
+	jz	RDCNBL			;top so do nothing
+	dec	ch			;down count
+	mov	al,PCARIG
+	mov	ECHKIL,al		;save current point
+	jmps	RDCNBI
 ;
 RDCNBK:
-	CMP	AL,07FH
-	JNZ	RDCNBA
-	OR	CH,CH		;DELETE
-	JZ	RDCNBL		;TOP SO DO NOTHING
-	MOV	AL,ES:[BX]	;GET LAST CODE
-	DEC	CH
-	DEC	BX
-	JMPS	RDCNBS		;ECHO LAST CODE
+	cmp	al,07Fh
+	jnz	RDCNBA
+	or	ch,ch			;delete
+	jz	RDCNBL			;top so do nothing
+	mov	al,es:[bx]		;get last code
+	dec	ch
+	dec	bx
+	jmps	RDCNBS			;echo last code
 ;
 RDCNBA:
-	CMP	AL,'E'-40H
-	JNZ	RDCNBP
-	PUSH	CX		;CHANGE LINE
-	PUSH	BX
-	CALL	CRLF
-	MOV	PPROMP,0
+	cmp	al,'E'-40h
+	jnz	RDCNBP
+	push	cx			;change line
+	push	bx
+	call	CRLF
+	mov	PPROMP,0
 RDCNBB:
-	JMPS	RDCNBD
+	jmps	RDCNBD
 ;
 RDCNBP:
-	CMP	AL,'P'-40H
-	JNZ	RDCNBC
-	NOT	LSTTGL		;LIST ECHO MODE TOGGLE
-	JMPS	RDCNBL
+	cmp	al,'P'-40h
+	jnz	RDCNBC
+	not	LSTTGL			;list echo mode toggle
+	jmps	RDCNBL
 ;
 RDCNBC:
-	CMP	AL,'X'-40H
-	JNZ	RDCNBY
-	POP	BX		;ERASE LINE
+	cmp	al,'X'-40h
+	jnz	RDCNBY
+	pop	bx			;erase line
 RDCNBX:
-	MOV	AL,PPROMP	;GET PROMPT POSITION
-	MOV	BX,OFFSET PCARIG
-	NOP
-	CMP	AL,[BX]
-	JNC	RDCNBF		;REACH TO TOP
-	NOP
-	DEC	BYTE PTR [BX]	;DOWN POSITION
-	CALL	BACKS		;ERASE & BACK
-	JMPS	RDCNBX		;TO NEXT
+	mov	al,PPROMP		;get prompt position
+	mov	bx,offset PCARIG
+	nop
+	cmp	al,[bx]
+	jnc	RDCNBF			;reach to top
+	nop
+	dec	byte ptr [bx]		;down position
+	call	BACKS			;erase & back
+	jmps	RDCNBX			;to next
 ;
 RDCNBY:
-	CMP	AL,'U'-40H
-	JNZ	RDCNBR
-	CALL	NCRLF		;CANCEL CARRIAGE LINE
-	POP	BX
-	JMP	RDCNBF
+	cmp	al,'U'-40h
+	jnz	RDCNBR
+	call	NCRLF			;cancel carriage line
+	pop	bx
+	jmp	RDCNBF
 ;
 RDCNBR:
-	CMP	AL,'R'-40H
-	JNZ	RDCNBN
-RDCNBI:				;CANCEL LINE & OUT LEFT CODE
-	PUSH	CX
-	CALL	NCRLF
-	POP	CX
-	POP	BX
-	PUSH	BX
-	PUSH	CX
-RDCNBG:				;OUT LEFT CODE
-	OR	CH,CH
-	JZ	RDCNBH		;END OF OUT
-	INC	BX
-	MOV	CL,ES:[BX]	;GET CODE
-	DEC	CH
-	PUSH	CX
-	PUSH	BX
-	CALL	CONOTC		;OUT CODE
-	POP	BX
-	POP	CX
-	JMPS	RDCNBG		;TO NEXT
+	cmp	al,'R'-40h
+	jnz	RDCNBN
+RDCNBI:				;cancel line & out left code
+	push	cx
+	call	NCRLF
+	pop	cx
+	pop	bx
+	push	bx
+	push	cx
+RDCNBG:				;out left code
+	or	ch,ch
+	jz	RDCNBH			;end of out
+	inc	bx
+	mov	cl,es:[bx]		;get code
+	dec	ch
+	push	cx
+	push	bx
+	call	CONOTC			;out code
+	pop	bx
+	pop	cx
+	jmps	RDCNBG			;to next
 ;
 RDCNBH:
-	PUSH	BX
-	MOV	AL,ECHKIL	;GET ECHO MODE
-	OR	AL,AL
-	JZ	RDCNBJ		;NORMAL
-	SUB	AL,PCARIG	;KILL MODE
-	MOV	ECHKIL,AL	;GET BACK COUNT
-RDCNBO:				;BACK TO LAST POINT
-	CALL	BACKS
-	DEC	ECHKIL
-	JNZ	RDCNBO
+	push	bx
+	mov	al,ECHKIL		;get echo mode
+	or	al,al
+	jz	RDCNBJ			;normal
+	sub	al,PCARIG		;kill mode
+	mov	ECHKIL,al		;get back count
+RDCNBO:				;back to last point
+	call	BACKS
+	dec	ECHKIL
+	jnz	RDCNBO
 RDCNBJ:
-	JMPS	RDCNBB
+	jmps	RDCNBB
 ;
-RDCNBN:				;NORMAL CODE
-	INC	BX
-	MOV	ES:[BX],AL	;SET CODE TO BUFFER
-	INC	CH		;UP COUNT
+RDCNBN:				;normal code
+	inc	bx
+	mov	es:[bx],al		;set code to buffer
+	inc	ch			;up count
 RDCNBS:
-	PUSH	CX
-	PUSH	BX
-	MOV	CL,AL
-	CALL	CONOTC		;ECHO BACK
-	POP	BX
-	POP	CX
-	MOV	AL,ES:[BX]
-	CMP	AL,'C'-40H
-	MOV	AL,CH
-	JNZ	RDCNBM		;NOT ABRT
-	CMP	AL,1
-	JNZ	RDCNBM		;NOT TOP
-	MOV	AX,DS		;ABORT
-	MOV	ES,AX		;RESTORE SEGMENT
-	JMP	CONSTA		;TO ABORT ROUTINE
+	push	cx
+	push	bx
+	mov	cl,al
+	call	CONOTC			;echo back
+	pop	bx
+	pop	cx
+	mov	al,es:[bx]
+	cmp	al,'C'-40h
+	mov	al,ch
+	jnz	RDCNBM			;not abrt
+	cmp	al,1
+	jnz	RDCNBM			;not top
+	mov	ax,ds			;abort
+	mov	es,ax			;restore segment
+	jmp	CONSTA			;to abort routine
 ;
 RDCNBM:
-	CMP	AL,CL
-	JNC	RDCNBE		;END OF BUFFER LENGTH
-	JMP	RDCNBL		;TO NEXT
+	cmp	al,cl
+	jnc	RDCNBE			;end of buffer length
+	jmp	RDCNBL			;to next
 ;
-RDCNBE:				;END OF INPUT
-	POP	BX
-	MOV	ES:[BX],CH	;SET COUNT
-	MOV	CL,CR
-	MOV	AX,DS
-	MOV	ES,AX
-	JMP	CONOTS		;ECHO LINE END
+RDCNBE:				;end of input
+	pop	bx
+	mov	es:[bx],ch		;set count
+	mov	cl,CR
+	mov	ax,ds
+	mov	es,ax
+	jmp	CONOTS			;echo line end
 ;
-;  1:CONSOLE INPUT
+;  1:console input
 ;
 MCONIN:
-	CALL	CONINP
-	JMPS	BTPRST
+	call	CONINP
+	jmps	BTPRST
 ;
-;  3:READER INPUT
+;  3:reader input
 ;
 MREDER:
-	CALL	TOP+VREADR
-	JMPS	BTPRST
+	call	TOP+VREADR
+	jmps	BTPRST
 ;
-;  6:DIRECT CONSOLE I/O
-;  INPUT
-;  CL:-1 INPUT/STATUS  -2 STATUS   OTHER OUTPUT
+;  6:direct console I/O
+;  Input
+;  CL:-1 input/status  -2 status   other output
 ;
 MDCNIO:
-	MOV	AL,CL
-	INC	AL
-	JZ	MDCNIS		;INPUT/STATUS
-	INC	AL
-	JNZ	BCONOT		;OUTPUT
-	CALL	BCONST		;STATUS
-	JMPS	BTPRST
+	mov	al,cl
+	inc	al
+	jz	MDCNIS			;input/status
+	inc	al
+	jnz	BCONOT			;output
+	call	BCONST			;status
+	jmps	BTPRST
 ;
-MDCNIS:				;INPUT/STATUS
-	CALL	BCONST
-	OR	AL,AL
-	JNZ	MDCNIG		;GET SOME CODE
-	JMP	ENDPRN		;NOT READY
+MDCNIS:				;input/status
+	call	BCONST
+	or	al,al
+	jnz	MDCNIG			;get some code
+	jmp	ENDPRN			;not ready
 ;
-MDCNIG:				;GET SOME CODE
-	CALL	BCONIN		;GET CODE
-	JMPS	BTPRST
+MDCNIG:				;get some code
+	call	BCONIN			;get code
+	jmps	BTPRST
 ;
-;  7:GET I/O BYTE
+;  7:get I/O byte
 ;
 MGTIOB:
-	CALL	TOP+VGTIOB
-	JMPS	BTPRST
+	call	TOP+VGTIOB
+	jmps	BTPRST
 ;
-;  8:SET I/O BYTE
+;  8:set I/O byte
 ;
 MSTIOB:
-	MOV	CX,DX
-	CALL	TOP+VSTIOB
-	RET
+	mov	cx,dx
+	call	TOP+VSTIOB
+	ret
 ;
-;  9:CONSOLE OUT STRING  END BY '$'
+;  9:console out string  end by '$'
 ;
 MBUFPR:
-	MOV	CX,DX
-	PUSH	DS
-	MOV	DS,INDSEG
-	CALL	BUFPRN
-	POP	DS
-	RET
+	mov	cx,dx
+	push	ds
+	mov	ds,INDSEG
+	call	BUFPRN
+	pop	ds
+	ret
 ;
-;  10:READ CONSOLE BUFFER
+;  10:read console buffer
 ;
 MRDCBF:
-	MOV	ES,INDSEG
-	JMP	RDCNBF
+	mov	es,INDSEG
+	jmp	RDCNBF
 ;
-;  11:GET CONSOLE STATUS
+;  11:get console status
 ;
 MCONST:
-	CALL	CONSTS
+	call	CONSTS
 ;
-;  SET BYTE RESULT & END
+;  Set byte result & end
 ;
 BTPRST:
-	MOV	OTPARB,AL
+	mov	OTPARB,al
 NOPROC:
-	RET
+	ret
 ;
-;  NO DATA EXIST END IN DISK OPERATION
+;  NO data exist end in disk operation
 ;
 NODTEX:
-	MOV	AL,1
-	JMPS	BTPRST
+	mov	al,1
+	jmps	BTPRST
 ;
-;  BIOS ROUTINE CALL
+;  BIOS routine call
 ;
-;  5:LIST OUT
+;  5:list out
 ;
 BLIST:
-	MOV	BX,VLIST
-	JMPS	BIOSCL
+	mov	bx,VLIST
+	jmps	BIOSCL
 ;
-;  CONSOLE INPUT
+;  Console input
 ;
 BCONIN:
-	MOV	BX,VCONIN
-	JMPS	BIOSCL
+	mov	bx,VCONIN
+	jmps	BIOSCL
 ;
-;  CONSOLE STATUS
+;  Console status
 ;
 BCONST:
-	MOV	BX,VCONST
-	JMPS	BIOSCL
+	mov	bx,VCONST
+	jmps	BIOSCL
 ;
-;  CONSOLE OUTPUT
+;  Console output
 ;
 BCONOT:
-	MOV	BX,VCONOT
+	mov	bx,VCONOT
 ;
-;  BIOS CALL
-;  INPUT
-;  BX:ROUTINE ADDRESS
+;  BIOS call
+;  Input
+;  BX:routine address
 ;
 BIOSCL:
-	CALLF	DWORD PTR JPBIOS
-	RET
+	CALLF	dword ptr JPBIOS
+	ret
 ;
 ;
 DBIOS:
-	CALL	BX		;TO EACH ROUTINE
-	RETF
+	call	bx			;to each routine
+	retf
 ;
-;  DISK I/O ROUTINES
+;  Disk I/O routines
 ;
-;  SELECT ERROR
+;  Select error
 ;
 DSEROR:
-	MOV	BX,OFFSET VSELCT
-ERROR:				;ERROR COMMON ROUTINE
-	JMP	WORD PTR [BX]
+	mov	bx,offset VSELCT
+ERROR:				;error common routine
+	jmp	word ptr [bx]
 ;
-;  COPY DATA
-;  INPUT
-;  DX:SOURCE POINTER
-;  BX:DESTINATION POINTER
-;  CL:LENGTH
+;  Copy data
+;  Input
+;  DX:source pointer
+;  BX:destination pointer
+;  CL:length
 ;
 COPY:
-	PUSH	CX
-	MOV	CH,0
-	MOV	SI,DX
-	MOV	DI,BX
-	CLD
-	REP	MOVSB		;COPY DATA
-	POP	CX
-	RET
+	push	cx
+	mov	ch,0
+	mov	si,dx
+	mov	di,bx
+	cld
+	rep	movsb			;copy data
+	pop	cx
+	ret
 ;
-;  SELECCT & GET DISK PARAMETER
-;  OUTPUT
-;  ZF:ON NO UNIT
+;  Selecct & get disk parameter
+;  Output
+;  Zf:on NO unit
 ;
 GDPTBL:
-	MOV	CL,CURDSK
-	CALL	TOP+VSLDSK	;SELECT DISK BY BIOS ROUTINE
-	CMP	BX,0
-	JZ	GDPTBE		;NOT ACTIVE DISK END
-	MOV	DX,[BX]		;GET TRANSLATION TABLE POINT
-	ADD	BX,2
-	MOV	PNDRCK,BX	;DIRECTORY CHECK LEVEL WORK POINT
-	ADD	BX,2
-	MOV	PNTRAK,BX	;TRACK NUMBER WORK POINT
-	ADD	BX,2
-	MOV	PNSCTR,BX	;TOTAL SECTOR WORK POINT
-	ADD	BX,2
-	XCHG	BX,DX
-	MOV	PNXTBL,BX	;SAVE TRANSLATION TABLE POINT
-	MOV	BX,DIRBUF
-	MOV	LSDRBF,BX	;SAVE LAST DIRECTORY BUFFER POINT  NOT USED ??
-	MOV	BX,OFFSET DIRBUF
-	MOV	CL,8
-	CALL	COPY		;GET DISK PARAMETER HEADER DATA
-	MOV	DX,PNTDPB	;DISK PARAMETER BLOCK POINT
-	MOV	BX,OFFSET SPT
-	MOV	CL,15
-	CALL	COPY		;GET DISK PARAMETER BLOCK DATA
-	MOV	AL,BYTE PTR DSM+1
-	MOV	BX,OFFSET DSMMOD
-	MOV	BYTE PTR [BX],0FFH
-	OR	AL,AL
-	JZ	$+5		;DSM <= 255	ONE BYTE MODE
-	MOV	BYTE PTR [BX],0	;DSM > 256	TWO BYTE MODE
-	MOV	AL,0FFH
-	OR	AL,AL
+	mov	cl,CURDSK
+	call	TOP+VSLDSK		;select disk by BIOS routine
+	cmp	bx,0
+	jz	GDPTBE			;not active disk end
+	mov	dx,[bx]			;get translation table point
+	add	bx,2
+	mov	PNDRCK,bx		;directory check level work point
+	add	bx,2
+	mov	PNTRAK,bx		;track number work point
+	add	bx,2
+	mov	PNSCTR,bx		;total sector work point
+	add	bx,2
+	xchg	bx,dx
+	mov	PNXTBL,bx		;save translation table point
+	mov	bx,DIRBUF
+	mov	LSDRBF,bx		;save last directory buffer point  not used ??
+	mov	bx,offset DIRBUF
+	mov	cl,8
+	call	COPY			;get disk parameter header data
+	mov	dx,PNTDPB		;disk parameter block point
+	mov	bx,offset SPT
+	mov	cl,15
+	call	COPY			;get disk parameter block data
+	mov	al,byte ptr DSM+1
+	mov	bx,offset DSMMOD
+	mov	byte ptr [bx],0FFh
+	or	al,al
+	jz	$+5			;DSM <= 255	one byte mode
+	mov	byte ptr [bx],0		;DSM > 256	two byte mode
+	mov	al,0FFh
+	or	al,al
 GDPTBE:
-	RET
+	ret
 ;
-;  TO HOME FOR DIECTORY READ
+;  To home for diectory read
 ;
 TOHOME:
-	CALL	TOP+VHOME
-	XOR	AX,AX
-	MOV	BX,PNTRAK
-	MOV	[BX],AX		;CLEAR CURRENT TRACK WORK
-	RET
+	call	TOP+VHOME
+	xor	ax,ax
+	mov	bx,PNTRAK
+	mov	[bx],ax			;clear current track work
+	ret
 ;
-;  ONE SECTOR READ
+;  One sector read
 ;
 DREAD:
-	MOV	DX,TGSECT	;			?????
-	CALL	TOP+VDREAD
-	JMPS	DWRITN
+	mov	dx,TGSECT		;			?????
+	call	TOP+VDREAD
+	jmps	DWRITN
 ;
-;  ONE SECTOR WRITE
+;  One sector write
 ;
 DWRITE:
-	MOV	CL,MDWRIT	;GET WRITE MODE
+	mov	cl,MDWRIT		;get write mode
 DWRITS:
-	CALL	TOP+VDWRIT
+	call	TOP+VDWRIT
 DWRITN:
-	OR	AL,AL
-	JZ	GDPTBE		;OK END
-	MOV	BX,OFFSET VBADSC ;DISK READ / WRITE ERROR
-	JMP	ERROR
+	or	al,al
+	jz	GDPTBE			;OK end
+	mov	bx,offset VBADSC	;disk read / write error
+	jmp	ERROR
 ;
-;  SET DIRECTORY TRACK & SECTOR
+;  Set directory track & sector
 ;
 STDIRT:
-	MOV	BX,DIRCNT
-	MOV	CL,2
-	SHR	BX,CL		;GET SECTOR COUNT
-	MOV	TGSECT,BX	;SET TARGET SECTOR
-	MOV	DIRSCT,BX	;SAVE SECTOR
+	mov	bx,DIRCNT
+	mov	cl,2
+	shr	bx,cl			;get sector count
+	mov	TGSECT,bx		;set target sector
+	mov	DIRSCT,bx		;save sector
 ;
-;  SET PHYSICAL TRACK & SECTOR
+;  Set physical track & sector
 ;
 TRSSET:
-	MOV	AX,TGSECT
-	MOV	DX,0
-	DIV	SPT		;GET TRACK & SECTOR
-	PUSH	DX		;SAVE SECTOR
-	MOV	CX,AX
-	MOV	SI,PNTRAK
-	MOV	[SI],CX		;SET TARGET TRACK
-	ADD	CX,TRKOFF	;GET PHYSICAL TRACK
-	CALL	TOP+VSTTRK	;SET TRACK
-	POP	CX
-	MOV	DX,PNXTBL	;TRANSLATION TABLE POINT
-	CALL	TOP+VSCTRN	;TO PHYSICAL SECTOR
-	MOV	CX,BX
-	JMP	TOP+VSTSEC	;SET PHYSICAL SECTOR
+	mov	ax,TGSECT
+	mov	dx,0
+	div	SPT			;get track & sector
+	push	dx			;save sector
+	mov	cx,ax
+	mov	si,PNTRAK
+	mov	[si],cx			;set target track
+	add	cx,TRKOFF		;get physical track
+	call	TOP+VSTTRK		;set track
+	pop	cx
+	mov	dx,PNXTBL		;translation table point
+	call	TOP+VSCTRN		;to physical sector
+	mov	cx,bx
+	jmp	TOP+VSTSEC		;set physical sector
 ;
-;  GET BIAS IN DIRECTORY
-;  OUTPUT
-;  AL:BIAS
+;  Get bias in directory
+;  Output
+;  AL:bias
 ;
 GBSDIR:
-	MOV	BX,OFFSET BSH
-	MOV	CL,[BX]		;GET BLOCK SHIFT FACTOR
-	MOV	AL,CURCNT	;GET CURRENT COUNT
-	SHR	AL,CL
-	MOV	CH,AL		;GET BIAS BY CURRENT COUNT
-	MOV	CL,7
-	SUB	CL,[BX]		;GET SHIFT FACTOR OF EXTENT
-	MOV	AL,EXTENT
-	SHL	AL,CL		;GET BIAS BY EXTENT
-	ADD	AL,CH		;GET TOTAL BIAS
-	RET
+	mov	bx,offset BSH
+	mov	cl,[bx]			;get block shift factor
+	mov	al,CURCNT		;get current count
+	shr	al,cl
+	mov	ch,al			;get bias by current count
+	mov	cl,7
+	sub	cl,[bx]			;get shift factor of extent
+	mov	al,EXTENT
+	shl	al,cl			;get bias by extent
+	add	al,ch			;get total bias
+	ret
 ;
-;  GET BLOCK NUMBER
-;  INPUT
-;  CX:BIAS IN DIRECTORY
-;  OUTPUT
-;  BX:BLOCK NUMBER
+;  Get block number
+;  Input
+;  CX:bias in directory
+;  Output
+;  BX:block number
 ;
 GTBLNM:
-	MOV	BX,INPARA
-	ADD	BX,16		;GET DIRECTORY MAP TOP
-	ADD	BX,CX		;GET MAP POINT ( IF ONE BYTE )
-	CMP	DSMMOD,0	;CHECK MAP MODE
-	JZ	GTBLNS		;TWO BYTE MODE
-	MOV	BL,[BX]		;ONE BYTE MODE
-	MOV	BH,0		;GET BLOCK NUMBER
-	RET
+	mov	bx,INPARA
+	add	bx,16			;get directory map top
+	add	bx,cx			;get map point ( if one byte )
+	cmp	DSMMOD,0		;check map mode
+	jz	GTBLNS			;two byte mode
+	mov	bl,[bx]			;one byte mode
+	mov	bh,0			;get block number
+	ret
 ;
-GTBLNS:				;TWO BYTE MODE
-	ADD	BX,CX		;GET MAP POINT ( TWO BYTE MODE )
-	MOV	BX,[BX]		;GET BLOCK NUMBER
-	RET
+GTBLNS:				;two byte mode
+	add	bx,cx			;get map point ( two byte mode )
+	mov	bx,[bx]			;get block number
+	ret
 ;
-;  GET TARGET BLOCK
+;  Get target block
 ;
 GTBLCK:
-	CALL	GBSDIR		;GET BIAS IN DIRECTORY
-	MOV	CL,AL
-	MOV	CH,0
-	CALL	GTBLNM		;GET BLOCK NUMBER
-	MOV	TGSECT,BX	;SET TO TARGET WORK
-	RET
+	call	GBSDIR			;get bias in directory
+	mov	cl,al
+	mov	ch,0
+	call	GTBLNM			;get block number
+	mov	TGSECT,bx		;set to target work
+	ret
 ;
-;  CHECK BLOCK EMPTY
-;  OUTPUT
-;  ZF:ON EMPTY
+;  Check block empty
+;  Output
+;  Zf:on empty
 ;
 CHKBLK:
-	MOV	BX,TGSECT
-	OR	BX,BX
-	RET
+	mov	bx,TGSECT
+	or	bx,bx
+	ret
 ;
-;  BLOCK NUMBER TO LOGICAL SECTOR
+;  Block number to logical sector
 ;
 BLTSCT:
-	MOV	CL,BSH
-	MOV	BX,TGSECT
-	SHL	BX,CL		;GET BLOCK TOP SECTOR
-	MOV	BTSECT,BX	;SAVE BLOCK TOP
-	MOV	AL,CURCNT	;GET CURRENT COUNT
-	AND	AL,BLM		;GET BIAS IN BLOCK
-	OR	BL,AL		;GET TOTAL SECTOR
-	MOV	TGSECT,BX	;SAVE TOTAL LOGICAL SECTOR
-	RET
+	mov	cl,BSH
+	mov	bx,TGSECT
+	shl	bx,cl			;get block top sector
+	mov	BTSECT,bx		;save block top
+	mov	al,CURCNT		;get current count
+	and	al,BLM			;get bias in block
+	or	bl,al			;get total sector
+	mov	TGSECT,bx		;save total logical sector
+	ret
 ;
-;  GET EXTENT POINT & DATA
-;  OUTPUT
-;  AL:EXTENT
-;  BX:DATA POINT
+;  Get extent point & data
+;  Output
+;  AL:extent
+;  BX:data point
 ;
 EXTPNT:
-	MOV	BX,INPARA
-	ADD	BX,12
-	MOV	AL,[BX]		;GET EXTENT
-	RET
+	mov	bx,INPARA
+	add	bx,12
+	mov	al,[bx]			;get extent
+	ret
 ;
-;  GET RECORD COUNT POINT
-;  OUTPUT
-;  BX:CURRENT RECORD COUNT POINT
-;  DX:RECORD COUNT POINT
+;  Get record count point
+;  Output
+;  BX:current record count point
+;  DX:record count point
 ;
 GTRCPT:
-	MOV	DX,15
-	ADD	DX,INPARA	;RECRD COUNT POINT
-	MOV	BX,17
-	ADD	BX,DX		;CURRENT RECORD COUNT POINT
-	RET
+	mov	dx,15
+	add	dx,INPARA		;recrd count point
+	mov	bx,17
+	add	bx,dx			;current record count point
+	ret
 ;
-;  GET RECORD COUNT DATA
+;  Get record count data
 ;
 GTRCNT:
-	CALL	GTRCPT		;GET RECORD COUNT POINT
-	MOV	AL,[BX]		;GET CURRENT RECORD
-	MOV	CURCNT,AL	;SAVE
-	XCHG	BX,DX
-	MOV	AL,[BX]		;GET RECORD COUNT
-	MOV	RECUNT,AL	;SAVE
-	CALL	EXTPNT		;GET EXTENT POINT
-	MOV	AL,EXM		;GET EXTENT MASK
-	AND	AL,[BX]		;GET MASKED EXTENT
-	MOV	EXTENT,AL
-	RET
+	call	GTRCPT			;get record count point
+	mov	al,[bx]			;get current record
+	mov	CURCNT,al		;save
+	xchg	bx,dx
+	mov	al,[bx]			;get record count
+	mov	RECUNT,al		;save
+	call	EXTPNT			;get extent point
+	mov	al,EXM			;get extent mask
+	and	al,[bx]			;get masked extent
+	mov	EXTENT,al
+	ret
 ;
-;  UP & SET RECORD COUNT TO FCB
+;  Up & set record count to FCB
 ;
 USRCNT:
-	CALL	GTRCPT		;GET RECORD COUNT POINT
-	MOV	AL,RUPCNT	;GET COUNT UP COUNT
-	CMP	AL,2
-	JNZ	$+4		;0 RANDOM  OR 1 SEQUENTIAL
-	XOR	AL,AL		;RANDOM WRITE WITH ZERO FILL  SO NOT UP
-	ADD	AL,CURCNT	;UP CURRENT RECORD COUNT
-	MOV	[BX],AL		;SAVE CURRENT RECORD
-	XCHG	BX,DX
-	MOV	AL,RECUNT
-	MOV	[BX],AL		;SET RECORD COUNT
-	RET
+	call	GTRCPT			;get record count point
+	mov	al,RUPCNT		;get count up count
+	cmp	al,2
+	jnz	$+4			;0 random  or 1 sequential
+	xor	al,al			;random write with zero fill  so not up
+	add	al,CURCNT		;up current record count
+	mov	[bx],al			;save current record
+	xchg	bx,dx
+	mov	al,RECUNT
+	mov	[bx],al			;set record count
+	ret
 ;
-;  GET HASH TOTAL FOR DIRECTORY CHECK SUM
-;  OUTPUT
-;  AL:HASH TOTAL
+;  Get hash total for directory check sum
+;  Output
+;  AL:hash total
 ;
 HASH:
-	MOV	CX,128		;SECTOR LENGTH
-	MOV	BX,DIRBUF
-	XOR	AL,AL
-HASHL:				;TOTAL LOOP
-	ADD	AL,[BX]
-	INC	BX
-	LOOP	HASHL
-	RET
+	mov	cx,128			;sector length
+	mov	bx,DIRBUF
+	xor	al,al
+HASHL:				;total loop
+	add	al,[bx]
+	inc	bx
+	loop	HASHL
+	ret
 ;
-;  SET CURRENT DISK BIT
-;  INPUT
-;  CX:BASE VECTOR
-;  OUTPUT
-;  BX:NEW VECTOR
+;  Set current disk bit
+;  Input
+;  CX:base vector
+;  Output
+;  BX:new vector
 ;
 STDKVC:
-	PUSH	CX
-	MOV	CL,CURDSK
-	MOV	BX,1
-	SHL	BX,CL		;GET CURRENT DISK BIT
-	POP	CX
-	OR	BX,CX
-	RET
+	push	cx
+	mov	cl,CURDSK
+	mov	bx,1
+	shl	bx,cl			;get current disk bit
+	pop	cx
+	or	bx,cx
+	ret
 ;
-;  CHECK R/O DISK VECTOR
-;  OUTPUT
-;  ZF:ON R/W DISK	OFF R/O DISK
+;  Check R/O disk vector
+;  Output
+;  Zf:on R/W disk	off R/O disk
 ;
 CHKROV:
-	MOV	AX,RODSKV	;GET R/O DISK VECTOR
-	MOV	CL,CURDSK
-	SHR	AX,CL
-	AND	AL,1		;GET MODE
-	RET
+	mov	ax,RODSKV		;get R/O disk vector
+	mov	cl,CURDSK
+	shr	ax,cl
+	and	al,1			;get mode
+	ret
 ;
-;  28:WRITE PROTECT DISK
+;  28:write protect disk
 ;
 MWPDSK:
-	MOV	CX,RODSKV	;GET R/O DISK VECTOR
-	CALL	STDKVC		;SET CURRENT DISK BIT
-	MOV	RODSKV,BX	;SAVE NEW R/O DISK VECTOR
-	MOV	DX,DRM
-	INC	DX		;GET DIRECTORY MAXIMUM
-	MOV	BX,PNDRCK
-	MOV	[BX],DX		;DIRECTORY CHECK LEVEL TO FULL
-	RET
+	mov	cx,RODSKV		;get R/O disk vector
+	call	STDKVC			;set current disk bit
+	mov	RODSKV,bx		;save new R/O disk vector
+	mov	dx,DRM
+	inc	dx			;get directory maximum
+	mov	bx,PNDRCK
+	mov	[bx],dx			;directory check level to full
+	ret
 ;
-;  CHECK WRITE PROTECT FILE
+;  Check write protect file
 ;
 CHKROF:
-	CALL	GTDRPT		;GET FCB POINT IN DIRECTORY
+	call	GTDRPT			;get FCB point in directory
 CHKROL:
-	MOV	DX,9
-	ADD	BX,DX
-	MOV	AL,[BX]		;GET R/O BYTE
-	RCL	AL,1
-	JNC	GTDRPE		;R/W FILE
-	MOV	BX,OFFSET VROFIL ;R/O FILE
-	JMPS	CHKROE		;ERROR
+	mov	dx,9
+	add	bx,dx
+	mov	al,[bx]			;get R/O byte
+	rcl	al,1
+	jnc	GTDRPE			;R/W file
+	mov	bx,offset VROFIL	;R/O file
+	jmps	CHKROE			;error
 ;
-;  CHECK WRITE PROTECT DISK
+;  Check write protect disk
 ;
 CHKROD:
-	CALL	CHKROV		;CHECK R/O DISK
-	JZ	GTDRPE		;R/W DISK
-	MOV	BX,OFFSET VRODSK ;R/O DISK ERROR
-CHKROE:				;ERROR END
-	JMP	ERROR
+	call	CHKROV			;check R/O disk
+	jz	GTDRPE			;R/W disk
+	mov	bx,offset VRODSK	;R/O disk error
+CHKROE:				;error end
+	jmp	ERROR
 ;
-;  GET DIRECTORY POINT
+;  Get directory point
 ;
 GTDRPT:
-	MOV	BX,DIRBUF
-	MOV	AL,BISDIR	;GET BIAS IN DIRECTORY
-	MOV	AH,0
-	ADD	BX,AX		;GET POINT
+	mov	bx,DIRBUF
+	mov	al,BISDIR		;get bias in directory
+	mov	ah,0
+	add	bx,ax			;get point
 GTDRPE:
-	RET
+	ret
 ;
-;  GET FILE MODE
-;  OUTPUT
-;  BX:FILE MODE DATA POINT
-;  AL:B7:WRITE OPERATION MODE	READ ONLY
-;     B6:RANDOM READ/WRITE ERROR
-;     B0-4:EXTENTION OF EXTENT
+;  Get file mode
+;  Output
+;  BX:file mode data point
+;  AL:B7:write operation mode	read only
+;     B6:random read/write error
+;     B0-4:extention of extent
 ;
 FMDPNT:
-	MOV	BX,INPARA
-	ADD	BX,14
-	MOV	AL,[BX]
-	RET
+	mov	bx,INPARA
+	add	bx,14
+	mov	al,[bx]
+	ret
 ;
-;  CLEAR FILE MODE
+;  Clear file mode
 ;
 FMDCLR:
-	CALL	FMDPNT
-	MOV	BYTE PTR [BX],0
-	RET
+	call	FMDPNT
+	mov	byte ptr [bx],0
+	ret
 ;
-;  INITIALIZE FILE MODIFY MODE
+;  Initialize file modify mode
 ;
 FMDRON:
-	CALL	FMDPNT
-	OR	AL,80H
-	MOV	[BX],AL
-	RET
+	call	FMDPNT
+	or	al,80h
+	mov	[bx],al
+	ret
 ;
-;  CHECK DIRECTORY LEVEL
-;  OUTPUT
-;  DX:CURRENT DIREORY COUNT
-;  BX:DIRETCORY DATA POINT
-;  CF:ON UNDER
+;  Check directory level
+;  Output
+;  DX:current direory count
+;  BX:diretcory data point
+;  Cf:on under
 ;
 CHKDLV:
-	MOV	DX,DIRCNT
-	MOV	BX,PNDRCK
-	CMP	DX,[BX]
+	mov	dx,DIRCNT
+	mov	bx,PNDRCK
+	cmp	dx,[bx]
 CHKDLE:
-	RET
+	ret
 ;
-;  CHECK & SET DIRECTORY LEVEL
+;  Check & set directory level
 ;
 STDLVL:
-	CALL	CHKDLV
-	JC	CHKDLE		;UNDER
-	INC	DX		;UP DIRECTORY COUNT
-	MOV	[BX],DX		;SAVE NEW MAXIMUM LEVEL
-	RET
+	call	CHKDLV
+	jc	CHKDLE			;under
+	inc	dx			;up directory count
+	mov	[bx],dx			;save new maximum level
+	ret
 ;
-;  INVERTED SUBTRACT
+;  Inverted subtract
 ;  BX=DX-BX
 ;
 INVSUB:
-	PUSH	DX
-	SUB	DX,BX
-	MOV	BX,DX
-	POP	DX
-	RET
+	push	dx
+	sub	dx,bx
+	mov	bx,dx
+	pop	dx
+	ret
 ;
-;  SET OR CHECK DIRECTORY HASH (CHECK SUM)
-;  INPUT
-;  CL:0 CHECK  -1 SET
+;  Set or check directory hash (check sum)
+;  Input
+;  CL:0 check  -1 set
 ;
 HASHST:
-	MOV	CL,-1		;SET CHECK SUM
+	mov	cl,-1			;set check sum
 HASHSC:
-	MOV	DX,DIRSCT	;GET SECTOR OF CURRENT DIRECTORY
-	MOV	BX,CHKSIZ
-	CALL	INVSUB
-	JNC	CHKDLE		;OVER OF CHECKED DIRECTORY SIZE
-	PUSH	CX
-	CALL	HASH		;GET HASH TOTAL OF DIRECTORY DATA
-	MOV	BX,DIRSCT
-	ADD	BX,PNCHSM
-	POP	CX
-	INC	CL
-	JZ	HASHSS		;SET MODE
-	CMP	AL,[BX]		;CHECK MODE
-	JZ	HASHSE		;OK END
-	CALL	CHKDLV		;MISS MATCH
-	JNC	HASHSE		;CHECKED DIRECTORY LEVEL IS LOWER
-	CALL	MWPDSK		;ERROR MAYBE CHANGED MEDIA  SO TO R/O DISK
-	RET
+	mov	dx,DIRSCT		;get sector of current directory
+	mov	bx,CHKSIZ
+	call	INVSUB
+	jnc	CHKDLE			;over of checked directory size
+	push	cx
+	call	HASH			;get hash total of directory data
+	mov	bx,DIRSCT
+	add	bx,PNCHSM
+	pop	cx
+	inc	cl
+	jz	HASHSS			;set mode
+	cmp	al,[bx]			;check mode
+	jz	HASHSE			;OK end
+	call	CHKDLV			;miss match
+	jnc	HASHSE			;checked directory level is lower
+	call	MWPDSK			;error maybe changed media  so to R/O disk
+	ret
 ;
-HASHSS:				;SET MODE
-	MOV	[BX],AL		;SET SUM DATA
-HASHSE:				;OK END
-	RET
+HASHSS:				;set mode
+	mov	[bx],al			;set sum data
+HASHSE:				;OK end
+	ret
 ;
-;  WRITE DIRECTORY
+;  Write directory
 ;
 DRWRIT:
-	CALL	HASHST		;SET NEW CHECK SUM DATA
-	CALL	STDDMA		;DMA ADDRESS TO DIRECTORY BUFFER
-	MOV	CL,1
-	CALL	DWRITS		;WRITE AS DIRECTORY
-	JMPS	STBDMA		;RESTORE DMA ADDRESS
+	call	HASHST			;set new check sum data
+	call	STDDMA			;DMA address to directory buffer
+	mov	cl,1
+	call	DWRITS			;write as directory
+	jmps	STBDMA			;restore DMA address
 ;
-;  READ DIRECTORY
+;  Read directory
 ;
 DRREAD:
-	CALL	STDDMA		;DMA ADDRESS TO DIRECTORY BUFFER
-	CALL	DREAD		;READ DIRECTORY SECTOR
+	call	STDDMA			;DMA address to directory buffer
+	call	DREAD			;read directory sector
 ;
-;  SET BASE DMA ADDRESS
+;  Set base DMA address
 ;
 STBDMA:
-	MOV	CX,DMASEG
-	CALL	TOP+VSTDMS	;SET SEGMENT
-	MOV	BX,OFFSET DMAADD
-	JMPS	STDDMS		;SET OFFSET
+	mov	cx,DMASEG
+	call	TOP+VSTDMS		;set segment
+	mov	bx,offset DMAADD
+	jmps	STDDMS			;set offset
 ;
-;  SET DMA ADDRESS TO DIRECTORY BUFFER
+;  Set DMA address to directory buffer
 ;
 STDDMA:
-	MOV	CX,DS
-	CALL	TOP+VSTDMS	;SET SEGMENT
-	MOV	BX,OFFSET DIRBUF
-STDDMS:				;SET OFFSET
-	MOV	CX,[BX]
-	JMP	TOP+VSTDMA
+	mov	cx,ds
+	call	TOP+VSTDMS		;set segment
+	mov	bx,offset DIRBUF
+STDDMS:				;set offset
+	mov	cx,[bx]
+	jmp	TOP+VSTDMA
 ;
-;  COPY DIRECTORY DATA TO USER DMA AREA
+;  Copy directory data to user DMA area
 ;
 DRCOPY:
-	MOV	DX,DIRBUF
-	MOV	BX,DMAADD
-	MOV	CL,128		;SECTOR LENGTH
-	PUSH	ES
-	MOV	ES,DMASEG
-	CALL	COPY		;COPY DATA
-	POP	ES
-	RET
+	mov	dx,DIRBUF
+	mov	bx,DMAADD
+	mov	cl,128			;sector length
+	push	es
+	mov	es,DMASEG
+	call	COPY			;copy data
+	pop	es
+	ret
 ;
-;  CHECK DIRECTORY END
-;  OUTPUT
-;  ZF:ON END
+;  Check directory end
+;  Output
+;  Zf:on end
 ;
 CKDREN:
-	MOV	BX,OFFSET DIRCNT
-	MOV	AL,[BX]
-	INC	BX
-	CMP	AL,[BX]
-	JNZ	CKDREE		;NOT END
-	INC	AL		;0FFFFH IS END CODE
+	mov	bx,offset DIRCNT
+	mov	al,[bx]
+	inc	bx
+	cmp	al,[bx]
+	jnz	CKDREE			;not end
+	inc	al			;0ffffh is end code
 CKDREE:
-	RET
+	ret
 ;
-;  INITIALIZE DIRECTORY COUNT
+;  Initialize directory count
 ;
 INDRCN:
-	MOV	BX,-1
-	MOV	DIRCNT,BX
-	RET
+	mov	bx,-1
+	mov	DIRCNT,bx
+	ret
 ;
-;  GET NEXT DIRECTORY SECTOR
-;  INPUT
-;  CL:0 CHECK  -1 SET  DIRECTORY CHECK SUM
+;  Get next directory sector
+;  Input
+;  CL:0 check  -1 set  directory check sum
 ;
 GTNDSC:
-	MOV	DX,DRM		;GET MAX OF DIRECTORY
-	MOV	BX,DIRCNT
-	INC	BX
-	MOV	DIRCNT,BX	;UP DIRECTORY COUNT
-	CALL	INVSUB		;CHECK OVER
-	JNC	GTNDSS		;IN RANGE
-	JMPS	INDRCN		;OVER OF DIRECTORY
+	mov	dx,DRM			;get max of directory
+	mov	bx,DIRCNT
+	inc	bx
+	mov	DIRCNT,bx		;up directory count
+	call	INVSUB			;check over
+	jnc	GTNDSS			;in range
+	jmps	INDRCN			;over of directory
 ;
 GTNDSS:
-	MOV	AL,BYTE PTR DIRCNT
-	AND	AL,3		;GET BIAS IN SECTOR
-	PUSH	CX
-	MOV	CL,5
-	SHL	AL,CL		;*32 GET BIAS BY BYTE
-	POP	CX
-	MOV	BISDIR,AL	;SAVE BIAS
-	OR	AL,AL
-	JNZ	GTDMBE		;NOT TOP SO ALREADY DATA READ
-	PUSH	CX		;TOP SO READ NEW SECTOR
-	CALL	STDIRT		;SET DIRECTORY TRACK & SECTOR
-	CALL	DRREAD		;READ DIRECTORY DATA
-	POP	CX
-	JMP	HASHSC		;CHECK OR SET DIRECTORY CHECK SUM
+	mov	al,byte ptr DIRCNT
+	and	al,3			;get bias in sector
+	push	cx
+	mov	cl,5
+	shl	al,cl			;*32 get bias by byte
+	pop	cx
+	mov	BISDIR,al		;save bias
+	or	al,al
+	jnz	GTDMBE			;not top so already data read
+	push	cx			;top so read new sector
+	call	STDIRT			;set directory track & sector
+	call	DRREAD			;read directory data
+	pop	cx
+	jmp	HASHSC			;check or set directory check sum
 ;
-;  GET DIRECTORY ALLOCATION MAP BIT
-;  INPUT
-;  CX:TARGET BLOCK NUMBER
-;  OUTPUT
-;  AL:BIT 0 IS TARGET BIT
-;  DH:ROTATE COUN IN BYTE
-;  BX:MAP POINT
+;  Get directory allocation map bit
+;  Input
+;  CX:target block number
+;  Output
+;  AL:bit 0 is target bit
+;  DH:rotate coun in byte
+;  BX:map point
 ;
 GTDMBT:
-	MOV	DX,CX
-	AND	CL,7		;GET BIAS IN BYTE
-	INC	CL
-	MOV	CH,CL
-	MOV	CL,3
-	SHR	DX,CL		;GET BIAS OF BYTE
-	MOV	BX,PNALMP
-	ADD	BX,DX		;GET MAP POINT
-	MOV	AL,[BX]		;GET MAP DATA
-	MOV	CL,CH
-	ROL	AL,CL		;ROTATE TO TARGET BIT
-	MOV	DX,CX
+	mov	dx,cx
+	and	cl,7			;get bias in byte
+	inc	cl
+	mov	ch,cl
+	mov	cl,3
+	shr	dx,cl			;get bias of byte
+	mov	bx,PNALMP
+	add	bx,dx			;get map point
+	mov	al,[bx]			;get map data
+	mov	cl,ch
+	rol	al,cl			;rotate to target bit
+	mov	dx,cx
 GTDMBE:
-	RET
+	ret
 ;
-;  CHANGE DISK ALLOCATION MAP BIT
-;  INPUT
-;  CX:BLOCK NUMBER
-;  DL:0 DELETE  1 SET
+;  Change disk allocation map bit
+;  Input
+;  CX:block number
+;  DL:0 delete  1 set
 ;
 CGDMBT:
-	PUSH	DX
-	CALL	GTDMBT		;GET MAP BIT
-	AND	AL,0FEH		;OFF BIT
-	POP	CX
-	OR	AL,CL		;SET OR NOT SET
+	push	dx
+	call	GTDMBT			;get map bit
+	and	al,0FEh			;off bit
+	pop	cx
+	or	al,cl			;set or not set
 ;
-;  SET DISK ALLOCATION MAP BIT
-;  INPUT
-;  AL:BYTE DATA
-;  DH:ROTATE COUNT
-;  BX:MAP POINT
+;  Set disk allocation map bit
+;  Input
+;  AL:byte data
+;  DH:rotate count
+;  BX:map point
 ;
 STDMBT:
-	PUSH	CX
-	MOV	CL,DH
-	ROR	AL,CL
-	MOV	[BX],AL		;SET TO ALLOCATION MAP
-	POP	CX
-	RET
+	push	cx
+	mov	cl,dh
+	ror	al,cl
+	mov	[bx],al			;set to allocation map
+	pop	cx
+	ret
 ;
-;  CHANGE DISK ALLOCATION MAP BY ONE DIRECTORY DATA
-;  INPUT
-;  CL:0 DELETE  1 USE
+;  Change disk allocation map by one directory data
+;  Input
+;  CL:0 delete  1 use
 ;
 CHGDMP:
-	CALL	GTDRPT		;GET DIRECTORY BLOCK TOP
-	ADD	BX,16
-	PUSH	CX
-	MOV	CL,17		;BLOCK NUMBER DATA +1
-CHGDML:				;ONE BLOCK SET/CLEAR LOOP
-	POP	DX
-	DEC	CL
-	JNZ	CHGDMS		;NOT END
-	RET			;END OF ONE DIRECTORY
+	call	GTDRPT			;get directory block top
+	add	bx,16
+	push	cx
+	mov	cl,17			;block number data +1
+CHGDML:				;one block set/clear loop
+	pop	dx
+	dec	cl
+	jnz	CHGDMS			;not end
+	ret				;end of one directory
 ;
 CHGDMS:
-	PUSH	DX
-	CMP	DSMMOD,0	;CHECK BLOCK NUMBER MODE
-	JZ	CHGDMT		;TWO BYTE MODE
-	PUSH	CX		;ONE BYTE MODE
-	PUSH	BX
-	MOV	CL,[BX]		;GET BLOCK NUMBER
-	MOV	CH,0
-	JMPS	CHGDMG
+	push	dx
+	cmp	DSMMOD,0		;check block number mode
+	jz	CHGDMT			;two byte mode
+	push	cx			;one byte mode
+	push	bx
+	mov	cl,[bx]			;get block number
+	mov	ch,0
+	jmps	CHGDMG
 ;
-CHGDMT:				;TWO BYTE MODE
-	DEC	CL
-	PUSH	CX
-	MOV	CX,[BX]		;GET BLOCK NUMBER
-	INC	BX
-	PUSH	BX
+CHGDMT:				;two byte mode
+	dec	cl
+	push	cx
+	mov	cx,[bx]			;get block number
+	inc	bx
+	push	bx
 CHGDMG:
-	OR	CX,CX
-	JZ	CHGDMN		;NOT ALLOCATED
-	MOV	BX,DSM
-	CMP	BX,CX
-	JC	CHGDMN		;OVER OF SIZE
-	CALL	CGDMBT		;SET/CLEAR TARGET BIT IN MAP
-CHGDMN:				;TO NEXT BLOCK NUMBER
-	POP	BX
-	INC	BX
-	POP	CX
-	JMPS	CHGDML
+	or	cx,cx
+	jz	CHGDMN			;not allocated
+	mov	bx,DSM
+	cmp	bx,cx
+	jc	CHGDMN			;over of size
+	call	CGDMBT			;set/clear target bit in map
+CHGDMN:				;to next block number
+	pop	bx
+	inc	bx
+	pop	cx
+	jmps	CHGDML
 ;
-;  INITIALIZE DISK ALLOCATION MAP & CHECK SUM TABLE
+;  Initialize disk allocation map & check sum table
 ;
 INIDMP:
-	MOV	BX,DSM
-	MOV	CL,3
-	SHR	BX,CL
-	INC	BX		;GET ALL MAP SIZE
-	MOV	CX,BX
-	MOV	BX,PNALMP	;MAP TOP
-INIDMC:				;CLEAR OF ALLOCATION MAP
-	MOV	BYTE PTR [BX],0
-	INC	BX
-	LOOP	INIDMC
-	MOV	DX,ALMASK	;GET DIRECTORY RESERVED BIT
-	MOV	BX,PNALMP
-	MOV	[BX],DX		;SET INITIAL DATA OF ALLOCATION MAP
-	CALL	TOHOME		;RESTORE
-	MOV	BX,PNDRCK
-	MOV	WORD PTR [BX],3	;INITIALIZE DIRETORY CHECK LEVEL
-	CALL	INDRCN		;INITIALIZE DATA COUNT
+	mov	bx,DSM
+	mov	cl,3
+	shr	bx,cl
+	inc	bx			;get all map size
+	mov	cx,bx
+	mov	bx,PNALMP		;map top
+INIDMC:				;clear of allocation map
+	mov	byte ptr [bx],0
+	inc	bx
+	loop	INIDMC
+	mov	dx,ALMASK		;get directory reserved bit
+	mov	bx,PNALMP
+	mov	[bx],dx			;set initial data of allocation map
+	call	TOHOME			;restore
+	mov	bx,PNDRCK
+	mov	word ptr [bx],3		;initialize diretory check level
+	call	INDRCN			;initialize data count
 INIDML:
-	MOV	CL,-1
-	CALL	GTNDSC		;GET NEXT DIRECTORY
-	CALL	CKDREN		;CHECK END
-	JZ	CPEXTE		;END OF DIRECTORY
-	CALL	GTDRPT		;GET DIRECTORY POINT
-	CMP	BYTE PTR [BX],DELCOD
-	JZ	INIDML		;DELETED FILE
-	MOV	AL,USRCOD
-	CMP	AL,[BX]
-	JNZ	INIDMS		;NOT CURRENT USER DIRECTORY
-	INC	BX
-	MOV	AL,[BX]
-	SUB	AL,'$'
-	JNZ	INIDMS		;NOT SUBMIT TEMPORARY
-	DEC	AL
-	MOV	OTPARB,AL	;SUBMIT TEMPORARY EXISTS
+	mov	cl,-1
+	call	GTNDSC			;get next directory
+	call	CKDREN			;check end
+	jz	CPEXTE			;end of directory
+	call	GTDRPT			;get directory point
+	cmp	byte ptr [bx],DELCOD
+	jz	INIDML			;deleted file
+	mov	al,USRCOD
+	cmp	al,[bx]
+	jnz	INIDMS			;not current user directory
+	inc	bx
+	mov	al,[bx]
+	sub	al,'$'
+	jnz	INIDMS			;not submit temporary
+	dec	al
+	mov	OTPARB,al		;submit temporary exists
 INIDMS:
-	MOV	CL,1
-	CALL	CHGDMP		;SET DISK ALLOCATION MAP BIT
-	CALL	STDLVL		;UP DIRECTROY LEVEL AS AVAILABLE
-	JMPS	INIDML
+	mov	cl,1
+	call	CHGDMP			;set disk allocation map bit
+	call	STDLVL			;up directroy level as available
+	jmps	INIDML
 ;
-;  SET DIRECTORY CODE  -1 NOT FOUND
+;  Set directory code  -1 not found
 ;
 SDRCOD:
-	MOV	AL,DIRCOD
-	JMP	BTPRST
+	mov	al,DIRCOD
+	jmp	BTPRST
 ;
-;  COMPARE DIRECTORY EXTENSION AS DIRECTORY NUMBER
-;  INPUT
-;  AL:CODE 1
-;  CL:CODE 2
-;  OUTPUT
-;  AL:DIRECTORY DIFFERENCE
-;  ZF:ON EVEN
+;  Compare directory extension as directory number
+;  Input
+;  AL:code 1
+;  CL:code 2
+;  Output
+;  AL:directory difference
+;  Zf:on even
 ;
 CPEXTM:
-	PUSH	CX
-	MOV	CH,EXM
-	NOT	CH		;GET MASK AS DIREORY NUMBER
-	AND	CL,CH
-	AND	AL,CH
-	SUB	AL,CL
-	AND	AL,01FH		;EXTENT AVAILABLE ONLY 5 BITS
-	POP	CX
+	push	cx
+	mov	ch,EXM
+	not	ch			;get mask as direory number
+	and	cl,ch
+	and	al,ch
+	sub	al,cl
+	and	al,01Fh			;extent available only 5 bits
+	pop	cx
 CPEXTE:
-	RET
+	ret
 ;
-;  SET DIRECTORY SEARCH PARAMETER
-;  INPUT
-;  CL:COMPARE LENGTH
+;  Set directory search parameter
+;  Input
+;  CL:compare length
 ;
 STDRSP:
-	MOV	BX,INPARA
-	MOV	FCBOFF,BX	;SET FCB OFFSET
-	MOV	DIRCOD,-1	;INITIALIZE DIRECTORY CODE AS NOT FOUND
-	MOV	DIRCLN,CL	;SET COMPARE LENGTH
-	RET
+	mov	bx,INPARA
+	mov	FCBOFF,bx		;set FCB offset
+	mov	DIRCOD,-1		;initialize directory code as not found
+	mov	DIRCLN,cl		;set compare length
+	ret
 ;
-;  SEARCH DIRECTORY FROM TOP
-;  INPUT
-;  CL:COMPARE LENGTH  0,1,12,15, ETC
+;  Search directory from top
+;  Input
+;  CL:compare length  0,1,12,15, etc
 ;
 SRDRFS:
-	CALL	STDRSP		;SET DIRECTORY SEARCH PARAMETER
-	CALL	INDRCN		;INITIALIZE DIRECTORY COUNT
-	CALL	TOHOME		;RESTORE
+	call	STDRSP			;set directory search parameter
+	call	INDRCN			;initialize directory count
+	call	TOHOME			;restore
 ;
-;  SEARCH DIRECTORY OF NEXT
-;  OUTPUT
-;  CH:DIRECTORY CODE +1
+;  Search directory of next
+;  Output
+;  CH:directory code +1
 ;
 SRDRNX:
-	MOV	SYSFLG,0		;CLEAR USER 0 MATCH MODE
-	MOV	CL,0		;HASH MODE TO CHECK
-	CALL	GTNDSC		;GET DIRECTORY DATA
-	CALL	CKDREN		;CHECK END
-	JNZ	SRDRNS		;NOT END
-SRDRNO:				;END OF DIRECTORY
-	JMP	SRDRNF		;NOT FOUND END
+	mov	SYSFLG,0		;clear user 0 match mode
+	mov	cl,0			;hash mode to check
+	call	GTNDSC			;get directory data
+	call	CKDREN			;check end
+	jnz	SRDRNS			;not end
+SRDRNO:				;end of directory
+	jmp	SRDRNF			;not found end
 ;
 SRDRNS:
-	MOV	DX,FCBOFF
-	MOV	SI,DX
-	LODSB			;GET TOP CODE
-	CMP	AL,DELCOD
-	JZ	SRDRND		;DELETED FILE SEARCH MODE
-	PUSH	DX
-	CALL	CHKDLV		;CHECK DIRECTORY LEVEL
-	POP	DX
-	JNC	SRDRNO		;OVER ACTIVE DIRECTORY
+	mov	dx,FCBOFF
+	mov	si,dx
+	lodsb				;get top code
+	cmp	al,DELCOD
+	jz	SRDRND			;deleted file search mode
+	push	dx
+	call	CHKDLV			;check directory level
+	pop	dx
+	jnc	SRDRNO			;over active directory
 SRDRND:
-	CALL	GTDRPT		;GET DIRECTORY POINT
-	MOV	CL,DIRCLN	;COMPARE LENGTH
-	MOV	CH,0		;CLEAR COUNT
-SRDRNL:				;ONE BYTE COMPARE LOOP
-	OR	CL,CL
-	JZ	SRDRNG		;END OF COMPARE  MATCHED
-	MOV	SI,DX
-	LODSB			;GET CODE
-	CMP	AL,'?'
-	JZ	SRDRNN		;WILD CARD SO DO NOT CARE
-	CMP	CH,13
-	JZ	SRDRNN		;SYSTEM BYTE SO IGNORED
-	CMP	CH,12
-	JZ	SRDRNE		;FILE EXTENT
-	SUB	AL,[BX]
-	AND	AL,07FH
-	JNZ	SRDRNM		;MISS MATCH
-	JMPS	SRDRNN		;MATCH
+	call	GTDRPT			;get directory point
+	mov	cl,DIRCLN		;compare length
+	mov	ch,0			;clear count
+SRDRNL:				;one byte compare loop
+	or	cl,cl
+	jz	SRDRNG			;end of compare  matched
+	mov	si,dx
+	lodsb				;get code
+	cmp	al,'?'
+	jz	SRDRNN			;wild card so do not care
+	cmp	ch,13
+	jz	SRDRNN			;system byte so ignored
+	cmp	ch,12
+	jz	SRDRNE			;file extent
+	sub	al,[bx]
+	and	al,07Fh
+	jnz	SRDRNM			;miss match
+	jmps	SRDRNN			;match
 ;
-SRDRNE:				;FILE EXTENT
-	PUSH	CX
-	MOV	CL,[BX]
-	CALL	CPEXTM		;COMPARE EXTENT AS DIRECTORY NUMBER
-	POP	CX
-	LAHF
-	TEST	SYSFLG,0FFH
-	JNZ	SRDRNZ		;USER CODE MISS MATCH  USER 0
-	MOV	SYSSRC,0		;CLEAR USER 0 SEARCH MODE   AS SAME NAME FILE
-	SAHF
-	JNZ	SRDRNX		;EXTENT MISS MATCH
-SRDRNN:				;MATCH TO NEXT BYTE
-	INC	DX
-	INC	BX
-	INC	CH
-	DEC	CL
-	JMPS	SRDRNL
+SRDRNE:				;file extent
+	push	cx
+	mov	cl,[bx]
+	call	CPEXTM			;compare extent as directory number
+	pop	cx
+	lahf
+	test	SYSFLG,0FFh
+	jnz	SRDRNZ			;user code miss match  user 0
+	mov	SYSSRC,0		;clear user 0 search mode   as same name file
+	sahf
+	jnz	SRDRNX			;extent miss match
+SRDRNN:				;match to next byte
+	inc	dx
+	inc	bx
+	inc	ch
+	dec	cl
+	jmps	SRDRNL
 ;
-SRDRNG:				;OK GET MATCHED DIRECTORY
-	MOV	DIRCOD,0	;USER DIRECTORY CODE MODE
-	MOV	AL,BYTE PTR DIRCNT
-	AND	AL,3
-	MOV	OTPARB,AL	;SET DIRECTORY CODE
-	MOV	CH,AL
-	INC	CH
+SRDRNG:				;OK get matched directory
+	mov	DIRCOD,0		;user directory code mode
+	mov	al,byte ptr DIRCNT
+	and	al,3
+	mov	OTPARB,al		;set directory code
+	mov	ch,al
+	inc	ch
 SRDRNR:
-	RET
+	ret
 ;
-SRDRNM:				;MISS MATCH OF BYTE
-	OR	CH,CH
-	JNZ	SRDRNT		;NOT TOP
-	TEST	BYTE PTR [BX],0FFH
-	JNZ	SRDRNT		;NOT USER ZERO
-	TEST	SYSSRC,0FFH
-	JZ	SRDRNT		;NOT USER 0 SEARCH MODE
-	MOV	SYSFLG,0FFH	;SET USER 0 DIRECTORY MODE
-	JMPS	SRDRNN
+SRDRNM:				;miss match of byte
+	or	ch,ch
+	jnz	SRDRNT			;not top
+	test	byte ptr [bx],0FFh
+	jnz	SRDRNT			;not user zero
+	test	SYSSRC,0FFh
+	jz	SRDRNT			;not user 0 search mode
+	mov	SYSFLG,0FFh		;set user 0 directory mode
+	jmps	SRDRNN
 ;
-SRDRNF:				;NOT FOUND END
-	CALL	INDRCN		;INITIALIZE COUNT
-	MOV	AL,0FFH		;FAIL END CODE
-	MOV	CH,AL
-	INC	CH
-	JMP	BTPRST
+SRDRNF:				;not found end
+	call	INDRCN			;initialize count
+	mov	al,0FFh			;fail end code
+	mov	ch,al
+	inc	ch
+	jmp	BTPRST
 ;
-SRDRNZ:				;USER 0 MISS MATCH FILE
-	SAHF
-	JNZ	SRDRNT		;EXTENT MISS MATCH
-	INC	BX
-	CMP	BYTE PTR [BX],0
-	JNZ	SRDRNT		;MISS MATCH
-	MOV	SI,DIRCNT
-	MOV	SYSCNT,SI	;SAVE MATCHED DIRECTORY COUNT
+SRDRNZ:				;user 0 miss match file
+	sahf
+	jnz	SRDRNT			;extent miss match
+	inc	bx
+	cmp	byte ptr [bx],0
+	jnz	SRDRNT			;miss match
+	mov	si,DIRCNT
+	mov	SYSCNT,si		;save matched directory count
 SRDRNT:
-	JMP	SRDRNX		;TO NEXT
+	jmp	SRDRNX			;to next
 ;
-;  DELETE DIRECTORY & ALLOCATION MAP
+;  Delete directory & allocation map
 ;
 DELDMP:
-	CALL	CHKROD		;CHECK R/O DISK
-	MOV	CL,12		;COMPARE ONLY NAME PART
-	CALL	SRDRFS		;SEARCH FIRST
-DELDML:				;ONE DIRECTORY ERASE LOOP
-	CALL	CKDREN		;CHECK END
-	JZ	SRDRNR		;ALL OVER
-	CALL	CHKROF		;CHECK R/O FILE
-	CALL	GTDRPT		;GET DIRECTORY POINT
-	MOV	BYTE PTR [BX],DELCOD ;SET DELETE CODE
-	MOV	CL,0		;DELETE MODE
-	CALL	CHGDMP		;DELETE ALL MAP
-	CALL	DRWRIT		;WRITE DIRECTORY
-	CALL	SRDRNX		;SEARCH NEXT
-	JMPS	DELDML		;TO NEXT DIRECTORY
+	call	CHKROD			;check R/O disk
+	mov	cl,12			;compare only name part
+	call	SRDRFS			;search first
+DELDML:				;one directory erase loop
+	call	CKDREN			;check end
+	jz	SRDRNR			;all over
+	call	CHKROF			;check R/O file
+	call	GTDRPT			;get directory point
+	mov	byte ptr [bx],DELCOD	;set delete code
+	mov	cl,0			;delete mode
+	call	CHGDMP			;delete all map
+	call	DRWRIT			;write directory
+	call	SRDRNX			;search next
+	jmps	DELDML			;to next directory
 ;
-;  GET AVAILABLE BLOCK BY SEARCHING NEAREST BLOCK
-;  INPUT
-;  CX:LAST BLOCK NUMBER   0 FIRST BLOCK
-;  OUTPUT
-;  BX:AVAILABLE BLOCK NUMBER   0 NO SPACE
+;  Get available block by searching nearest block
+;  Input
+;  CX:last block number   0 first block
+;  Output
+;  BX:available block number   0 NO space
 ;
 GAVLBK:
-	MOV	DX,CX
-GAVLBL:				;SEARCH LOOP  CX LOWER SEARCH   DX UP SEARCH
-	OR	CX,CX
-	JZ	GAVLBS		;NO LOWER SPACE
-	DEC	CX
-	PUSH	DX
-	PUSH	CX
-	CALL	GTDMBT		;GET ALLOCATION MAP BIT
-	RCR	AL,1
-	JNC	GAVLBA		;GET AVAILABLE BLOCK
-	POP	CX		;NOT AVAILABLE
-	POP	DX
-GAVLBS:				;SEARCH UPER
-	CMP	DX,DSM
-	JNC	GAVLBE		;NO UPER SPACE
-	INC	DX
-	PUSH	CX
-	PUSH	DX
-	MOV	CX,DX
-	CALL	GTDMBT		;GET ALLOCATION MAP BIT
-	RCR	AL,1
-	JNC	GAVLBA		;GET AVAILABLE BLOCK
-	POP	DX		;NO AVAILABLE
-	POP	CX
-	JMPS	GAVLBL		;CHECK NEXT
+	mov	dx,cx
+GAVLBL:				;search loop  CX lower search   DX up search
+	or	cx,cx
+	jz	GAVLBS			;NO lower space
+	dec	cx
+	push	dx
+	push	cx
+	call	GTDMBT			;get allocation map bit
+	rcr	al,1
+	jnc	GAVLBA			;get available block
+	pop	cx			;not available
+	pop	dx
+GAVLBS:				;search uper
+	cmp	dx,DSM
+	jnc	GAVLBE			;NO uper space
+	inc	dx
+	push	cx
+	push	dx
+	mov	cx,dx
+	call	GTDMBT			;get allocation map bit
+	rcr	al,1
+	jnc	GAVLBA			;get available block
+	pop	dx			;NO available
+	pop	cx
+	jmps	GAVLBL			;check next
 ;
-GAVLBA:				;GET AVAILABLE BLOCK
-	RCL	AL,1
-	INC	AL		;ON BIT FOR USE
-	CALL	STDMBT		;SET TO ALLOCATION MAP
-	POP	BX
-	POP	DX
-	RET
+GAVLBA:				;get available block
+	rcl	al,1
+	inc	al			;on bit for use
+	call	STDMBT			;set to allocation map
+	pop	bx
+	pop	dx
+	ret
 ;
-GAVLBE:				;NO UPER SPACE
-	OR	CX,CX
-	JNZ	GAVLBL		;SOME LOWER SPACE LEFT
-	MOV	BX,0		;NO DISK SPACE
-	RET
+GAVLBE:				;NO uper space
+	or	cx,cx
+	jnz	GAVLBL			;some lower space left
+	mov	bx,0			;NO disk space
+	ret
 ;
-;  COPY ALL FCB DATA TO DIRECTORY & WRITE
-;  INPUT
-;  CL:BIAS OF FCB SOURCE TOP  0 NORMAL  16 REBAME
-;  DL:COPY LENGTH
+;  Copy all FCB data to directory & write
+;  Input
+;  CL:bias of FCB source top  0 normal  16 rebame
+;  DL:copy length
 ;
 COPYDA:
-	MOV	CL,0		;FOR ALL COPY MODE
-	MOV	DL,32
+	mov	cl,0			;for all copy mode
+	mov	dl,32
 COPYDR:
-	PUSH	DX		;SAVE LENGTH
-	MOV	CH,0
-	MOV	DX,INPARA
-	ADD	DX,CX		;GET SOURCE POINT
-	CALL	GTDRPT		;GET DIRECTORY TOP
-	POP	CX
-	CALL	COPY		;COPY
+	push	dx			;save length
+	mov	ch,0
+	mov	dx,INPARA
+	add	dx,cx			;get source point
+	call	GTDRPT			;get directory top
+	pop	cx
+	call	COPY			;copy
 COPYDE:
-	CALL	STDIRT		;SET DIRECTORY  TRACK & SECTOR
-	JMP	DRWRIT		;WRITE DIRECTORY
+	call	STDIRT			;set directory  track & sector
+	jmp	DRWRIT			;write directory
 ;
-;  RENAME
+;  Rename
 ;
 RENAME:
-	CALL	CHKROD		;CHECK R/O DISK
-	MOV	CL,12		;ONLY NAME
-	CALL	SRDRFS		;SEARCH FIRST
-	MOV	BX,INPARA
-	MOV	AL,[BX]
-	ADD	BX,16
-	MOV	[BX],AL		;SET SAME USER CODE TO NEW NAME
-RENAML:				;ONE DIRECTORY RENAME LOOP
-	CALL	CKDREN		;CHECK END
-	JNZ	RENAMS		;NOT END
-RENAMN:				;END
-	RET
+	call	CHKROD			;check R/O disk
+	mov	cl,12			;only name
+	call	SRDRFS			;search first
+	mov	bx,INPARA
+	mov	al,[bx]
+	add	bx,16
+	mov	[bx],al			;set same user code to new name
+RENAML:				;one directory rename loop
+	call	CKDREN			;check end
+	jnz	RENAMS			;not end
+RENAMN:				;end
+	ret
 ;
 RENAMS:
-	CALL	CHKROF		;CHECK R/O FILE
-	MOV	CL,16		;NEW NAME
-	MOV	DL,12		;COPY LENGTH
-	CALL	COPYDR		;SET NEW NAME & WRITE
-	CALL	SRDRNX		;SEARCH NEXT
-	JMPS	RENAML		;TO NEXT
+	call	CHKROF			;check R/O file
+	mov	cl,16			;new name
+	mov	dl,12			;copy length
+	call	COPYDR			;set new name & write
+	call	SRDRNX			;search next
+	jmps	RENAML			;to next
 ;
-;  SET FILE ATTRBUTE
+;  Set file attrbute
 ;
 STFATR:
-	MOV	CL,12		;ONLY NAME
-	CALL	SRDRFS		;SEARCH FIRST
-STFATL:				;ATTRIBUTE SET LOOP
-	CALL	CKDREN		;CHECK END
-	JZ	RENAMN		;END
-	MOV	CL,0		;FROM TOP
-	MOV	DL,12		;NAME PART ONLY
-	CALL	COPYDR		;SET & WRITE DIRECTORY
-	CALL	SRDRNX		;SEARCH NEXT
-	JMPS	STFATL		;TO NEXT
+	mov	cl,12			;only name
+	call	SRDRFS			;search first
+STFATL:				;attribute set loop
+	call	CKDREN			;check end
+	jz	RENAMN			;end
+	mov	cl,0			;from top
+	mov	dl,12			;name part only
+	call	COPYDR			;set & write directory
+	call	SRDRNX			;search next
+	jmps	STFATL			;to next
 ;
-;  OPEN  FILE
+;  Open  file
 ;
 OPENFL:
-	MOV	CL,15		;WITH EXTENT
-	CALL	SRDRFS		;SEARCH FIRST
-	CALL	CKDREN		;CHECK NOT FOUND
+	mov	cl,15			;with extent
+	call	SRDRFS			;search first
+	call	CKDREN			;check not found
 OPENFN:
-	JZ	RENAMN		;NOT FOUND END
+	jz	RENAMN			;not found end
 OPENFS:
-	CALL	EXTPNT		;GET EXTENT POINT
-	PUSH	AX		;SAVE FILE EXTENT
-	PUSH	BX
-	CALL	GTDRPT		;GET DIRECTORY POINT
-	XCHG	BX,DX
-	MOV	BX,INPARA
-	MOV	CL,32
-	PUSH	DX
-	CALL	COPY		;COPY DIRECTORY DATA TO FCB
-	CALL	FMDRON		;INITIALIZE MODIFY MODE
-	POP	DX
-	MOV	BX,12
-	ADD	BX,DX
-	MOV	CL,[BX]		;GET FILE EXTENT
-	MOV	BX,15
-	ADD	BX,DX
-	MOV	CH,[BX]		;GET RECORD COUNT
-	POP	BX
-	POP	AX
-	MOV	[BX],AL		;RESTORE FILE EXTENT
-	CMP	CL,[BX]
-	MOV	AL,CH
-	JZ	OPENFX		;MATCH EXTENT SO RECORD COUNT IS AVAILABLE
-	MOV	AL,0
-	JC	OPENFX		;UNDER
-	MOV	AL,80H		;OVER
+	call	EXTPNT			;get extent point
+	push	ax			;save file extent
+	push	bx
+	call	GTDRPT			;get directory point
+	xchg	bx,dx
+	mov	bx,INPARA
+	mov	cl,32
+	push	dx
+	call	COPY			;copy directory data to FCB
+	call	FMDRON			;initialize modify mode
+	pop	dx
+	mov	bx,12
+	add	bx,dx
+	mov	cl,[bx]			;get file extent
+	mov	bx,15
+	add	bx,dx
+	mov	ch,[bx]			;get record count
+	pop	bx
+	pop	ax
+	mov	[bx],al			;restore file extent
+	cmp	cl,[bx]
+	mov	al,ch
+	jz	OPENFX			;match extent so record count is available
+	mov	al,0
+	jc	OPENFX			;under
+	mov	al,80h			;over
 OPENFX:
-	MOV	BX,INPARA
-	MOV	DX,15
-	ADD	BX,DX
-	MOV	[BX],AL		;SET RECORD COUNT
+	mov	bx,INPARA
+	mov	dx,15
+	add	bx,dx
+	mov	[bx],al			;set record count
 OPENFE:
-	RET
+	ret
 ;
-;  CHECK DIRECTORY MAP FOR TWO BYTE MODE
-;  INPUT
-;  BX:DESTINATION POINTER
-;  DX:SOURCE POINTER
+;  Check directory map for two byte mode
+;  Input
+;  BX:destination pointer
+;  DX:source pointer
 ;
 CHKDMP:
-	CMP	WORD PTR [BX],0
-	JNZ	OPENFE		;SOME DATA EXIST SO NOT SET
-	MOV	SI,DX
-	LODSW			;GET SOURCE DATA
-	MOV	[BX],AX		;SET DATA
+	cmp	word ptr [bx],0
+	jnz	OPENFE			;some data exist so not set
+	mov	si,dx
+	lodsw				;get source data
+	mov	[bx],ax			;set data
 CHKDME:
-	RET
+	ret
 ;
-;  CLOSE FILE
+;  Close file
 ;
 CLOSEF:
-	XOR	AX,AX
-	MOV	OTPARB,AL	;CLEAR RESULT PARAMETER
-	MOV	DIRCNT,AX	;CLEAR DIRECTORY COUNT
-	CALL	CHKROV		;CHECK R/O DISK
-	JNZ	CHKDME		;R/O DISK SO END
-	CALL	FMDPNT		;GET MODIFY MODE
-	AND	AL,080H
-	JNZ	CHKDME		;NO MODIFY MODE SO END
-	MOV	CL,15		;WITH EXTENT
-	CALL	SRDRFS		;SEARCH
-	CALL	CKDREN
-	JZ	CHKDME		;NOT FOUND
-	MOV	CX,16
-	CALL	GTDRPT		;GET DIECTORY POINT
-	ADD	BX,CX		;GET DIRECTORY MAP POINT
-	XCHG	BX,DX
-	MOV	BX,INPARA
-	ADD	BX,CX		;GET FCB MAP TOP
-	MOV	CL,16
-CLOSEL:				;LOOP TO CHECK & MAKE DIRECTORY MAP
-	CMP	DSMMOD,0
-	JZ	CLOSED		;TWO BYTE MODE
-	MOV	AL,[BX]		;ONE BYTE MODE  GET FCB DATA
-	OR	AL,AL
-	MOV	SI,DX
-	LODSB			;GET DIRECTORY DATA
-	JNZ	$+4		;SOME BLOCK NUMBER EXISTS IN FCB
-	MOV	[BX],AL		;SET TO FCB
-	OR	AL,AL
-	JNZ	CLOSES		;SOME DATA IN DIRECTORY
-	MOV	AL,[BX]		;GET FCB DATA
-	MOV	DI,DX
-	CLD
-	STOSB			;SET TO DIRECTORY
+	xor	ax,ax
+	mov	OTPARB,al		;clear result parameter
+	mov	DIRCNT,ax		;clear directory count
+	call	CHKROV			;check R/O disk
+	jnz	CHKDME			;R/O disk so end
+	call	FMDPNT			;get modify mode
+	and	al,080h
+	jnz	CHKDME			;NO modify mode so end
+	mov	cl,15			;with extent
+	call	SRDRFS			;search
+	call	CKDREN
+	jz	CHKDME			;not found
+	mov	cx,16
+	call	GTDRPT			;get diectory point
+	add	bx,cx			;get directory map point
+	xchg	bx,dx
+	mov	bx,INPARA
+	add	bx,cx			;get FCB map top
+	mov	cl,16
+CLOSEL:				;loop to check & make directory map
+	cmp	DSMMOD,0
+	jz	CLOSED			;two byte mode
+	mov	al,[bx]			;one byte mode  get FCB data
+	or	al,al
+	mov	si,dx
+	lodsb				;get directory data
+	jnz	$+4			;some block number exists in FCB
+	mov	[bx],al			;set to FCB
+	or	al,al
+	jnz	CLOSES			;some data in directory
+	mov	al,[bx]			;get FCB data
+	mov	di,dx
+	cld
+	stosb				;set to directory
 CLOSES:
-	CMP	AL,[BX]
-	JNZ	CLOSER		;MAP MISS MATCH
-	JMPS	CLOSEN		;TO NEXT
+	cmp	al,[bx]
+	jnz	CLOSER			;map miss match
+	jmps	CLOSEN			;to next
 ;
-CLOSED:				;TWO BYTE MODE
-	CALL	CHKDMP
-	XCHG	BX,DX
-	CALL	CHKDMP		;CHECK & SET IF EMPTY
-	XCHG	BX,DX
-	MOV	SI,DX
-	MOV	AX,[SI]		;GET DIRECTORY DATA
-	CMP	AX,[BX]		;COMPARE WITH FCB DATA
-	JNZ	CLOSER		;MAP MISS MATCH
-	INC	DX
-	INC	BX
-	DEC	CL
-CLOSEN:				;TO NEXT
-	INC	DX
-	INC	BX
-	DEC	CL
-	JNZ	CLOSEL		;TO NEXT MAP
-	MOV	CX,-20		;ALL MAP MATCHED & SETUPED
-	ADD	BX,CX
-	XCHG	BX,DX
-	ADD	BX,CX
-	MOV	SI,DX
-	LODSB
-	CMP	AL,[BX]		;COMPARE FILE EXTENT
-	JC	CLOSET		;DIRECTORY IS LARGER SO NOT CHANGE
-	MOV	[BX],AL		;FCB IS LARGER   SO SET EXTENT
-	MOV	CX,3
-	ADD	BX,CX
-	XCHG	BX,DX
-	ADD	BX,CX
-	MOV	AL,[BX]
-	MOV	DI,DX
-	CLD
-	STOSB			;SET NEW RECORD COUNT
-CLOSET:				;WRITE TO DIRECTORY FOR CLOSE
-	MOV	EXTMOD,0FFH	;SET CLOSE MODE FOR EXTENT
-	JMP	COPYDE
+CLOSED:				;two byte mode
+	call	CHKDMP
+	xchg	bx,dx
+	call	CHKDMP			;check & set if empty
+	xchg	bx,dx
+	mov	si,dx
+	mov	ax,[si]			;get directory data
+	cmp	ax,[bx]			;compare with FCB data
+	jnz	CLOSER			;map miss match
+	inc	dx
+	inc	bx
+	dec	cl
+CLOSEN:				;to next
+	inc	dx
+	inc	bx
+	dec	cl
+	jnz	CLOSEL			;to next map
+	mov	cx,-20			;all map matched & setuped
+	add	bx,cx
+	xchg	bx,dx
+	add	bx,cx
+	mov	si,dx
+	lodsb
+	cmp	al,[bx]			;compare file extent
+	jc	CLOSET			;directory is larger so not change
+	mov	[bx],al			;FCB is larger   so set extent
+	mov	cx,3
+	add	bx,cx
+	xchg	bx,dx
+	add	bx,cx
+	mov	al,[bx]
+	mov	di,dx
+	cld
+	stosb				;set new record count
+CLOSET:				;write to directory for close
+	mov	EXTMOD,0FFh		;set close mode for extent
+	jmp	COPYDE
 ;
-CLOSER:				;MAP MISS MATCH ERROR
-	DEC	OTPARB
+CLOSER:				;map miss match error
+	dec	OTPARB
 CLOSEE:
-	RET
+	ret
 ;
-;  GET AVAILABLE DIRECTORY
+;  Get available directory
 ;
 GTADIR:
-	CALL	CHKROD		;CHECK R/O DISK
-	PUSH	INPARA		;SAVE FCB POINT
-	MOV	INPARA,OFFSET DLTFCB ;DUMMY FCB AS DELETED FCB
-	MOV	CL,1
-	CALL	SRDRFS		;SEARCH DELETED DIRECTORY
-	CALL	CKDREN
-	POP	INPARA
-	JZ	CLOSEE		;NO DIRECTORY SPACE
-	MOV	DX,INPARA
-	MOV	BX,15
-	ADD	BX,DX
-	MOV	CL,17
-	XOR	AL,AL
-GTADIL:				;CLEAR DIRECTORY MAP & CURRENT RECORD COUNT
-	MOV	[BX],AL
-	INC	BX
-	DEC	CL
-	JNZ	GTADIL
-	MOV	BX,13
-	ADD	BX,DX
-	MOV	[BX],AL		;CLEAR RECORD COUNT
-	CALL	STDLVL
-	CALL	COPYDA		;WRITE TO DIRECTORY
-	JMP	FMDRON		;INITIALIZE MODIFY MODE
+	call	CHKROD			;check R/O disk
+	push	INPARA			;save FCB point
+	mov	INPARA,offset DLTFCB	;dummy FCB as deleted FCB
+	mov	cl,1
+	call	SRDRFS			;search deleted directory
+	call	CKDREN
+	pop	INPARA
+	jz	CLOSEE			;NO directory space
+	mov	dx,INPARA
+	mov	bx,15
+	add	bx,dx
+	mov	cl,17
+	xor	al,al
+GTADIL:				;clear directory map & current record count
+	mov	[bx],al
+	inc	bx
+	dec	cl
+	jnz	GTADIL
+	mov	bx,13
+	add	bx,dx
+	mov	[bx],al			;clear record count
+	call	STDLVL
+	call	COPYDA			;write to directory
+	jmp	FMDRON			;initialize modify mode
 ;
-;  GET NEXT DIRECTORY
+;  Get next directory
 ;
 GTNXDR:
-	XOR	AL,AL
-	MOV	EXTMOD,AL	;CLEAR EXTENT MODE OF CLOSE
-	CALL	CLOSEF		;CLOSE CURRENT
-	CALL	CKDREN
-	JZ	CLOSEE		;CLOSE DIRECTORY NOT FOUND
-	MOV	BX,INPARA
-	ADD	BX,12
-	MOV	AL,[BX]		;GET EXTENT
-	INC	AL		;UP EXTENT
-	AND	AL,01FH
-	MOV	[BX],AL
-	JZ	GTNXDX		;UP S2 EXTENT
-	MOV	CH,AL
-	MOV	AL,EXM
-	AND	AL,CH
-	AND	AL,EXTMOD
-	JZ	GTNXDN		;TO NEXT DIRECTORY
-	JMPS	GTNXDO		;IN SAME DIRECTORY
+	xor	al,al
+	mov	EXTMOD,al		;clear extent mode of close
+	call	CLOSEF			;close current
+	call	CKDREN
+	jz	CLOSEE			;close directory not found
+	mov	bx,INPARA
+	add	bx,12
+	mov	al,[bx]			;get extent
+	inc	al			;up extent
+	and	al,01Fh
+	mov	[bx],al
+	jz	GTNXDX			;up S2 extent
+	mov	ch,al
+	mov	al,EXM
+	and	al,ch
+	and	al,EXTMOD
+	jz	GTNXDN			;to next directory
+	jmps	GTNXDO			;in same directory
 ;
-GTNXDX:				;S2 EXTENT
-	ADD	BX,2
-	INC	BYTE PTR [BX]	;UP S2 EXTENT
-	MOV	AL,[BX]
-	AND	AL,00FH
-	JZ	GTNXDV		;OVER SO NO DATA EXIST END
-GTNXDN:				;TO NEXT DIRECTORY
-	MOV	CL,15		;WITH EXTENT
-	CALL	SRDRFS		;SEARCH
-	CALL	CKDREN
-	JNZ	GTNXDO		;OK GET
-	MOV	AL,RWMODE
-	INC	AL
-	JZ	GTNXDV		;READ MODE SO FILE OVER
-	CALL	GTADIR		;GET AVAILABLE DIRECTORY AS WRITE MODE
-	CALL	CKDREN
-	JZ	GTNXDV		;NO DIRECTORY SPACE
-	JMPS	GTNXDW		;OK END
+GTNXDX:				;S2 extent
+	add	bx,2
+	inc	byte ptr [bx]		;up S2 extent
+	mov	al,[bx]
+	and	al,00Fh
+	jz	GTNXDV			;over so NO data exist end
+GTNXDN:				;to next directory
+	mov	cl,15			;with extent
+	call	SRDRFS			;search
+	call	CKDREN
+	jnz	GTNXDO			;OK get
+	mov	al,RWMODE
+	inc	al
+	jz	GTNXDV			;read mode so file over
+	call	GTADIR			;get available directory as write mode
+	call	CKDREN
+	jz	GTNXDV			;NO directory space
+	jmps	GTNXDW			;OK end
 ;
-GTNXDO:				;OPEN BY NEW EXTENT
-	CALL	OPENFS
+GTNXDO:				;open by new extent
+	call	OPENFS
 GTNXDW:
-	CALL	GTRCNT		;GET RECORD COUNT
-	XOR	AL,AL
-	JMP	BTPRST		;SUCCESS END
+	call	GTRCNT			;get record count
+	xor	al,al
+	jmp	BTPRST			;success end
 ;
-GTNXDV:				;FILE OVER END
-	CALL	NODTEX		;TO NO DATA EXIST MODE
-	JMP	FMDRON
+GTNXDV:				;file over end
+	call	NODTEX			;to NO data exist mode
+	jmp	FMDRON
 ;
-;  READ RECORD
+;  Read record
 ;
-RDNEXT:				;READ NEXT RECORD
-	MOV	RUPCNT,1	;SET UP COUNT
-RDNEXR:				;RE RANDOM ENTRY
-	MOV	RWMODE,-1	;TO READ MODE
-	CALL	GTRCNT		;GET RECORD COUNT
-	MOV	AL,CURCNT
-	CMP	AL,RECUNT
-	JC	RDNEXS		;IN SAME DIRECTORY
-	CMP	AL,080H
-	JNZ	RDNEXV		;TOO LARGE  VALUE ERROR
-	CALL	GTNXDR		;TO NEXT DIRECTORY
-	CALL	GTRCPT
-	XOR	AX,AX
-	MOV	WORD PTR CURCNT,AX
-	MOV	[BX],AL		;CLEAR CURRENT RECORD
-	CMP	OTPARB,0
-	JNZ	RDNEXV		;ERROR OF DIRECTORY EXTENT
-RDNEXS:				;GET IN DIRECTORY
-	CALL	GTBLCK		;GET TARGET BLOCK
-	CALL	CHKBLK
-	JZ	RDNEXV		;EMPTY
-	CALL	BLTSCT		;BLOCK NUMBER TO SECTOR
-	CALL	TRSSET		;TO TRACK & SECTOR
-	CALL	DREAD		;READ ONE SECTOR
-	JMP	USRCNT		;SET RECORD COUNT TO FCB
+RDNEXT:				;read next record
+	mov	RUPCNT,1		;set up count
+RDNEXR:				;re random entry
+	mov	RWMODE,-1		;to read mode
+	call	GTRCNT			;get record count
+	mov	al,CURCNT
+	cmp	al,RECUNT
+	jc	RDNEXS			;in same directory
+	cmp	al,080h
+	jnz	RDNEXV			;too large  value error
+	call	GTNXDR			;to next directory
+	call	GTRCPT
+	xor	ax,ax
+	mov	word ptr CURCNT,ax
+	mov	[bx],al			;clear current record
+	cmp	OTPARB,0
+	jnz	RDNEXV			;error of directory extent
+RDNEXS:				;get in directory
+	call	GTBLCK			;get target block
+	call	CHKBLK
+	jz	RDNEXV			;empty
+	call	BLTSCT			;block number to sector
+	call	TRSSET			;to track & sector
+	call	DREAD			;read one sector
+	jmp	USRCNT			;set record count to FCB
 ;
-RDNEXV:				;OVER OF FILE OR ERROR
-	JMP	NODTEX
+RDNEXV:				;over of file or error
+	jmp	NODTEX
 ;
-;  WRITE NEXT RECORD
+;  Write next record
 ;
 WTNEXT:
-	MOV	RUPCNT,1	;SET UP COUNT
-WTNEXR:				;WRITE RANDOM ENTRY
-	MOV	RWMODE,0	;SET WRITE MODE
-	CALL	CHKROD		;CHECK R/O DISK
-	MOV	BX,INPARA
-	CALL	CHKROL		;CHECK R/O FILE
-	CALL	GTRCNT		;GET RECORD COUNT
-	MOV	AL,CURCNT
-	CMP	AL,080H
-	JC	WTNEXS
-	JMP	NODTEX		;FILE EXTENT ERROR
+	mov	RUPCNT,1		;set up count
+WTNEXR:				;write random entry
+	mov	RWMODE,0		;set write mode
+	call	CHKROD			;check R/O disk
+	mov	bx,INPARA
+	call	CHKROL			;check R/O file
+	call	GTRCNT			;get record count
+	mov	al,CURCNT
+	cmp	al,080h
+	jc	WTNEXS
+	jmp	NODTEX			;file extent error
 ;
 WTNEXS:
-	CALL	GTBLCK		;GET BLOCK
-	CALL	CHKBLK
-	MOV	CL,0		;ALLOCATED MODE FLAG
-	JNZ	WTNEXW		;ALLOCATED BLOCK
-	CALL	GBSDIR		;UNALLOCATED BLOCK
-	MOV	DRBSWT,AL	;SAVE DIRECTORY BIAS
-	XOR	CX,CX
-	OR	AL,AL
-	JZ	WTNEXF		;FIRST BLOCK
-	MOV	CL,AL
-	DEC	CX
-	CALL	GTBLNM		;GET LAST BLOCK NUMBER
-	MOV	CX,BX
+	call	GTBLCK			;get block
+	call	CHKBLK
+	mov	cl,0			;allocated mode flag
+	jnz	WTNEXW			;allocated block
+	call	GBSDIR			;unallocated block
+	mov	DRBSWT,al		;save directory bias
+	xor	cx,cx
+	or	al,al
+	jz	WTNEXF			;first block
+	mov	cl,al
+	dec	cx
+	call	GTBLNM			;get last block number
+	mov	cx,bx
 WTNEXF:
-	CALL	GAVLBK		;GET AVAILABLE BLOCK NUMBER
-	OR	BX,BX
-	JNZ	WTNEXG		;GET BLOCK
-	MOV	AL,2
-	JMP	BTPRST		;DISK FULL
+	call	GAVLBK			;get available block number
+	or	bx,bx
+	jnz	WTNEXG			;get block
+	mov	al,2
+	jmp	BTPRST			;disk full
 ;
-WTNEXG:				;GET TARGET BLOCK
-	MOV	TGSECT,BX	;SET BLOCK
-	XCHG	BX,DX
-	MOV	BX,INPARA
-	ADD	BX,16
-	CMP	DSMMOD,0
-	MOV	AL,DRBSWT	;BIAS IN DIRECTORY
-	MOV	AH,0
-	JZ	WTNEXD		;TWO BYTE MODE
-	ADD	BX,AX		;ONE BYTE MODE
-	MOV	[BX],DL		;SET BLOCK NUMBER
-	JMPS	WTNEXO
+WTNEXG:				;get target block
+	mov	TGSECT,bx		;set block
+	xchg	bx,dx
+	mov	bx,INPARA
+	add	bx,16
+	cmp	DSMMOD,0
+	mov	al,DRBSWT		;bias in directory
+	mov	ah,0
+	jz	WTNEXD			;two byte mode
+	add	bx,ax			;one byte mode
+	mov	[bx],dl			;set block number
+	jmps	WTNEXO
 ;
-WTNEXD:				;TWO BYTE MODE
-	ADD	BX,AX
-	ADD	BX,AX
-	MOV	[BX],DX		;SET BLOCK NUMBER
-	INC	BX
+WTNEXD:				;two byte mode
+	add	bx,ax
+	add	bx,ax
+	mov	[bx],dx			;set block number
+	inc	bx
 WTNEXO:
-	MOV	CL,2		;UNALLOCATED MODE
+	mov	cl,2			;unallocated mode
 WTNEXW:
-	CMP	OTPARB,0
-	JZ	$+3		;OK WRITE
-	RET			;SOME ERROR END
+	cmp	OTPARB,0
+	jz	$+3			;OK write
+	ret				;some error end
 ;
-	MOV	MDWRIT,CL	;SET WRITE MODE
-	CALL	BLTSCT		;SET TRACK & SECTOR
-	CMP	RUPCNT,2
-	JNZ	WTNEXN		;NOT WRITE WITH ZERO FILL
-	CMP	MDWRIT,2
-	JNZ	WTNEXN		;NOT UNALLOCATED MODE
-	PUSH	TGSECT		;WRITE ZERO SECTOR
-	MOV	DI,DIRBUF
-	XOR	AX,AX
-	MOV	CX,64
-	CLD
-	REP	STOSW		;CLEAR BUFFER
-	CALL	STDDMA		;DMA TO WORK
-	MOV	BX,BTSECT	;GET BLOCK TOP
-WTNEXZ:				;ZERO DATA WRITE LOOP
-	MOV	TGSECT,BX
-	CALL	TRSSET		;SET TRACK & SECTOR
-	CALL	DWRITE		;WRITE ZERO DATA
-	MOV	BX,TGSECT
-	MOV	MDWRIT,0	;WRITE MODE TO ALLOCATED
-	MOV	AL,BL
-	MOV	DH,BLM
-	AND	AL,DH
-	INC	BX		;UP SECTOR
-	CMP	AL,DH
-	JNZ	WTNEXZ		;TO NEXT SECTOR
-	POP	TGSECT
-	CALL	STBDMA		;RESTORE DMA ADDRESS
+	mov	MDWRIT,cl		;set write mode
+	call	BLTSCT			;set track & sector
+	cmp	RUPCNT,2
+	jnz	WTNEXN			;not write with zero fill
+	cmp	MDWRIT,2
+	jnz	WTNEXN			;not unallocated mode
+	push	TGSECT			;write zero sector
+	mov	di,DIRBUF
+	xor	ax,ax
+	mov	cx,64
+	cld
+	rep	stosw			;clear buffer
+	call	STDDMA			;DMA to work
+	mov	bx,BTSECT		;get block top
+WTNEXZ:				;zero data write loop
+	mov	TGSECT,bx
+	call	TRSSET			;set track & sector
+	call	DWRITE			;write zero data
+	mov	bx,TGSECT
+	mov	MDWRIT,0		;write mode to allocated
+	mov	al,bl
+	mov	dh,BLM
+	and	al,dh
+	inc	bx			;up sector
+	cmp	al,dh
+	jnz	WTNEXZ			;to next sector
+	pop	TGSECT
+	call	STBDMA			;restore DMA address
 WTNEXN:
-	CALL	TRSSET		;TO TARGET TRACK & SECTOR
-	CALL	DWRITE		;WRITE
-	MOV	AL,CURCNT
-	MOV	BX,OFFSET RECUNT
-	CMP	AL,[BX]
-	JC	WTNEXV		;FILE SIZE IS LARGER
-	MOV	[BX],AL		;SETUP RECORD COUNT
-	INC	BYTE PTR [BX]
-	MOV	CL,2
+	call	TRSSET			;to target track & sector
+	call	DWRITE			;write
+	mov	al,CURCNT
+	mov	bx,offset RECUNT
+	cmp	al,[bx]
+	jc	WTNEXV			;file size is larger
+	mov	[bx],al			;setup record count
+	inc	byte ptr [bx]
+	mov	cl,2
 WTNEXV:
-	PUSH	AX
-	CALL	FMDPNT		;GET MODIFY MODE
-	AND	AL,07FH		;OFF NO MODIFY BIT
-	MOV	[BX],AL
-	POP	AX
-	CMP	AL,07FH
-	JNZ	WTNEXE		;RECORD COUNT IN RANGE
-	CMP	RUPCNT,1
-	JNZ	WTNEXE		;NOT SEQUENTIAL WRITE
-	CALL	USRCNT		;SET RECORD COUNT TO FCB
-	CALL	GTNXDR		;TO NEXT DIRECTORY
-	MOV	BX,OFFSET OTPARB
-	MOV	AL,[BX]
-	OR	AL,AL
-	JNZ	WTNEXA		;SOME ERROR
-	DEC	AL
-	MOV	CURCNT,AL	;SET CURRENT RECORD COUNT FOR UP COUNT
+	push	ax
+	call	FMDPNT			;get modify mode
+	and	al,07Fh			;off NO modify bit
+	mov	[bx],al
+	pop	ax
+	cmp	al,07Fh
+	jnz	WTNEXE			;record count in range
+	cmp	RUPCNT,1
+	jnz	WTNEXE			;not sequential write
+	call	USRCNT			;set record count to FCB
+	call	GTNXDR			;to next directory
+	mov	bx,offset OTPARB
+	mov	al,[bx]
+	or	al,al
+	jnz	WTNEXA			;some error
+	dec	al
+	mov	CURCNT,al		;set current record count for up count
 WTNEXA:
-	MOV	BYTE PTR [BX],0	;CLEAR ERROR FLAG  AS CURRENT IS PRE-OPERATION
+	mov	byte ptr [bx],0		;clear error flag  as current is pre-operation
 WTNEXE:
-	JMP	USRCNT
+	jmp	USRCNT
 ;
-;  GET DIRECTORY FOR RANDOM ACCESS
-;  INPUT
-;  CL:-1 READ MODE   0 WRITE MODE
-;  OUTPUT
-;  ZF:ON OK
+;  Get directory for random access
+;  Input
+;  CL:-1 read mode   0 write mode
+;  Output
+;  Zf:on OK
 ;
 RNDDIR:
-	MOV	RUPCNT,0	;NO UP COUNT MODE
+	mov	RUPCNT,0		;NO up count mode
 RNDDIS:
-	PUSH	CX
-	MOV	DX,INPARA
-	MOV	BX,33
-	ADD	BX,DX
-	MOV	AL,[BX]
-	AND	AL,07FH		;GET RECORD COUNT VALUE
-	PUSH	AX
-	MOV	AL,[BX]
-	RCL	AL,1
-	INC	BX
-	MOV	AL,[BX]
-	RCL	AL,1
-	AND	AL,01FH		;GET EXTENT VALUE
-	MOV	CL,AL
-	MOV	AL,[BX]
-	RCR	AL,1
-	RCR	AL,1
-	RCR	AL,1
-	RCR	AL,1
-	AND	AL,00FH		;GET S2 EXTENT
-	MOV	CH,AL
-	POP	AX
-	INC	BX
-	MOV	BL,[BX]
-	OR	BL,BL
-	MOV	BL,6		;TOO LARGE ERROR CODE
-	JNZ	RNDDIF		;TOO LARGE
-	MOV	BX,32
-	ADD	BX,DX
-	MOV	[BX],AL		;SET CURRENT RECORD COUNT
-	MOV	BX,12
-	ADD	BX,DX
-	MOV	AL,CL
-	SUB	AL,[BX]
-	JNZ	RNDDID		;DIFFERENT EXTENT
-	MOV	BX,14		;EVEN EXTENT
-	ADD	BX,DX
-	MOV	AL,CH
-	SUB	AL,[BX]
-	AND	AL,07FH
-	JZ	RNDDIE		;EVEN ALL EXTENT
-RNDDID:				;DIFFERENT EXTENT
-	PUSH	CX
-	PUSH	DX
-	CALL	CLOSEF		;CLOSE CURRENT DIRECTORY
-	POP	DX
-	POP	CX
-	MOV	BL,3
-	MOV	AL,OTPARB
-	INC	AL
-	JZ	RNDDIU		;CANNOT CLOSE
-	MOV	BX,12
-	ADD	BX,DX
-	MOV	[BX],CL		;SET TARGET EXTENT
-	MOV	BX,14
-	ADD	BX,DX
-	MOV	[BX],CH		;SET TARGET S2 EXTENT
-	CALL	OPENFL		;OPEN TARGET DIRECTORY
-	MOV	AL,OTPARB
-	INC	AL
-	JNZ	RNDDIE		;OK GET
-	POP	CX
-	PUSH	CX
-	MOV	BL,4
-	INC	CL
-	JZ	RNDDIU		;READ MODE SO UNWRITTEN EXTENT
-	CALL	GTADIR		;WRITE MODE  SO SEARCH AVAILABLE DIRECTORY
-	MOV	BL,5
-	MOV	AL,OTPARB
-	INC	AL
-	JZ	RNDDIU		;NO DIRECTORY SPACE
-RNDDIE:				;GET TARGET DIRECTORY
-	POP	CX
-	XOR	AL,AL
-	JMP	BTPRST
+	push	cx
+	mov	dx,INPARA
+	mov	bx,33
+	add	bx,dx
+	mov	al,[bx]
+	and	al,07Fh			;get record count value
+	push	ax
+	mov	al,[bx]
+	rcl	al,1
+	inc	bx
+	mov	al,[bx]
+	rcl	al,1
+	and	al,01Fh			;get extent value
+	mov	cl,al
+	mov	al,[bx]
+	rcr	al,1
+	rcr	al,1
+	rcr	al,1
+	rcr	al,1
+	and	al,00Fh			;get S2 extent
+	mov	ch,al
+	pop	ax
+	inc	bx
+	mov	bl,[bx]
+	or	bl,bl
+	mov	bl,6			;too large error code
+	jnz	RNDDIF			;too large
+	mov	bx,32
+	add	bx,dx
+	mov	[bx],al			;set current record count
+	mov	bx,12
+	add	bx,dx
+	mov	al,cl
+	sub	al,[bx]
+	jnz	RNDDID			;different extent
+	mov	bx,14			;even extent
+	add	bx,dx
+	mov	al,ch
+	sub	al,[bx]
+	and	al,07Fh
+	jz	RNDDIE			;even all extent
+RNDDID:				;different extent
+	push	cx
+	push	dx
+	call	CLOSEF			;close current directory
+	pop	dx
+	pop	cx
+	mov	bl,3
+	mov	al,OTPARB
+	inc	al
+	jz	RNDDIU			;cannot close
+	mov	bx,12
+	add	bx,dx
+	mov	[bx],cl			;set target extent
+	mov	bx,14
+	add	bx,dx
+	mov	[bx],ch			;set target S2 extent
+	call	OPENFL			;open target directory
+	mov	al,OTPARB
+	inc	al
+	jnz	RNDDIE			;OK get
+	pop	cx
+	push	cx
+	mov	bl,4
+	inc	cl
+	jz	RNDDIU			;read mode so unwritten extent
+	call	GTADIR			;write mode  so search available directory
+	mov	bl,5
+	mov	al,OTPARB
+	inc	al
+	jz	RNDDIU			;NO directory space
+RNDDIE:				;get target directory
+	pop	cx
+	xor	al,al
+	jmp	BTPRST
 ;
-RNDDIU:				;ERROR END  BL=ERROR CODE
-	PUSH	BX
-	CALL	FMDPNT
-	MOV	BYTE PTR [BX],0C0H ;SET DIRECTORY NOT ACTIVE MODE
-	POP	BX
-RNDDIF:				;ERROR END
-	POP	CX
-	MOV	AL,BL
-	MOV	OTPARB,AL	;SET ERROR CODE
-	JMP	FMDRON
+RNDDIU:				;error end  BL=error code
+	push	bx
+	call	FMDPNT
+	mov	byte ptr [bx],0C0h	;set directory not active mode
+	pop	bx
+RNDDIF:				;error end
+	pop	cx
+	mov	al,bl
+	mov	OTPARB,al		;set error code
+	jmp	FMDRON
 ;
-;  READ RANDOM
+;  Read random
 ;
 RDRAND:
-	MOV	CL,-1		;REDA MODE
-	CALL	RNDDIR		;GET DIRECTORY
-	JNZ	RDRANE		;ERROR
-	CALL	RDNEXR		;GET RECORD
+	mov	cl,-1			;reda mode
+	call	RNDDIR			;get directory
+	jnz	RDRANE			;error
+	call	RDNEXR			;get record
 RDRANE:
-	RET
+	ret
 ;
-;  WRITE RANDOM
+;  Write random
 ;
 WTRAND:
-	MOV	CL,0		;WRITE MODE
-	CALL	RNDDIR		;GET DIRECTORY
-	JNZ	WTRANE		;ERROR
-	CALL	WTNEXR		;WRITE ONE SECTOR
+	mov	cl,0			;write mode
+	call	RNDDIR			;get directory
+	jnz	WTRANE			;error
+	call	WTNEXR			;write one sector
 WTRANE:
-	RET
+	ret
 ;
-;  COMPUTE FILE SIZE FROM FCB DATA
-;  INPUT
-;  BX:DIRECTORY DATA TOP
-;  DX:BIAS  15 RECORD COUNT  32 CURRENT RECORD
-;  OUTPUT
-;  ALCX:COUNT
+;  Compute file size from FCB data
+;  Input
+;  BX:directory data top
+;  DX:bias  15 record count  32 current record
+;  Output
+;  Alcx:count
 ;
 DIRSIZ:
-	XCHG	BX,DX
-	ADD	BX,DX
-	MOV	CL,[BX]		;GET RECORD COUNT
-	MOV	CH,0
-	MOV	BX,12
-	ADD	BX,DX
-	MOV	AH,[BX]		;GET EXTENT
-	MOV	AL,0
-	SHR	AX,1
-	AND	AH,00FH
-	ADD	CX,AX
-	MOV	BX,14
-	ADD	BX,DX
-	MOV	AL,[BX]		;GET S2 EXTENT
-	MOV	AH,16
-	MUL	AH		;*16
-	PUSH	AX
-	ADD	CH,AL
-	PUSHF
-	POP	BX
-	MOV	AL,BL		;GET FLAG
-	POP	BX
-	OR	AL,BL
-	AND	AL,1		;GET OVERFLOW BIT
-	RET
+	xchg	bx,dx
+	add	bx,dx
+	mov	cl,[bx]			;get record count
+	mov	ch,0
+	mov	bx,12
+	add	bx,dx
+	mov	ah,[bx]			;get extent
+	mov	al,0
+	shr	ax,1
+	and	ah,00Fh
+	add	cx,ax
+	mov	bx,14
+	add	bx,dx
+	mov	al,[bx]			;get S2 extent
+	mov	ah,16
+	mul	ah			;*16
+	push	ax
+	add	ch,al
+	pushf
+	pop	bx
+	mov	al,bl			;get flag
+	pop	bx
+	or	al,bl
+	and	al,1			;get overflow bit
+	ret
 ;
-;  COMPUTE FILE SIZE BY DIRECTORY SEARCH
+;  Compute file size by directory search
 ;
 CFLSIZ:
-	MOV	CL,12
-	CALL	SRDRFS		;SEARCH DIRECTORY BY NAME ONLY
-	MOV	BX,INPARA
-	MOV	DX,33
-	ADD	BX,DX
-	PUSH	BX
-	MOV	[BX],DH		;CLEAR RANDOM RECORD COUNT
-	INC	BX
-	MOV	[BX],DH
-	INC	BX
-	MOV	[BX],DH
-CFLSIL:				;ONE DIRECTORY CHECK LOOP
-	CALL	CKDREN
-	JZ	CFLSIE		;END
-	CALL	GTDRPT		;GET DIRECTORY POINT
-	MOV	DX,15
-	CALL	DIRSIZ		;GET SIZE BY RECORD COUNT
-	POP	BX
-	PUSH	BX
-	MOV	DL,AL
-	MOV	AX,CX
-	SUB	AX,[BX]
-	MOV	AL,DL
-	SBB	AL,2[BX]	;COMPARE WITH CURRENT
-	JC	CFLSIS		;SMALL SO NOT CHANGE
-	MOV	2[BX],DL	;SET LARGER VALUE
-	MOV	[BX],CX
+	mov	cl,12
+	call	SRDRFS			;search directory by name only
+	mov	bx,INPARA
+	mov	dx,33
+	add	bx,dx
+	push	bx
+	mov	[bx],dh			;clear random record count
+	inc	bx
+	mov	[bx],dh
+	inc	bx
+	mov	[bx],dh
+CFLSIL:				;one directory check loop
+	call	CKDREN
+	jz	CFLSIE			;end
+	call	GTDRPT			;get directory point
+	mov	dx,15
+	call	DIRSIZ			;get size by record count
+	pop	bx
+	push	bx
+	mov	dl,al
+	mov	ax,cx
+	sub	ax,[bx]
+	mov	al,dl
+	sbb	al,2[bx]		;compare with current
+	jc	CFLSIS			;small so not change
+	mov	2[bx],dl		;set larger value
+	mov	[bx],cx
 CFLSIS:
-	CALL	SRDRNX		;SEARCH NEXT
-	JMPS	CFLSIL
+	call	SRDRNX			;search next
+	jmps	CFLSIL
 ;
-CFLSIE:				;END OF DIRECTORY
-	POP	BX
-	RET
+CFLSIE:				;end of directory
+	pop	bx
+	ret
 ;
-;  SET RANDOM RECORD COUNT
+;  Set random record count
 ;
 STRCNT:
-	MOV	BX,INPARA
-	MOV	DX,32
-	CALL	DIRSIZ		;GET SIZE BY CURRENT RECORD
-	MOV	BX,33
-	ADD	BX,DX
-	MOV	[BX],CX		;SET COUNT
-	MOV	2[BX],AL
-	RET
+	mov	bx,INPARA
+	mov	dx,32
+	call	DIRSIZ			;get size by current record
+	mov	bx,33
+	add	bx,dx
+	mov	[bx],cx			;set count
+	mov	2[bx],al
+	ret
 ;
-;  SELECT DISK
+;  Select disk
 ;
 SELDSK:
-	MOV	BX,LGDSKV	;LOGIN DISK VECTOR
-	MOV	CL,CURDSK	;CURRENT DISK
-	ROR	BX,CL
-	PUSH	BX		;SAVE LOGIN VECTOR
-	XCHG	BX,DX
-	CALL	GDPTBL		;GET DISK PARAMETER
-	POP	BX
-	JNZ	$+5		;OK
-	CALL	DSEROR		;SELECT ERROR & ABORT
-	RCR	BL,1
-	JC	ENTRYE		;ALREADY LOGIN DISK
-	MOV	CX,LGDSKV
-	CALL	STDKVC		;SET LOGIN BIT
-	MOV	LGDSKV,BX	;SAVE NEW VECCTOR
-	JMP	INIDMP		;INITIALIZE DISK ALLOCATION MAP & CHECK SUM
+	mov	bx,LGDSKV		;login disk vector
+	mov	cl,CURDSK		;current disk
+	ror	bx,cl
+	push	bx			;save login vector
+	xchg	bx,dx
+	call	GDPTBL			;get disk parameter
+	pop	bx
+	jnz	$+5			;OK
+	call	DSEROR			;select error & abort
+	rcr	bl,1
+	jc	ENTRYE			;already login disk
+	mov	cx,LGDSKV
+	call	STDKVC			;set login bit
+	mov	LGDSKV,bx		;save new vecctor
+	jmp	INIDMP			;initialize disk allocation map & check sum
 ;
-;  14:SELECT DISK
+;  14:select disk
 ;
 MSELDK:
-	MOV	AL,INPARB
-	MOV	CURDSK,AL	;SET AS CURRENT DISK
-	JMPS	SELDSK
+	mov	al,INPARB
+	mov	CURDSK,al		;set as current disk
+	jmps	SELDSK
 ;
-;  CHECK ENTRY TYPE & SELECT FOR FCB FUNCTIONS
+;  Check entry type & select for FCB functions
 ;
 ENTRYS:
-	CALL	STWFCS		;SET FCB TO WORK FOR SEQUENTIAL ACCESS
-	JMPS	ENTRYC
+	call	STWFCS			;set FCB to work for sequential access
+	jmps	ENTRYC
 ;
 ENTRYR:
-	CALL	STWFCR		;SET FCB TO WORK FOR RANDOM ACCESS
+	call	STWFCR			;set FCB to work for random access
 ENTRYC:
-	MOV	BX,INPARA
-	MOV	SYSMOD,000H
-	TEST	BYTE PTR 8[BX],80H
-	JZ	ENTRYM		;NOT SYSTEM MODE FILE
-	AND	BYTE PTR 8[BX],07FH
-	MOV	SYSMOD,60H	;USER 0 SYSTEM MODE FILE
+	mov	bx,INPARA
+	mov	SYSMOD,000h
+	test	byte ptr 8[bx],80h
+	jz	ENTRYM			;not system mode file
+	and	byte ptr 8[bx],07Fh
+	mov	SYSMOD,60h		;user 0 system mode file
 ENTRYM:
-	MOV	FLOMOD,-1	;SET FCB OPERATION MODE
-	MOV	BX,INPARA
-	MOV	AL,[BX]
-	AND	AL,01FH
-	DEC	AL
-	MOV	INPARB,AL	;SET REQUIRED DISK FOR SELECT DISK
-	CMP	AL,01EH
-	JNC	ENTRYD		;ZERO SO CURRENT DISK
-	MOV	AL,CURDSK
-	MOV	ENTDSK,AL	;SAVE DEFAULT DISK
-	MOV	AL,[BX]
-	MOV	ENTTYP,AL	;SAVE ENTRY TYPE
-	AND	AL,0E0H
-	MOV	[BX],AL		;OFF DISK ENTRY
-	CALL	MSELDK		;SELECT DISK
+	mov	FLOMOD,-1		;set FCB operation mode
+	mov	bx,INPARA
+	mov	al,[bx]
+	and	al,01Fh
+	dec	al
+	mov	INPARB,al		;set required disk for select disk
+	cmp	al,01Eh
+	jnc	ENTRYD			;zero so current disk
+	mov	al,CURDSK
+	mov	ENTDSK,al		;save default disk
+	mov	al,[bx]
+	mov	ENTTYP,al		;save entry type
+	and	al,0E0h
+	mov	[bx],al			;off disk entry
+	call	MSELDK			;select disk
 ENTRYD:
-	MOV	AL,USRCOD
-	MOV	BX,INPARA
-	OR	[BX],AL		;SET USER CODE
+	mov	al,USRCOD
+	mov	bx,INPARA
+	or	[bx],al			;set user code
 ENTRYE:
-	RET
+	ret
 ;
-;  CHECK SYSTEM MODE & SET
+;  Check system mode & set
 ;
 STSYSM:
-	CMP	SYSMOD,60H
-	JNZ	STSYSE		;NOT USER 0 SYSTEM MODE
-	MOV	BX,INPARA	;USER 0 SYSTEM MODE
-	MOV	BYTE PTR [BX],0
+	cmp	SYSMOD,60h
+	jnz	STSYSE			;not user 0 system mode
+	mov	bx,INPARA		;user 0 system mode
+	mov	byte ptr [bx],0
 STSYSE:
-	RET
+	ret
 ;
-;  13:RESET DISK SYSTEM
+;  13:reset disk system
 ;
 MRSDSY:
-	TEST	SGBIOS,0FFFFH
-	JNZ	MRSDSS		;ALREADY SET BIOS CODE SEGMENT DATA
-	MOV	SGBIOS,CS	;SET CURRENT CODE SEGMENT
+	test	SGBIOS,0FFFFh
+	jnz	MRSDSS			;already set BIOS code segment data
+	mov	SGBIOS,cs		;set current code segment
 MRSDSS:
-	XOR	BX,BX
-	MOV	RODSKV,BX	;CLEAR R/O DISK VECTOR
-	MOV	LGDSKV,BX	;CLEAR LOGIN DISK VECTOR
-	MOV	BL,CURDRV
-	MOV	CURDSK,BL	;SET CURRENT DISK
-	JMP	SELDSK		;SELECT DISK
+	xor	bx,bx
+	mov	RODSKV,bx		;clear R/O disk vector
+	mov	LGDSKV,bx		;clear login disk vector
+	mov	bl,CURDRV
+	mov	CURDSK,bl		;set current disk
+	jmp	SELDSK			;select disk
 ;
-;  15:OPEN FILE
+;  15:open file
 ;
 MOPEN:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	FMDCLR
-	CMP	USRCOD,0
-	JZ	MOPENS		;USER ZERO MODE SO NO SYSTEM CHECKING
-	MOV	SYSCNT+1,00FEH	;WITH USER 0 SYSTEM MODE CHECKING
-	MOV	SYSSRC,-1
+	call	ENTRYS			;entry process
+	call	FMDCLR
+	cmp	USRCOD,0
+	jz	MOPENS			;user zero mode so NO system checking
+	mov	SYSCNT+1,00FEh		;with user 0 system mode checking
+	mov	SYSSRC,-1
 MOPENS:
-	CALL	OPENFL		;OPEN
-	CALL	MOPENC		;CHECK FOUND MODE & OVERRIDE RETURN IF FOUND
-	TEST	SYSSRC,-1
-	JNZ	MOPENZ		;WITH USER 0 SYSTEM MODE CHECKING
-MOPENE:				;NOT FOUND END
-	RET
+	call	OPENFL			;open
+	call	MOPENC			;check found mode & override return if found
+	test	SYSSRC,-1
+	jnz	MOPENZ			;with user 0 system mode checking
+MOPENE:				;not found end
+	ret
 ;
-MOPENZ:				;CHECK USER 0 SYSTEM FILE
-	MOV	SYSSRC,0	;CLEAR USE 0 SYSTEM MODE
-	CMP	SYSCNT+1,00FEH
-	JZ	MOPENE		;NO SYSTEM FILE
-	MOV	BX,SYSCNT	;GET FILE DIRECTORY COUNT
-	AND	BL,0FCH		;TO SECTOR TOP
-	DEC	BX
-	MOV	DIRCNT,BX
-	MOV	SYSMOD,60H	;BY SYSTEM MODE
-	MOV	BX,INPARA
-	MOV	BYTE PTR [BX],0	;USER 0
-	MOV	CL,15
-	CALL	STDRSP		;SET PARAMETER
-	CALL	SRDRNX		;SEARCH
-	CALL	OPENFN		;DO OPEN PROCESS
-	CALL	MOPENC		;CHECK MODE
-	RET
+MOPENZ:				;check user 0 system file
+	mov	SYSSRC,0		;clear use 0 system mode
+	cmp	SYSCNT+1,00FEh
+	jz	MOPENE			;NO system file
+	mov	bx,SYSCNT		;get file directory count
+	and	bl,0FCh			;to sector top
+	dec	bx
+	mov	DIRCNT,bx
+	mov	SYSMOD,60h		;by system mode
+	mov	bx,INPARA
+	mov	byte ptr [bx],0		;user 0
+	mov	cl,15
+	call	STDRSP			;set parameter
+	call	SRDRNX			;search
+	call	OPENFN			;do open process
+	call	MOPENC			;check mode
+	ret
 ;
-MOPENC:				;CHECK OPEN MODE
-	CALL	CKDREN
-	JZ	MOPENE		;NOT FOUND END
-	POP	BX		;OVERRIDING RETURN
-	CMP	SYSMOD,60H
-	JNZ	MOPENG		;NOT SYSTEM MODE SO SIMPLE END
-	MOV	BX,INPARA
-	MOV	AL,10[BX]
-	AND	AL,080H
-	JNZ	MOPENG		;SYSTEM FILE SO OK
-	MOV	SYSMOD,AL	;CLEAR SYSTEM MODE AS NOT SYSTEM FILE
-	MOV	AL,-1		;NOT FOUND END
-	JMPS	MRTCDS
+MOPENC:				;check open mode
+	call	CKDREN
+	jz	MOPENE			;not found end
+	pop	bx			;overriding return
+	cmp	SYSMOD,60h
+	jnz	MOPENG			;not system mode so simple end
+	mov	bx,INPARA
+	mov	al,10[bx]
+	and	al,080h
+	jnz	MOPENG			;system file so OK
+	mov	SYSMOD,al		;clear system mode as not system file
+	mov	al,-1			;not found end
+	jmps	MRTCDS
 ;
 MOPENG:
-	RET
+	ret
 ;
-;  16:CLOSE FILE
+;  16:close file
 ;
 MCLOSE:
-	CALL	ENTRYS		;ENTRY PROCESS
-	JMP	CLOSEF
+	call	ENTRYS			;entry process
+	jmp	CLOSEF
 ;
-;  17:SEARCH FOR FIRST
+;  17:search for first
 ;
 MSRCHF:
-	CALL	STWFCS		;SET FCB TO WORK
-	MOV	BX,INDSEG
-	MOV	SGUFCB,BX	;SAVE FCB SEGMENT
-	MOV	CL,0
-	MOV	BX,INPARA
-	CMP	BYTE PTR [BX],'?'
-	JZ	MSRCHA		;ANY DIRECTORY
-	CALL	EXTPNT		;GET EXTENT POINT
-	CMP	BYTE PTR [BX],'?'
-	JZ	MSRCHX		;NO CHECK
-	CALL	FMDCLR		;CLEAR FILE MODE
+	call	STWFCS			;set FCB to work
+	mov	bx,INDSEG
+	mov	SGUFCB,bx		;save FCB segment
+	mov	cl,0
+	mov	bx,INPARA
+	cmp	byte ptr [bx],'?'
+	jz	MSRCHA			;any directory
+	call	EXTPNT			;get extent point
+	cmp	byte ptr [bx],'?'
+	jz	MSRCHX			;NO check
+	call	FMDCLR			;clear file mode
 MSRCHX:
-	CALL	ENTRYC		;DO ENTRY PROCESS
-	MOV	CL,15
+	call	ENTRYC			;do entry process
+	mov	cl,15
 MSRCHA:
-	CALL	SRDRFS		;SEARCH FIRST
-	JMPS	MSRCHC		;COPY DIRECTORY DATA
+	call	SRDRFS			;search first
+	jmps	MSRCHC			;copy directory data
 ;
-;  18:SEARCH FOR NEXT
+;  18:search for next
 ;
 MSRCHN:
-	MOV	BX,SGUFCB
-	MOV	INDSEG,BX	;GET FCB SEGMENT
-	MOV	BX,PTUFCB
-	MOV	INPARA,BX	;GET FCB OFFSET
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	SRDRNX		;SEARCH NEXT
+	mov	bx,SGUFCB
+	mov	INDSEG,bx		;get FCB segment
+	mov	bx,PTUFCB
+	mov	INPARA,bx		;get FCB offset
+	call	ENTRYS			;entry process
+	call	SRDRNX			;search next
 MSRCHC:
-	JMP	DRCOPY		;COPY DIRECTORY DATA
+	jmp	DRCOPY			;copy directory data
 ;
-;  19:DELETE FILE
+;  19:delete file
 ;
 MDELET:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	DELDMP
-	JMP	SDRCOD
+	call	ENTRYS			;entry process
+	call	DELDMP
+	jmp	SDRCOD
 ;
-;  20:READ SEQUENTIAL
+;  20:read sequential
 ;
 MREADS:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	STSYSM		;CHECK & SET SYSTEM FILE MODE
-	JMP	RDNEXT
+	call	ENTRYS			;entry process
+	call	STSYSM			;check & set system file mode
+	jmp	RDNEXT
 ;
-;  21:WRITE SEQUENTIAL
+;  21:write sequential
 ;
 MWRITS:
-	CALL	ENTRYS		;ENTRY PROCESS
-	JMP	WTNEXT
+	call	ENTRYS			;entry process
+	jmp	WTNEXT
 ;
-;  22:MAKE FILE
+;  22:make file
 ;
 MMAKE:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	FMDCLR		;CLEAR FILE MODE
-	JMP	GTADIR		;GET AVAILABLE DIRECTORY
+	call	ENTRYS			;entry process
+	call	FMDCLR			;clear file mode
+	jmp	GTADIR			;get available directory
 ;
-;  23:RENAME FILE
+;  23:rename file
 ;
 MRENAM:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	RENAME
-	JMP	SDRCOD
+	call	ENTRYS			;entry process
+	call	RENAME
+	jmp	SDRCOD
 ;
-;  24:RETURN LOGIN VECTOR
+;  24:return login vector
 ;
 MRTLIV:
-	MOV	BX,LGDSKV	;LOGIN VECTOR
-	JMPS	WDPRST
+	mov	bx,LGDSKV		;login vector
+	jmps	WDPRST
 ;
-;  25:RETURN CURRENT DISK
+;  25:return current disk
 ;
 MRTCDK:
-	MOV	AL,CURDSK	;CURRENT DISK
+	mov	al,CURDSK		;current disk
 MRTCDS:
-	JMP	BTPRST
+	jmp	BTPRST
 ;
-;  26:SET DMA ADDRESS
+;  26:set DMA address
 ;
 MSTDMO:
-	MOV	DMAADD,DX	;DMA ADDRESS
-	JMP	STBDMA		;SET IN BIOS
+	mov	DMAADD,dx		;DMA address
+	jmp	STBDMA			;set in BIOS
 ;
-;  27:GET ALLOCATION MAP ADDRESS
+;  27:get allocation map address
 ;
 MGTALM:
-	MOV	BX,PNALMP	;ALLOCATION MAP POINT
-	JMPS	WDPRST
+	mov	bx,PNALMP		;allocation map point
+	jmps	WDPRST
 ;
-;  29:GET R/O VECTOR
+;  29:get R/O vector
 ;
 MGTROV:
-	MOV	BX,RODSKV	;R/O VECTOR
-	JMPS	WDPRST
+	mov	bx,RODSKV		;R/O vector
+	jmps	WDPRST
 ;
-;  30:SET FILE ATTRIBUTE
+;  30:set file attribute
 ;
 MSTFAT:
-	CALL	ENTRYS		;ENTRY PROCESS
-	CALL	STFATR		;SET ATTRIBUTE
-	JMP	SDRCOD
+	call	ENTRYS			;entry process
+	call	STFATR			;set attribute
+	jmp	SDRCOD
 ;
-;  31:GET DISK PARAMETER BLOCK ADDRESS
+;  31:get disk parameter block address
 ;
 MGDPBA:
-	MOV	BX,PNTDPB	;DISK PARAMER BLOCK POINT
+	mov	bx,PNTDPB		;disk paramer block point
 ;
-;  WORD PARAMETER SET END
+;  Word parameter set end
 ;
 WDPRST:
-	MOV	OTPARA,BX
-	RET
+	mov	OTPARA,bx
+	ret
 ;
-;  32:SET/GET USER CODE
+;  32:set/get user code
 ;
 MSTUCD:
-	MOV	AL,INPARB
-	CMP	AL,0FFH
-	JNZ	MSTUCE		;SET MODE
-	MOV	AL,USRCOD	;GET USER CODE
-	JMPS	MRTCDS
+	mov	al,INPARB
+	cmp	al,0FFh
+	jnz	MSTUCE			;set mode
+	mov	al,USRCOD		;get user code
+	jmps	MRTCDS
 ;
 MSTUCE:
-	AND	AL,01FH
-	MOV	USRCOD,AL	;SET USER CODE
-	RET
+	and	al,01Fh
+	mov	USRCOD,al		;set user code
+	ret
 ;
-;  33:READ RANDOM
+;  33:read random
 ;
 MREADR:
-	CALL	ENTRYR		;ENTRY PROCESS
-	CALL	STSYSM		;CHECK & SET USER 0 SYSTEM MODE
-	JMP	RDRAND
+	call	ENTRYR			;entry process
+	call	STSYSM			;check & set user 0 system mode
+	jmp	RDRAND
 ;
-;  34:WRITE RANDOM
+;  34:write random
 ;
 MWRITR:
-	CALL	ENTRYR		;ENTRY PROCESS
-	JMP	WTRAND
+	call	ENTRYR			;entry process
+	jmp	WTRAND
 ;
-;  35:COMPUTE FILE SIZE
+;  35:compute file size
 ;
 MCMPFS:
-	CALL	ENTRYR		;ENTRY PROCESS
-	JMP	CFLSIZ
+	call	ENTRYR			;entry process
+	jmp	CFLSIZ
 ;
-;  36:SET RANDOM RECORD
+;  36:set random record
 ;
 MSTRRC:
-	CALL	STWFCR		;SET FCB TO WORK
-	JMP	STRCNT		;SET COUNT
+	call	STWFCR			;set FCB to work
+	jmp	STRCNT			;set count
 ;
-;  37:RESET DRIVE
+;  37:reset drive
 ;
 MRSTDV:
-	MOV	AX,INPARA
-	NOT	AX		;GET VECTOR MASK
-	PUSH	AX
-	MOV	BX,OFFSET LGDSKV
-	AND	AX,[BX]		;OFF LOGIN VECTOR
-	MOV	[BX],AX
-	POP	AX
-	MOV	BX,OFFSET RODSKV
-	AND	AX,[BX]		;OFF R/O DISK
-	MOV	[BX],AX
-	RET
+	mov	ax,INPARA
+	not	ax			;get vector mask
+	push	ax
+	mov	bx,offset LGDSKV
+	and	ax,[bx]			;off login vector
+	mov	[bx],ax
+	pop	ax
+	mov	bx,offset RODSKV
+	and	ax,[bx]			;off R/O disk
+	mov	[bx],ax
+	ret
 ;
-;  BDOS END PROCESS
+;  BDOS end process
 ;
 ENDPRC:
-	CMP	FLOMOD,0
-	JZ	ENDPRN		;NOT FILE OPERATION
-	MOV	BX,INPARA	;FILE OPERATION
-	CMP	SYSMOD,060H
-	JNZ	ENDPRS		;NOT USER 0 SYSTEM FILE
-	OR	BYTE PTR 8[BX],80H ;SET USER 0 SYSTEM FILE MODE
+	cmp	FLOMOD,0
+	jz	ENDPRN			;not file operation
+	mov	bx,INPARA		;file operation
+	cmp	SYSMOD,060h
+	jnz	ENDPRS			;not user 0 system file
+	or	byte ptr 8[bx],80h	;set user 0 system file mode
 ENDPRS:
-	MOV	BYTE PTR [BX],0	;CLEAR ENTRY TYPE
-	MOV	AL,ENTTYP
-	OR	AL,AL
-	JZ	ENDPRN		;DEFAULT DISK
-	MOV	[BX],AL		;RESTORE ENTRY TYPE
-	MOV	AL,ENTDSK
-	MOV	INPARB,AL	;SET DISK
-	CALL	MSELDK		;SELECT TO DEFAULT DISK
+	mov	byte ptr [bx],0		;clear entry type
+	mov	al,ENTTYP
+	or	al,al
+	jz	ENDPRN			;default disk
+	mov	[bx],al			;restore entry type
+	mov	al,ENTDSK
+	mov	INPARB,al		;set disk
+	call	MSELDK			;select to default disk
 ENDPRN:
-	CMP	AFWFCB,-1
-	JNZ	ENDPRW		;NOT FCB SAVED
-	CALL	RSTFCB		;RESTORE FCB
+	cmp	AFWFCB,-1
+	jnz	ENDPRW			;not FCB saved
+	call	RSTFCB			;restore FCB
 ENDPRW:
-	MOV	AX,OTPARA	;GET OUTPUT PARAMETER
-	MOV	BX,AX
+	mov	ax,OTPARA		;get output parameter
+	mov	bx,ax
 ENDPRE:
-	RET
+	ret
 ;
-;  40:WRITE RANDOM WITH ZERO FILL
+;  40:write random with zero fill
 ;
 MWRITZ:
-	CALL	ENTRYR
-	MOV	RUPCNT,2	;SET COUNT TO WRITE WITH ZERO FILL MODE
-	MOV	CL,0		;WRITE MODE
-	CALL	RNDDIS		;GET DIRETORY
-	JNZ	ENDPRE		;NO DIRECTORY SPACE OR SOME ERROR
-	JMP	WTNEXR		;WRITE
+	call	ENTRYR
+	mov	RUPCNT,2		;set count to write with zero fill mode
+	mov	cl,0			;write mode
+	call	RNDDIS			;get diretory
+	jnz	ENDPRE			;NO directory space or some error
+	jmp	WTNEXR			;write
 ;
-;  47:CHAIN PROGRAM
+;  47:chain program
 ;
 MCHAIN:
-	PUSH	DS
-	MOV	CX,128
-	MOV	DI,COMBUF+2	;CCP COMMAND BUFFER
-	MOV	SI,DMAADD
-	MOV	DS,DMASEG
-MCHAIL:				;COMMAND COPY LOOP
-	LODSB
-	STOSB
-	OR	AL,AL
-	JZ	MCHAIV		;GET END
-	LOOP	MCHAIL
+	push	ds
+	mov	cx,128
+	mov	di,COMBUF+2		;CCP command buffer
+	mov	si,DMAADD
+	mov	ds,DMASEG
+MCHAIL:				;command copy loop
+	lodsb
+	stosb
+	or	al,al
+	jz	MCHAIV			;get end
+	loop	MCHAIL
 MCHAIV:
-	MOV	AL,128
-	SUB	AL,CL		;GET LENGTH
-	POP	DS
-	MOV	.COMBUF+1,AL	;SET LENGTH OF COMMAND
-	JMP	MSYRSF		;TO RESET SYSTEM
+	mov	al,128
+	sub	al,cl			;get length
+	pop	ds
+	mov	.COMBUF+1,al		;set length of command
+	jmp	MSYRSF			;to reset system
 ;
-;  48:FLUSH BUFFERS
+;  48:flush buffers
 ;
 MFLUSH:
-	RET			;NO PROCESS IN THIS VERSION
+	ret				;NO process in this version
 ;
-	DSEG
-	ORG	2200H
+	dseg
+	org	2200h
 ;
-;  DATA AREA
+;  Data area
 ;
-JPBIOS	DW	DBIOS		;BIOS CALL ROUTINE OFFSET
-SGBIOS	DW	0		;BIOS CALL ROUTINE SEGMENT
+JPBIOS	dw	DBIOS		;BIOS call routine offset
+SGBIOS	dw	0		;BIOS call routine segment
 ;
-;  ERROR ROUTINE VECTORS
+;  Error routine vectors
 ;
-VBADSC	DW	EBADSC		;BAD SECTOR
-VSELCT	DW	ESELCT		;SELECT
-VRODSK	DW	ERODSK		;R/O DISK
-VROFIL	DW	EROFIL		;R/O FILE
+VBADSC	dw	EBADSC		;bad sector
+VSELCT	dw	ESELCT		;select
+VRODSK	dw	ERODSK		;R/O disk
+VROFIL	dw	EROFIL		;R/O file
 ;
-;  WORK FOR LOAD PROGRAM
+;  Work for load program
 ;
-;  GROUP DESCRIPTION BUFFER    9B * 8
-;    0:FORM
-;  1-2:LENGTH
-;  3-4:ABSOLUTE SEGMENT
-;  5-6:MINIMUM SIZE
-;  7-8:MAXIMUM SIZE
+;  Group description buffer    9B * 8
+;    0:form
+;  1-2:length
+;  3-4:absolute segment
+;  5-6:minimum size
+;  7-8:maximum size
 ;
-BFGRDC	RW	36
+BFGRDC	rw	36
 ;
-BFLDPR:				;PROGRAM LOADING BUFFER
-	RS	128
+BFLDPR:				;program loading buffer
+	rs	128
 ;
-DGBASE	DW	0		;DATA GROUP BASE
-MODE80	DB	0		;8080 MODEL 1  OTHER 0
+DGBASE	dw	0		;data group base
+MODE80	db	0		;8080 model 1  other 0
 ;
-;  MEMORY CONTROL BLOCK WORK
+;  Memory control block work
 ;
-SYSMCB	DW	0		;M-BASE
-	DW	0		;M-LENGTH
-	DB	0		;M-EXTENT
+SYSMCB	dw	0		;M-base
+	dw	0		;M-length
+	db	0		;M-extent
 ;
-UFCBOF	DW	0		;USER FCB OFFSET FOR FAR READ
-LPSTOF	DW	0		;STACK OFFSET SAVE FOR LOAD PROGRAM FUNCTION
-LPSTSG	DW	0		;STACK SEGMENT SAVE FOR LOAD PROGRAM
-FMODEL	DB	0		;MODEL MODE  -1 8080    0 OTHER
+UFCBOF	dw	0		;user FCB offset for far read
+LPSTOF	dw	0		;stack offset save for load program function
+LPSTSG	dw	0		;stack segment save for load program
+FMODEL	db	0		;model mode  -1 8080    0 other
 ;
-;  WORK FOR CONSOLE I/O
+;  Work for console I/O
 ;
-ECHKIL	DB	0		;ECHO KILL MODE 0 ECHO OUT
-PPROMP	DB	0		;PROMPT POSITION
-PCARIG	DB	0		;CONSOLE CARRIAGE POSITION
-BFCONC	DB	0		;CONSOLE INPUT CODE BUFFER
+ECHKIL	db	0		;echo kill mode 0 echo out
+PPROMP	db	0		;prompt position
+PCARIG	db	0		;console carriage position
+BFCONC	db	0		;console input code buffer
 ;
-;  WORK FOR DISK I/O
+;  Work for disk I/O
 ;
-DLTFCB	DB	DELCOD		;DELETED FCB DUMMY
-RODSKV	DW	0		;R/O DISK VECTOR
-LGDSKV	DW	0		;LOGIN VECTOR
+DLTFCB	db	DELCOD		;deleted FCB dummy
+RODSKV	dw	0		;R/O disk vector
+LGDSKV	dw	0		;login vector
 ;
-;  DATA FOR DISK PARAMETERS
+;  Data for disk parameters
 ;
-PNDRCK	DW	0		;DIRECTORY CHECK LEVEL WORK POINT
-PNTRAK	DW	0		;TRACK NUMBER WORK POINT
-PNSCTR	DW	0		;SECTOR NUMBER WORK POINT
+PNDRCK	dw	0		;directory check level work point
+PNTRAK	dw	0		;track number work point
+PNSCTR	dw	0		;sector number work point
 ;
-;  DISK PARAMETER HEADER COPY
+;  Disk parameter header copy
 ;
-DIRBUF	DW	0		;DIRECTORY BUFFER POINTER
-PNTDPB	DW	0		;DISK PARAMETER BLOCK POINTER
-PNCHSM	DW	0		;CHECK SUM AREA POINTER
-PNALMP	DW	0		;ALLOCATION MAP AREA POINTER
+DIRBUF	dw	0		;directory buffer pointer
+PNTDPB	dw	0		;disk parameter block pointer
+PNCHSM	dw	0		;check sum area pointer
+PNALMP	dw	0		;allocation map area pointer
 ;
-;  DISK PARAMETER BLOCK COPY
+;  Disk parameter block copy
 ;
-SPT	DW	0		;SECTOR / TRACK
-BSH	DB	0		;BLOCK SHIFT FACTOR
-BLM	DB	0		;BLOCK MASK
-EXM	DB	0		;EXTENT MASK
-DSM	DW	0		;DISK SIZE MAXIMUM-1
-DRM	DW	0		;DIRECTORY SIZE MAXIMUM-1
-ALMASK	DW	0		;ALLOCATION MAP RESERVE MASK
-CHKSIZ	DW	0		;CHECKED DIRECTORY SIZE
-TRKOFF	DW	0		;TRACK OFFSET
-PNXTBL	DW	0		;SECTOR TRANSLATION TABLE POINT
+SPT	dw	0		;sector / track
+BSH	db	0		;block shift factor
+BLM	db	0		;block mask
+EXM	db	0		;extent mask
+DSM	dw	0		;disk size maximum-1
+DRM	dw	0		;directory size maximum-1
+ALMASK	dw	0		;allocation map reserve mask
+CHKSIZ	dw	0		;checked directory size
+TRKOFF	dw	0		;track offset
+PNXTBL	dw	0		;sector translation table point
 ;
-;  DISK WORK PARAMETERS
+;  Disk work parameters
 ;
-EXTMOD	DB	0		;FILE EXTENT CLOSE MODE     -1 CLOSED LAST DIR
-RWMODE	DB	0		;DISK READ/WRITE MODE  0 WRITE  -1 READ
-MDWRIT	DB	0		;WRITE MODE 0 NORMAL  1 DIRECTOR  2 UNALLOC
-DIRCOD	DB	0		;DIRECTORY SEARCH CODE  -1 NOT FOUND
-RUPCNT	DB	0		;RECORD UP COUNT 0 RANDOM 1 SEQUENTIAL 2 WITH 0
-INPARB	DB	0		;INPUT PARAMETER BYTE
-DRBSWT	DB	0		;DIRECTORY BIAS FOR WRITE
-DSMMOD	DB	0		;DISK SIZE MODE  -1 ONE BYTE    0 TWO BYTES
-FLOMOD	DB	0		;FILE OPERATION FUNCTION MODE BY FCB  -1 ON
-ENTDSK	DB	0		;DEFAULT DISK IN ENTRY DISK MODE
-ENTTYP	DB	0		;ENTRY TYPE SAVE
-RECUNT	DB	0		;RECORD COUNT
-EXTENT	DB	0		;EXTENT
-CURCNT	DB	0,0		;CURRENT RECORD COUNT
-TGSECT	DW	0		;TARGET SECTOR OR TARGET BLOCK
-BTSECT	DW	0		;BLOCK TOP SECTOR
-BISDIR	DB	0		;BIAS IN DIRECTORY
-DIRSCT	DW	0		;DIRECTORY SECTOR FOR CHECK SUM BIAS
-FCBOFF	DW	0		;FCB OFFSET
-FCBSEG	DW	0		;USER FCB SEGMENT
-CURSEG	DW	0		;CURRENT SEGMENT BASE
-AFWFCB	DB	0		;WORK FCB ACTIVE FLAG
-CNFCBC	DB	0		;WORK FCB COPY LENGTH
+EXTMOD	db	0		;file extent close mode     -1 closed last dir
+RWMODE	db	0		;disk read/write mode  0 write  -1 read
+MDWRIT	db	0		;write mode 0 normal  1 director  2 unalloc
+DIRCOD	db	0		;directory search code  -1 not found
+RUPCNT	db	0		;record up count 0 random 1 sequential 2 with 0
+INPARB	db	0		;input parameter byte
+DRBSWT	db	0		;directory bias for write
+DSMMOD	db	0		;disk size mode  -1 one byte    0 two bytes
+FLOMOD	db	0		;file operation function mode by FCB  -1 on
+ENTDSK	db	0		;default disk in entry disk mode
+ENTTYP	db	0		;entry type save
+RECUNT	db	0		;record count
+EXTENT	db	0		;extent
+CURCNT	db	0,0		;current record count
+TGSECT	dw	0		;target sector or target block
+BTSECT	dw	0		;block top sector
+BISDIR	db	0		;bias in directory
+DIRSCT	dw	0		;directory sector for check sum bias
+FCBOFF	dw	0		;FCB offset
+FCBSEG	dw	0		;user FCB segment
+CURSEG	dw	0		;current segment base
+AFWFCB	db	0		;work FCB active flag
+CNFCBC	db	0		;work FCB copy length
 ;
-;  MEMORY MANAGEMENT WORK
+;  Memory management work
 ;
-CNTREG	DB	0		;MEMORY REGION BUFFER COUNT
-SIZREG	DB	0		;MEMORY REGION TABLE SIZE
-TBLREG:				;MEMORY REGION TABLE
-	RS	64
+CNTREG	db	0		;memory region buffer count
+SIZREG	db	0		;memory region table size
+TBLREG:				;memory region table
+	rs	64
 ;
-TBUMCB:				;USED MCB BUFFER AREA  5B*8
-	RS	40
+TBUMCB:				;used mcb buffer area  5B*8
+	rs	40
 ;
-CNUMCB	DB	0		;USED MCB BUFFER COUNT
-PNUMCB	DW	0		;USED MCB BUFFER POINTER
-SYSMOD	DB	0		;SYSTEM FILE ACCESS MODE  0 NOT 60H SYSTEM FILE
-SYSSRC	DB	0		;WITH USER 0 SEARCH MODE  0 NOT
-SYSCNT	DW	0		;MATCH DIRECTORY COUNT BY USER 0
-SYSFLG	DB	0		;USER 0 MATCH MODE  -1 USER CODE MISS SEARCH
+CNUMCB	db	0		;used mcb buffer count
+PNUMCB	dw	0		;used mcb buffer pointer
+SYSMOD	db	0		;system file access mode  0 not 60H system file
+SYSSRC	db	0		;with user 0 search mode  0 not
+SYSCNT	dw	0		;match directory count by user 0
+SYSFLG	db	0		;user 0 match mode  -1 user code miss search
 ;
-;  ERROR COMMENTS
+;  Error comments
 ;
-CERROR	DB	'Bdos Err On '
-CERRDK	DB	' : $'
-CBADSC	DB	'Bad Sector$'
-CSELCT	DB	'Select$'
-CROFIL	DB	'File '
-CRODSK	DB	'R/O$'
+CERROR	db	'Bdos Err On '
+CERRDK	db	' : $'
+CBADSC	db	'Bad Sector$'
+CSELCT	db	'Select$'
+CROFIL	db	'File '
+CRODSK	db	'R/O$'
 ;
 WKFCB:
-	RS	36		;WORKING FCB OR MCB
+	rs	36		;working FCB or mcb
 ;
-	RS	164
-STACK:				;BDOS SYSTEM STACK
+	rs	164
+STACK:				;BDOS system stack
 ;
-	DW	0,0,0
-INSTSG	DW	0		;ENTRY STACK SEGMENT
-INSTOF	DW	0		;ENTRY STACK OFFSET
-FLINSD	DB	0		;INSIDE FLAG FOR BDOS CALL
-INPARA	DW	0		;INPUT PARAMETER WORD
-OTPARA	DW	0		;OUTPUT PARAETER
-INDSEG	DW	0		;ENTRY DATA SEGMENT
-	DB	0
+	dw	0,0,0
+INSTSG	dw	0		;entry stack segment
+INSTOF	dw	0		;entry stack offset
+FLINSD	db	0		;inside flag for BDOS call
+INPARA	dw	0		;input parameter word
+OTPARA	dw	0		;output paraeter
+INDSEG	dw	0		;entry data segment
+	db	0
 ;
-OTPARB	EQU	BYTE PTR OTPARA	;OUTPUT PARAMETER AS BYTE
+OTPARB	equ	byte ptr OTPARA	;output parameter as byte
 ;
-;  SYSTEM DATA AREA
+;  System data area
 ;
-DMAADD	DW	0		;DMA OFFESET
-DMASEG	DW	0		;DMA SEGMENT
-CURDSK	DB	0		;CURRENT DISK
-USRCOD	DB	0		;USER CODE
-DIRCNT	DW	0		;DIRECTORY COUNTER
-DIRCLN	DB	0		;COMPARE LENGTH FOR DIRECTORY MATCH
-PTUFCB	DW	0		;USER FCB OR MCB POINT
-SGUFCB	DW	0		;USER FCB SEGMENT FOR SEARCH NEXT
-LSDRBF	DW	0		;LAST DIRECTORY BUFFER
-MODABT	DB	0		;ABORT MODE  0 SIMPLE ABORT NO INTERNAL SETUP
-	DB	0
-MDCONF	DB	0		;COMPLICATED I/O MODE
-	DB	0,0,0,0
-LSTTGL	DB	0		;LIST OUT ECHO TOGGLE
-CURDRV	DB	0		;CURRENT DRIVE
-	RS	40
+DMAADD	dw	0		;DMA offeset
+DMASEG	dw	0		;DMA segment
+CURDSK	db	0		;current disk
+USRCOD	db	0		;user code
+DIRCNT	dw	0		;directory counter
+DIRCLN	db	0		;compare length for directory match
+PTUFCB	dw	0		;user FCB or mcb point
+SGUFCB	dw	0		;user FCB segment for search next
+LSDRBF	dw	0		;last directory buffer
+MODABT	db	0		;abort mode  0 simple abort NO internal setup
+	db	0
+MDCONF	db	0		;complicated I/O mode
+	db	0,0,0,0
+LSTTGL	db	0		;list out echo toggle
+CURDRV	db	0		;current drive
+	rs	40
 ;
-CONWID	DB	80		;CONSOLE WIDTH
-PRNWID	DB	0		;PRINTER WIDTH
-CONCOL	DB	0		;CONSOLE COLUMN
-PRNCOL	DB	0		;PRINTER COLUMN
+CONWID	db	80		;console width
+PRNWID	db	0		;printer width
+CONCOL	db	0		;console column
+PRNCOL	db	0		;printer column
 ;
-	RS	16
-	DB	0
+	rs	16
+	db	0
 ;
 ;
-	END
+	end
