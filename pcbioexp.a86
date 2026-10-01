@@ -1,6 +1,7 @@
 
 ;***********************************************************
-;  PCBIOEXP.A86 - IBM PC BIOS for CP/M-86 v1.1 (experimental kernel)
+;  PCBIOEXP.A86 - IBM PC BIOS for CP/M-86 v1.1 
+; (experimental kernel)
 ;  The hardware-dependent layer between CP/M-86 and the IBM PC
 ;  ROM BIOS: character I/O, disk I/O, interrupt handling and
 ;  system initialisation.  Part of the CP/M-86 kernel; linked

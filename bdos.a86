@@ -1,7 +1,12 @@
-;  Basic disk operating system  of CP/M 86
+;***********************************************************
+;  BDOS.A86 - CP/M-86 Basic Disk Operating System
+;  Part of the CP/M-86 kernel; linked after CCP and before the
+;  BIOS into a single image by the root Makefile.
 ;
-;  1983.8.16.
-;
+;  Build:   make cpm.sys
+;  Check:   make check
+;***********************************************************
+
 ;  Equations of function
 ;
 CLIST	equ	5		;list out
