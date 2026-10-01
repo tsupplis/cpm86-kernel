@@ -21,7 +21,7 @@ BEL		equ	07h		; Bell
 BS		equ	08h		; Backspace
 LF		equ	0Ah		; Line feed
 CR		equ	0Dh		; Carriage return
-esc		equ	1Bh		; Escape
+ESC		equ	1Bh		; Escape
 
 ; Boolean constants
 
@@ -468,7 +468,7 @@ VIDNORM1:
 	cmp	al,CR
 	jz	VIDCR			; Carriage return
 
-	cmp	al,esc
+	cmp	al,ESC
 	jz	VIDESC			; Escape
 	cmp	al,BEL
 	jz	VIDBEL			; Beep
@@ -2845,15 +2845,15 @@ PFKTABLE	db	'DIR A:',CR,0,'............'	; F1
 		db	'CONFIG',CR,0,'............'	; F8
 		db	'DSKMAINT',CR,0,'..........'	; F9
 		db	'FUNCTION',CR,0,'..........'	; F10
-		db	esc,'H',0,'.................'	; home
-		db	esc,'A',0,'.................'	; up arrow
-		db	esc,'I',0,'.................'	; page up
-		db	esc,'D',0,'.................'	; cursor left
-		db	esc,'C',0,'.................'	; cursor right
+		db	ESC,'H',0,'.................'	; home
+		db	ESC,'A',0,'.................'	; up arrow
+		db	ESC,'I',0,'.................'	; page up
+		db	ESC,'D',0,'.................'	; cursor left
+		db	ESC,'C',0,'.................'	; cursor right
 		db	1Ah,0,'..................'	; end
-		db	esc,'B',0,'.................'	; cursor down
+		db	ESC,'B',0,'.................'	; cursor down
 		db	0Ah,0,'..................'	; page down
-		db	esc,'L',0,'.................'	; insert
+		db	ESC,'L',0,'.................'	; insert
 		db	7Fh,0,'..................'	; delete
 
 STATE		dw	offset VIDNORM	; Current state
@@ -2862,7 +2862,7 @@ CURCOL		db	0		; Cursor column
 CURROW		db	0		; Cursor row
 CURSOR		equ	word ptr CURCOL
 
-SAVECURSOR	dw	0		; For esc codes
+SAVECURSOR	dw	0		; For ESC codes
 
 ATTRIB		db	07h		; Default attribute
 WRAPFLAG	db	TRUE		; End of line wrap
