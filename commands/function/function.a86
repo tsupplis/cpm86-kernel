@@ -1,0 +1,852 @@
+;*****************************************************************************
+;
+;	FUNCTION - CP/M-86 function key programmer for the IBM PC
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the shipped binary; assembles byte-identical.
+;
+;	Build:	rasm86 function.a86 $ pz sz
+;		link86 function[$sz,cod[ori[0]],dat[ori[0],max[0]]]
+;
+;	Usage:	FUNCTION		interactive
+;		FUNCTION file		load definitions from a text file
+;
+;	The XIOS keeps the key definitions, not this program.  BDOS 49
+;	hands back the system data segment; kytbl is a fixed offset into
+;	it, and from there two sets of ten keys live 0c8h bytes apart --
+;	the function keys F1..F10 and the keypad.  ESC swaps between them.
+;	Each definition is maxdef bytes, NUL-terminated.
+;
+;	Everything is written straight to the screen through VT52 escape
+;	sequences, which the IBM PC XIOS understands, except for clearing
+;	a window, which goes to the BIOS directly.
+;
+;*****************************************************************************
+
+; One group so the CMD has a single CODE descriptor (the 8080 model), but the
+; data keeps its own segment: a reference to a DSEG symbol is DS-relative and
+; needs no CS: override, which a cseg symbol would force.
+cgroup	group	code,data
+
+	cseg
+	org	100h
+
+; ---- BDOS / BIOS numbers -----------------------------------
+f_reset		equ	0		; system reset
+f_conin		equ	1
+f_conout	equ	6		; raw console output
+f_constat	equ	11		; console status
+f_open		equ	15
+f_read		equ	20
+f_write		equ	21
+f_sysdata	equ	49		; get system data segment
+
+i_bdos		equ	0e0h		; CP/M-86 entry point
+i_video		equ	10h		; PC BIOS video
+i_keyb		equ	16h		; PC BIOS keyboard
+
+; ---- addresses outside this image --------------------------
+kytbl		equ	0254eh		; key table offset within the system data segment
+fcb		equ	005ch		; base page default FCB
+fcbcr		equ	007ch		; its current-record field
+tailbuf		equ	0080h		; base page command tail, also the DMA buffer
+
+; A definition is edited into a 20-byte buffer with a parallel array of display
+; widths 15h bytes further on, so a rubout knows how much to erase.
+maxdef		equ	14h
+widths		equ	15h
+
+; Bounds for tools/a86tool.py: where the data starts and the image ends.
+data_org	equ	0550h
+image_end	equ	0780h
+
+start:	jmps	begin
+
+	db	'Copyright (C) 1983, Digital Research'
+
+;-----------------------------------------------------------------------------
+; Entry.  Discard anything already typed ahead, then find the key table.
+;-----------------------------------------------------------------------------
+begin:
+entry:
+	push	cs
+	pop	ds
+
+flushkb:
+	mov	cl,f_constat
+	int	i_bdos
+	test	al,al
+	jz	setup
+	mov	cl,f_conin
+	int	i_bdos
+	jmps	flushkb
+
+setup:
+	mov	cl,f_sysdata
+	int	i_bdos
+	mov	word ptr xiossg,es
+	mov	bx,es:.kytbl
+	mov	keyset,bx
+	add	bx,0c8h		; the keypad set follows the function keys
+	mov	keyset2,bx
+	push	cs
+	pop	es
+	cld
+	test	byte ptr .tailbuf,0ffh
+	jnz	loadfile	; a file was named: no screen, no menu
+	call	drawtop
+
+prompt:
+	mov	si,offset msgtype
+	call	showhelp
+
+;-----------------------------------------------------------------------------
+; Menu.  getkey returns 0 for ESC, 1 for Return, 2 for any of the ten keys.
+;-----------------------------------------------------------------------------
+mainloop:
+	call	showkeys
+	mov	di,keylist
+	mov	cx,0ch
+	call	getkey
+	add	bx,bx
+	jmp	word ptr dsptbl[bx]
+
+;-----------------------------------------------------------------------------
+; Batch mode: read key definitions from the file named on the command line.
+;-----------------------------------------------------------------------------
+loadfile:
+	mov	cl,f_open
+	call	bdosfcb
+	mov	byte ptr .fcbcr,00h
+	inc	al		; 0ffh means no such file
+	jnz	lfread
+	mov	si,offset msgnofile
+	call	puts
+	jmps	quit
+
+lfread:
+	call	readrec
+
+lfloop:
+	call	fileline	; locate the next line that names a key
+	jz	quit
+	call	filekey
+	jnz	lfloop
+
+quit:
+	jmp	doexit
+
+; ESC: exchange the two key sets and everything that describes them.
+swapset:
+	mov	ax,keyset
+	xchg	ax,keyset2
+	mov	keyset,ax
+	mov	ax,namtbl
+	xchg	ax,namtbl2
+	mov	namtbl,ax
+	mov	ax,keylist
+	xchg	ax,keylist2
+	mov	keylist,ax
+	jmp	mainloop
+
+; A function key was pressed: edit its definition in place.
+progkey:
+	mov	si,offset msgprog
+	call	showhelp
+	mov	dx,0a0ch
+	mov	cx,keyidx
+	dec	cx		; ESC and Return occupy the first two slots
+	dec	cx
+	mov	ah,00h
+	mov	si,namtbl
+	lodsb
+	jcxz	keyedit
+
+; Walk the caption list to the chosen key, counting rows as we go.
+keyscan:
+	add	si,ax
+	inc	dh
+	lodsb
+	loop	keyscan
+
+keyedit:
+	push	dx
+	call	clrline
+	pop	dx
+	mov	al,72h		; ESC r: reverse video on the key being edited
+	mov	mode,al
+	call	escout
+	mov	di,si
+	dec	di
+	call	skname
+	mov	al,6dh		; ESC m: back to normal
+	call	escout
+	mov	di,offset defbuf
+	mov	si,di
+	mov	cx,maxdef
+
+; Collect characters until a NUL arrives or the buffer fills.
+keystore:
+	call	editloop
+	mov	widths[di],ah
+	stosb
+	test	al,al
+	loopne	keystore
+	mov	al,75h
+	mov	mode,al
+	call	escout
+	mov	al,6eh
+	call	escout
+	mov	al,3ah		; ESC :, the XIOS redefine-key sequence
+	call	escout
+	mov	al,curkey
+	call	conout
+	mov	cx,maxdef
+
+; Hand the new definition to the XIOS, one byte at a time.
+keyshow:
+	mov	al,[si]
+	call	conout
+	lodsb
+	test	al,al
+	loopne	keyshow
+	jmp	prompt
+
+; Carriage return: put the screen back the way we found it.
+exitprog:
+	mov	si,offset scroff
+	call	puts
+
+doexit:
+	mov	cl,f_reset
+	mov	dl,00h
+	int	i_bdos
+
+;-----------------------------------------------------------------------------
+; Paint the frame: three horizontal rules, two sides, then the corner glyphs
+; and the title.  bl carries the character, cx the length, dx the position.
+;-----------------------------------------------------------------------------
+drawtop:
+	mov	si,offset scron
+	call	puts
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	hline
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	hline
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	hline
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	vline
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	vline
+	mov	si,offset corner
+	mov	cx,06h
+
+; The corners cannot come from the rules, so they are placed individually.
+cornloop:
+	mov	al,59h		; ESC Y, position, inlined to save the setup
+	call	escout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	call	conout
+	loop	cornloop
+	mov	si,offset banner
+	mov	dx,0100h
+	jmp	putcent
+
+; Draw bl across cx columns from dx.
+hline:
+	push	cx
+	call	gotoxy
+
+hlloop:
+	mov	al,bl
+	call	conout
+	loop	hlloop
+	pop	cx
+	ret
+
+; Draw bl down cx rows from dx, repositioning for every row.
+vline:
+	push	cx
+
+vlloop:
+	push	dx
+	call	gotoxy
+	mov	al,bl
+	call	conout
+	pop	dx
+	inc	dh
+	loop	vlloop
+	pop	cx
+	ret
+
+; Blank the row given by dh, inside the frame.
+clrline:
+	mov	dl,01h
+	call	gotoxy
+	mov	cx,4eh
+
+clrloop:
+	mov	al,20h
+	call	conout
+	loop	clrloop
+	ret
+
+; Print the three NUL-terminated lines at si, centred, in the upper window.
+showhelp:
+	call	clrtop
+	mov	dx,0412h
+	mov	cx,03h
+
+helploop:
+	push	dx
+	call	putat
+	pop	dx
+	inc	dh
+	loop	helploop
+	ret
+
+;-----------------------------------------------------------------------------
+; List the current set: ten rows of caption, colon, then the definition read
+; back out of the XIOS.
+;-----------------------------------------------------------------------------
+showkeys:
+	call	clrbot
+	mov	di,namtbl
+	mov	si,keyset
+	mov	dx,0a0ch
+	mov	cx,0ah
+
+skloop:
+	push	dx
+	push	cx
+	push	si
+	call	skname
+	call	skcount
+	pop	si
+	pop	cx
+	pop	dx
+	inc	dh
+	add	si,maxdef
+	loop	skloop
+	ret
+
+; Print the caption at di, right-aligned on column dl so the colons line up.
+skname:
+	mov	cl,[di]
+	inc	di
+	sub	dl,cl
+	call	gotoxy
+	mov	ch,00h
+
+skchars:
+	mov	al,[di]
+	call	conout
+	inc	di
+	loop	skchars
+	mov	al,3ah
+	call	conout
+	mov	al,20h
+	jmp	conout
+
+; Print one key's definition.  It lives in the XIOS segment, so ds is switched
+; for each fetch rather than held, because putchar needs our own data.
+skcount:
+	mov	cx,maxdef
+
+readkeydef:
+	push	ds
+	mov	ds,word ptr xiossg
+	lodsb
+	pop	ds
+	test	al,al
+	jz	rdkret
+	push	cx
+	call	putchar
+	pop	cx
+	loop	readkeydef
+
+rdkret:
+	ret
+
+; Display one byte and return its width in ah: printable characters are sent
+; as they are, anything else shows as a highlighted \nn.
+putchar:
+	push	ax
+	cmp	al,20h
+	jc	putctl
+	cmp	al,7fh
+	jnc	putctl
+	call	conout
+	pop	ax
+	mov	ah,01h
+	ret
+
+putctl:
+	push	si
+	mov	dl,al
+	mov	al,5ch
+	call	conout
+	call	modeins
+	mov	bx,offset hexdig
+	mov	al,dl
+	mov	cl,04h
+	shr	al,cl
+	and	al,0fh
+	xlat	bx
+	call	conout
+	mov	al,dl
+	and	al,0fh
+	xlat	bx
+	call	conout
+	call	modenorm
+	pop	si
+	pop	ax
+	mov	ah,03h
+	ret
+
+; Centre the NUL-terminated string at si on the row in dh, then print it.
+putcent:
+	mov	di,si
+	mov	al,00h
+	mov	cx,51h
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+
+putat:
+	call	gotoxy
+
+puts:
+	lodsb
+
+putsloop:
+	call	conout
+	lodsb
+	test	al,al
+	jnz	putsloop
+	ret
+
+; VT52 ESC Y: row and column biased by 20h.
+gotoxy:
+	mov	al,59h
+	call	escout
+	add	dx,2020h
+	mov	al,dh
+	call	conout
+	mov	al,dl
+	jmp	conout
+
+;-----------------------------------------------------------------------------
+; Wait for one of the cx scan codes at di, beeping at anything else.  Returns
+; the index in bx, clamped to 2 because every function key is handled alike;
+; keyidx keeps the unclamped value so progkey knows which key it was.
+;-----------------------------------------------------------------------------
+getkey:
+	push	cx
+	push	di
+	mov	bx,cx
+	call	getraw
+	mov	al,ah
+	mov	curkey,ah
+	repne	scasb
+	mov	al,cl
+	pop	di
+	pop	cx
+	jz	gkfound
+	mov	al,07h
+	call	conout
+	jmps	getkey
+
+gkfound:
+	sub	bl,al
+	dec	bx
+	mov	keyidx,bx
+	cmp	bx,03h
+	jc	gkret
+	mov	bx,02h
+
+gkret:
+	ret
+
+;-----------------------------------------------------------------------------
+; Read one character of a definition.  Returns the byte in al and its width on
+; screen in ah; Ctrl-@ returns zero to end the definition.  Backspace is
+; handled here and never returns to the caller.
+;-----------------------------------------------------------------------------
+editloop:
+	push	cx
+
+edkey:
+	call	getraw
+	cmp	al,08h
+	jz	edback
+	test	al,al
+	jnz	edchar
+	cmp	ah,03h		; an extended key: only Ctrl-@ means anything
+	jnz	edkey
+	pop	cx
+	ret
+
+edchar:
+	cmp	al,5ch		; a backslash introduces a hex byte
+	jz	edstore
+	call	putchar
+	pop	cx
+	ret
+
+; \nn: take two hex digits and combine them into one byte.
+edstore:
+	call	conout
+	call	modeins
+	call	hexpush
+	mov	cl,04h
+	shl	al,cl
+	mov	dl,al
+	call	hexpush
+	or	dl,al
+	call	modenorm
+	mov	al,dl
+	pop	cx
+	mov	ah,03h
+	ret
+
+; Rub out the previous character, erasing as many columns as it occupied.
+edback:
+	pop	cx
+	cmp	cx,maxdef	; nothing entered yet
+	jz	beep
+	dec	di
+	inc	cx
+	push	cx
+	mov	cl,widths[di]
+
+edrub:
+	mov	al,08h
+	call	conout
+	mov	al,20h
+	call	conout
+	mov	al,08h
+	call	conout
+	loop	edrub
+	jmps	edkey
+
+beep:
+	mov	al,07h
+	call	conout
+	jmps	editloop
+
+; Insist on a hex digit, echo it, and return its value in al.
+hexpush:
+	push	di
+
+hexin:
+	mov	di,offset hexdig
+	mov	cx,10h
+	call	getraw
+	call	upcase
+	repne	scasb
+	jz	hexecho
+	mov	al,07h
+	call	conout
+	jmps	hexin
+
+hexecho:
+	call	conout
+	mov	al,0fh
+	sub	al,cl
+	pop	di
+	ret
+
+upcase:
+	cmp	al,60h
+	jc	ucret
+	sub	al,20h
+
+ucret:
+	ret
+
+; ESC b selects a foreground colour.  Which pair is used depends on whether
+; the line is currently in reverse video, so a \nn stays legible either way.
+modeins:
+	mov	bl,49h
+	cmp	byte ptr mode,72h
+	jz	modeput
+	mov	bl,41h
+	jmps	modeput
+
+modenorm:
+	mov	bl,4eh
+	cmp	byte ptr mode,72h
+	jz	modeput
+	mov	bl,47h
+
+modeput:
+	mov	al,62h
+	call	escout
+	mov	al,bl
+	jmp	conout
+
+; Clear a window through the BIOS: cx is the top left corner, dx the bottom
+; right.  The XIOS has no escape sequence for this.
+clrtop:
+	mov	cx,0301h
+	mov	dx,084eh
+	jmps	clrwin
+
+clrbot:
+	mov	cx,0901h
+	mov	dx,164eh
+
+clrwin:
+	mov	bx,07h
+	mov	ax,0700h
+	int	i_video
+	ret
+
+; Send ESC then al.  Falls into conout, which preserves every register the
+; string and table loops depend on, and restores the direction flag too.
+escout:
+	push	ax
+	mov	al,1bh
+	call	conout
+	pop	ax
+
+conout:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	es
+	mov	dl,al
+	mov	cl,f_conout
+	int	i_bdos
+	cld
+	pop	es
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	ret
+
+; Unreachable: a console status test left over from an earlier version.
+	mov	ah,01h
+	int	i_keyb
+	ret
+
+getraw:
+	mov	ah,00h
+	int	i_keyb
+	ret
+
+;-----------------------------------------------------------------------------
+; Reading definitions from a file.  Each line starts with a key's scan code
+; written as the character it happens to be, then the definition, then CR.
+;-----------------------------------------------------------------------------
+
+; Skip forward until a byte matches one of the known scan codes.
+fileline:
+	call	nextch
+	jz	flret
+	mov	cx,14h		; both sets, ten keys each
+	mov	di,offset scancod
+	repne	scasb
+	jnz	fileline
+	test	al,al
+
+flret:
+	ret
+
+; Pass the definition straight through to the XIOS as it is read.
+filekey:
+	push	ax
+	mov	al,3ah		; ESC :, redefine the key in al
+	call	escout
+	pop	ax
+	call	conout
+	mov	cx,maxdef
+
+filedef:
+	push	cx
+	call	fdchar
+	push	ax
+	call	conout
+	pop	ax
+	pop	cx
+	test	al,al
+	loopne	filedef
+
+; Discard whatever remains of the line.
+fdloop:
+	call	nextch
+	jz	fdret
+	cmp	al,0dh
+	jnz	fdloop
+	test	al,al
+
+fdret:
+	ret
+
+; One character of a definition, honouring the same \nn escape the editor uses.
+fdchar:
+	call	nextch
+	jz	fcret
+	cmp	al,5ch
+	jnz	fcret
+	call	fchex
+	mov	cl,04h
+	shl	al,cl
+	mov	dl,al
+	call	fchex
+	or	al,dl
+
+fcret:
+	ret
+
+fchex:
+	call	nextch
+	call	upcase
+	mov	di,offset hexdig
+	mov	cx,10h
+	repne	scasb
+	jz	hexval
+	mov	cl,0fh		; not a hex digit: fall through yielding zero
+
+hexval:
+	mov	al,0fh
+	sub	al,cl
+	ret
+
+;-----------------------------------------------------------------------------
+; Next byte of the file, refilling the buffer when it runs out.  Returns zero
+; at end of file; the tail buffer doubles as the DMA address.
+;-----------------------------------------------------------------------------
+nextch:
+	push	bx
+	mov	bx,bufpos
+	cmp	bx,80h
+	jc	ncget
+	call	readrec
+	jz	nceof
+
+ncget:
+	mov	al,tailbuf[bx]
+	cmp	al,1ah		; Ctrl-Z ends a text file
+	jz	nceof
+	inc	bx
+	mov	bufpos,bx
+	pop	bx
+	ret
+
+nceof:
+	pop	bx
+	sub	al,al
+	ret
+
+; Read the next record, planting a Ctrl-Z at the front if there is none.
+readrec:
+	push	cx
+	mov	cl,f_read
+	call	bdosfcb
+	sub	bx,bx
+	mov	bufpos,bx
+	pop	cx
+	dec	al
+	jnz	rrret
+	mov	byte ptr .tailbuf,1ah
+
+rrret:
+	ret
+
+; BDOS call cl on the base page FCB, preserving dx and es for the caller.
+bdosfcb:
+	push	dx
+	push	es
+	mov	dx,fcb
+	int	i_bdos
+	pop	es
+	pop	dx
+	ret
+
+; ---- data ----
+	dseg
+keyset	dw	0000h		; offset of the current set inside the XIOS
+keyset2	dw	00h		; the other set; ESC exchanges the two
+xiossg	dw	00h		; and the segment they both live in
+
+; VT52 setup and restore, sent at the start and end of interactive use.
+scron	db	1bh,45h,1bh,77h,1bh,6eh
+	db	1bh,71h,1bh,74h,1bh,75h,00h
+scroff	db	1bh,45h,1bh,76h,1bh
+	db	6dh,00h
+; Title box corners: row, column, character.  The row and column are biased
+; by 20h on the way out, so they are stored unbiased here.
+corner	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h
+	db	02h,4fh,0b5h,17h,00h,0c0h,17h,4fh,0d9h
+banner	db	'CP/M-86  Function Key Programmer for the'
+	db	' IBM PC   version 1.0',00h
+; Three NUL-terminated lines each, printed together by showhelp.
+msgtype	db	'Type the Function Key you wish to prog','ram,'
+	db	00h,'or ESC to display the other set of keys,'
+	db	00h,'or Carriage Return to exit this program.'
+	db	00h
+msgprog	db	'You are now Programming the selected '
+	db	'Key.',00h
+	db	'To terminate sequence enter Ctrl @ or ','\00.'
+	db	00h,'Type ',11h,'-- to erase a character.',00h
+hexdig	db	'0123456789ABCDEF'
+mode	db	'u'		; 'r' while the edited key is in reverse video
+curkey	db	00h		; scan code of the key being programmed
+keyidx	dw	00h		; its position in keylist, before clamping
+namtbl	dw	keynam1
+namtbl2	dw	keynam2
+
+; Key captions, each a length byte followed by that many characters.
+keynam1	db	02h,'F1',02h,'F2',02h,'F3',02h,'F4'
+	db	02h,'F5',02h,'F6',02h,'F7',02h,'F8'
+	db	02h,'F9',03h,'F10'
+keynam2	db	04h,'Home',02h,18h,' ',04h,'PgUp'
+	db	03h,11h,'- ',03h,'-',10h,' ',03h,'End'
+	db	02h,19h,' ',04h,'PgDn',03h,'Ins',03h,'Del'
+keylist	dw	keys1
+keylist2	dw	keys2
+
+; Scan codes accepted at the menu: ESC, Return, then the ten keys of the set.
+; The function keys' scan codes happen to be printable, so they read as text.
+keys1	db	01h,1ch,';<=>?@ABCD'
+keys2	db	01h,1ch,'GHIKMOPQRS'
+bufpos	dw	00h		; read position in the 80h byte record buffer
+
+; Every scan code the file reader will accept, both sets end to end.
+scancod	db	';<=>?@ABCDGHIKMOPQRS'
+msgnofile	db	0dh,0ah,'File not found.'
+	db	00h
+
+; Menu handlers, indexed by the value getkey leaves in bx.
+dsptbl	dw	swapset,exitprog,progkey
+
+; The definition being edited: maxdef bytes, then at +widths the screen width
+; of each one, so a rubout knows how many columns to erase.
+defbuf	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	0dbh,00h
+
+	end
