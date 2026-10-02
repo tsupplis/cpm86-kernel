@@ -6,16 +6,21 @@ TWIST = python3 tools/cpm86twist.py
 
 # Tools rebuilt from source. tod has no base/ binary at all, so every image
 # takes it from here; the experimental images take the whole reconstructed set.
-CMDDIR = commands
-ASM86  = $(CMDDIR)/asm86/asm86.cmd
-DDT86  = $(CMDDIR)/ddt86/ddt86.cmd
-ED     = $(CMDDIR)/ed/ed.cmd
-GENCMD = $(CMDDIR)/gencmd/gencmd.cmd
-HELP   = $(CMDDIR)/help/help.cmd
-PIP    = $(CMDDIR)/pip/pip.cmd
-STAT   = $(CMDDIR)/stat/stat.cmd
-SUBMIT = $(CMDDIR)/submit/submit.cmd
-TOD    = $(CMDDIR)/tod/tod.cmd
+CMDDIR   = commands
+ASM86    = $(CMDDIR)/asm86/asm86.cmd
+DDT86    = $(CMDDIR)/ddt86/ddt86.cmd
+ED       = $(CMDDIR)/ed/ed.cmd
+GENCMD   = $(CMDDIR)/gencmd/gencmd.cmd
+HELP     = $(CMDDIR)/help/help.cmd
+HLP      = $(CMDDIR)/help/help.hlp
+PIP      = $(CMDDIR)/pip/pip.cmd
+STAT     = $(CMDDIR)/stat/stat.cmd
+SUBMIT   = $(CMDDIR)/submit/submit.cmd
+TOD      = $(CMDDIR)/tod/tod.cmd
+ASSIGN   = $(CMDDIR)/assign/assign.cmd
+FUNCTION = $(CMDDIR)/function/function.cmd
+MFORM    = $(CMDDIR)/mform/mform.cmd
+TESTSUB  = $(CMDDIR)/submit/testcpm.cmd
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
 # take everything; the smaller formats take subsets.
@@ -27,12 +32,14 @@ DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 
 # Tools that are the same whichever kernel the image carries.
 SHARED     = base/setup.cmd base/dskmaint.cmd base/hdmaint.cmd \
-             base/function.cmd base/config.cmd base/assign.cmd base/data.pfk \
-             base/help.hlp base/print.cmd base/mform.cmd
+             base/config.cmd base/data.pfk base/print.cmd
 
-CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd \
-             base/help.cmd $(TOD) $(SHARED)
-EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(SHARED)
+CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
+             base/help.cmd base/assign.cmd base/mform.cmd base/mformq.cmd \
+             base/help.hlp \
+             $(TOD) $(SHARED)
+EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
+             $(MFORM) $(FUNCTION) $(SHARED) $(HLP) $(TESTSUB) \
 EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS)
@@ -85,7 +92,7 @@ extra:
 	$(MAKE) -C extra
 
 cpmwk.img: base-160.img
-	cp base-160.img $@
+	cp $< $@
 
 # The "-at" bases differ from their plain counterparts only by the startup
 # command the BIOS stuffs into the keyboard buffer at boot. base-160.img
@@ -217,19 +224,19 @@ cpm86-160-4.img: base-160.img
 	$(flat_image)
 
 cpm.sys: cpm86.h86
-	cpm_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
+	cpm86_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
 	mv cpm86.cmd cpm.sys
 
 cpmorg.sys: cpm86org.h86
-	cpm_gencmd cpm86org.h86 8080 "CODE[A51,M0000]"
+	cpm86_gencmd cpm86org.h86 8080 "CODE[A51,M0000]"
 	mv cpm86org.cmd cpmorg.sys
 
 cpmexp.sys: cpm86exp.h86
-	cpm_gencmd cpm86exp.h86 8080 "CODE[A51,M0000]"
+	cpm86_gencmd cpm86exp.h86 8080 "CODE[A51,M0000]"
 	mv cpm86exp.cmd cpmexp.sys
 
 cpmv20.sys: cpmv20.h86
-	cpm_gencmd cpmv20.h86 8080 "CODE[A40]"
+	cpm86_gencmd cpmv20.h86 8080 "CODE[A40]"
 	mv cpmv20.cmd cpmv20.sys
 
 cpmv20.bin: cpmv20.sys
@@ -243,7 +250,7 @@ cpm816.bin: cpm816.sys
 	dd bs=128 skip=1 if=cpm816.sys of=cpm816.bin
 
 cpm816.sys: cpm816.h86
-	cpm_gencmd cpm816.h86 8080 "CODE[A40]"
+	cpm86_gencmd cpm816.h86 8080 "CODE[A40]"
 	mv cpm816.cmd cpm816.sys
 
 cpm816.h86: cpm.h86 mbc816.h86 
@@ -275,7 +282,7 @@ cpmexp.h86: ccpexp.h86 bdosexp.h86
 	cat bdosexp.h86  >> cpmexp.h86
 
 %.h86: %.a86
-	cpm_asm86 $<
+	cpm86_asm86 $<
 
 clean:
 	$(MAKE) -C $(CMDDIR) clean
@@ -293,6 +300,14 @@ clean:
 	rm -rf *.img.wrk
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
+
+clean-images:
+	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
+        cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
+	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
+	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
+	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img 
 
 dist: cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
     cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img \
