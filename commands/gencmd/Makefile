@@ -55,5 +55,19 @@ clean:
 test.h86: gencmd.h86
 	cp $< $@
 
-check: test.cmd gencmd.cmd
+test.cmd: test.h86 gencmd.cmd
+	@test -n "$(GENCMD_BASE)" -a -n "$(GENCMD_MEM)" || \
+	  { echo "gencmd: cannot derive DATS/MEMORY from gencmd.mp2"; exit 1; }
+	emu2 gencmd.cmd test.h86 'data[b$(GENCMD_BASE) m$(GENCMD_MIN) xfff]'
+	cmdinfo test.cmd
+
+
+check: test.cmd gencmd.cmd hellob.cmd
 	cmp gencmd.cmd test.cmd
+	cmp hellob.cmd hellob.ref
+
+hellob.h86: hellob.a86
+	cpm86_asm86 hellob
+
+hellob.cmd: hellob.h86 gencmd.cmd
+	emu2 gencmd.cmd $(basename $<).h86 8080

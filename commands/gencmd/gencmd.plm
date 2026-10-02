@@ -62,8 +62,6 @@ SET$RETURN$CODE: PROCEDURE(RETCODE);
         CALL MON1(6CH, RETCODE);
     END SET$RETURN$CODE;
 
-DECLARE OUTPUT$CREATED BYTE;
-
 declare segmts(11) structure (name(5) byte,begin$add address)
     initial ('CODE ',00h,'DATA ',0ffffh,'EXTRA',0ffffh,'STACK',0,
       'X1   ',0,'X2   ',0,'X3   ',0,'X4   ',0,'8080 ',0,'NZERO',0,
@@ -78,6 +76,8 @@ declare header (15) structure
      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,00,0,0,0,0,0,0,0,0,0,
      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
    
+DECLARE OUTPUT$CREATED BYTE;
+
 
 plmstart: PROCEDURE public;
     DECLARE FCB (33) BYTE AT (.FCBA),
@@ -440,7 +440,8 @@ empty$buffers:  procedure;
 
     READBYTE: PROCEDURE BYTE;
         /* READ TWO HEX DIGITS */
-        RETURN SHL(READHEX,4) OR READHEX;
+        DECLARE B BYTE;
+        B = READHEX; RETURN SHL(B,4) OR READHEX;
         END READBYTE;
 
     READCS: PROCEDURE BYTE;
