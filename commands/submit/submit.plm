@@ -213,15 +213,19 @@ fillrbuff: procedure;
             call error(.('Command Too Long$'));
         end putrbuff;
 
-    declare (reading,b) byte;
+    declare (reading,b,nonblank) byte,
+            saverbp address;
     /* fill the jcl buffer */
     rbuff(0),rbp = 0;
     reading = true;
         do while reading;
         rlen = 0; /* reset command length */
+        nonblank = false;
+        saverbp = rbp;
             do while (b:=getsource) <> endfile and b <> cr;
             if b <> lf then
-                do; if b = '$' then /* copy substitute string */
+                do; if b <> ' ' then nonblank = true;
+                if b = '$' then /* copy substitute string */
                    do; if (b:=getsource) = '$' then
                        /* $$ replaced by $ */
                        call putrbuff(b); else
@@ -237,6 +241,7 @@ fillrbuff: procedure;
                             end;
                        /* ready to copy substitute string from position ssbp */
                             do while notend;
+                            if s <> ' ' then nonblank = true;
                             call putrbuff(s);
                             end;
                        end;
@@ -248,12 +253,21 @@ fillrbuff: procedure;
                     else
                          call putrbuff(b+1);
                     end; else /* not $ or ^ */
+                if nonblank or b <> ' ' then /* skip leading spaces */
                 call putrbuff(b);
                 end;
             end; /* of line or input file - compute length */
         reading = b = cr;
-        call putrbuff(rlen); /* store length */
+        /* trim trailing spaces */
+            do while rlen > 0 and rbuff(rbp) = ' ';
+            rbp = rbp - 1; rlen = rlen - 1;
+            end;
+        if nonblank then
+            call putrbuff(rlen); /* store length only for non-empty/non-space lines */
+        else
+            rbp = saverbp;       /* discard whitespace-only or empty line */
         end;
+    call putrbuff(0); /* ensure top of stack is terminated for makefile */
     /* entire file has been read and processed */
     end fillrbuff;
 
@@ -275,6 +289,8 @@ makefile: procedure;
             do while i > 0;
             buff(i) = getrbuff; i=i-1;
             end;
+        /* zero remainder of sector so no source file data leaks */
+            do i = buff(0)+3 to 127; buff(i) = 0; end;
         /* buffer filled to $ */
         call writebuff;
         end;
@@ -283,7 +299,7 @@ makefile: procedure;
     end makefile;
 
  /* enter here from the ccp with the fcb set */
-    call print(.(cr,lf,'CP/M-86 SUBMIT VER 2.0N (10.2026)',cr,lf,cr,lf,'$'));
+    call print(.(cr,lf,'CP/M-86 SUBMIT VER 2.1N (10.2026)',cr,lf,cr,lf,'$'));
     if sfcb(1) = ' ' then
         do;
         call print(.('USAGE: SUBMIT file[.SUB] [parm1 parm2 ...]',cr,lf,'$'));

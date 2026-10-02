@@ -51,7 +51,22 @@ submit.loc: submit.obj scd.obj
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn cpmtest.img
-	rm -f *.loc *.mp? *.lnk *.hex
+	rm -f *.loc *.mp? *.lnk *.hex '$$$$$$.sub'
+
+test-a: submit.cmd
+	rm -f '$$$$$$.sub'
+	emu2 submit.cmd testa.sub
+	@xxd '$$$$$$.sub'
+
+test-b: submit.cmd
+	rm -f '$$$$$$.sub'
+	emu2 submit.cmd testb.sub
+	@xxd '$$$$$$.sub'
+
+test-c: submit.cmd
+	rm -f '$$$$$$.sub'
+	emu2 submit.cmd testc.sub
+	@xxd '$$$$$$.sub'
 
 cpmtest.img: test.sub submit.cmd cpmbase.img
 	cp cpmbase.img cpmtest.img
