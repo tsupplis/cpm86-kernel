@@ -1,5 +1,5 @@
 rom
-tools/__pycache/**
+tools/**/__pycache__/**
 **/*.lock
 **/*.lha
 **/*.zip
@@ -21,6 +21,7 @@ cpm*.img
 base*-at.img
 **/cpm*.cmd
 commands/**/*.mp?
+commands/**/*.hlp
 commands/**/*.loc
 commands/**/*.abs
 commands/**/*.lnk
