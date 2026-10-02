@@ -1,13 +1,14 @@
 """holes: classify the bytes that branch-following could not reach.
 
 Unreached bytes inside the code are strings, tables, or code that is only
-reachable through a table.  Word tables whose entries all look like code
-addresses are followed as new entry points, repeatedly, so the code behind a
-jump table gets found.  Tables live in the data area too (function's dsptbl),
-so that is scanned for them as well.
+reachable through a table.  A word table is trusted only when reached code
+indexes it through an indirect jmp/call (jmp word ptr tbl[bx]); its entries
+are then followed as new entry points, repeatedly, so the code behind a jump
+table gets found.
 """
 
 import bisect
+import re
 
 from .flow import CODE_START, analyse, code_end, holes
 from .source import get_bounds
@@ -24,7 +25,7 @@ def printable(b):
     return 0x20 <= b < 0x7f or b in (0x0d, 0x0a)
 
 
-def segments(get, a, b, ok, tables_only=False):
+def segments(get, a, b, ok):
     """Split [a, b) into (kind, start, end, words) pieces.
 
     kind is 'table' (two or more consecutive words ok() accepts), 'text'
@@ -48,42 +49,67 @@ def segments(get, a, b, ok, tables_only=False):
             out.append(('table', a + p, a + q, ws))
             p = q
             continue
-        if not tables_only:
-            q = p
-            while q < len(d) and printable(d[q]):
+        q = p
+        while q < len(d) and printable(d[q]):
+            q += 1
+        if q - p >= 4:
+            if q < len(d) and d[q] == 0:
                 q += 1
-            if q - p >= 4:
-                if q < len(d) and d[q] == 0:
-                    q += 1
-                flush(p)
-                out.append(('text', a + p, a + q, None))
-                p = q
-                continue
-            if unk is None:
-                unk = p
+            flush(p)
+            out.append(('text', a + p, a + q, None))
+            p = q
+            continue
+        if unk is None:
+            unk = p
         p += 1
     flush(len(d))
     return out
 
 
+INDIRECT = re.compile(r'\[(?:[a-z]{2}\+){0,2}0x([0-9a-f]+)\]')
+
+
+def table_sites(seen):
+    """{table address: address of the indirect jmp/call that indexes it}."""
+    out = {}
+    for a, (_, text) in seen.items():
+        if text.split(None, 1)[0] in ('jmp', 'call'):
+            m = INDIRECT.search(text)
+            if m and int(m.group(1), 16) >= CODE_START:
+                out.setdefault(int(m.group(1), 16), a)
+    return out
+
+
+def read_table(get, t, end, ok):
+    """Words from t on, while each is a plausible code address."""
+    ws = []
+    while t + 2 * len(ws) + 2 <= end and len(ws) < 128:
+        a = t + 2 * len(ws)
+        raw = get(a, a + 2)
+        w = raw[0] | raw[1] << 8
+        if not ok(w):
+            break
+        ws.append(w)
+    return ws
+
+
 def discover(binf, base, end, hi):
     """Fixpoint: follow table entries until no new code appears.
 
-    Returns (seen, remaining code-area segments, data-area tables, new roots,
-    bytes unreached before any table was followed).
+    Returns (seen, remaining code-area segments, {table: (site, words)}, new
+    roots, ranges unreached before any table was followed, branch targets).
+    Tables are found through indirect jmp/call displacements, so there is
+    evidence for each.
     """
     get = image_bytes(binf, base)
-    roots, first = set(), None
+    roots, first, tabs = set(), None, {}
     while True:
-        seen, _ = analyse(binf, base, end, roots=roots)
+        seen, targets = analyse(binf, base, end, roots=roots)
         top = hi or code_end(seen)
         starts = sorted(seen)
         hs = holes(seen, CODE_START, top)
         if first is None:
             first = hs
-
-        def in_hole(w):
-            return any(a <= w < b for a, b in hs)
 
         def ok(w):
             if not CODE_START <= w < top:
@@ -92,14 +118,29 @@ def discover(binf, base, end, hi):
             return not (i >= 0 and starts[i] != w
                         and w < starts[i] + seen[starts[i]][0])
 
-        segs = [s for a, b in hs for s in segments(get, a, b, ok)]
-        dtabs = [s for s in segments(get, top, end, ok, tables_only=True)
-                 if any(in_hole(w) for w in s[3])]
-        fresh = {w for s in segs + dtabs if s[0] == 'table'
-                 for w in s[3] if w not in seen} - roots
+        for t, site in table_sites(seen).items():
+            ws = read_table(get, t, end, ok)
+            if len(ws) >= 2:
+                tabs[t] = (site, ws)
+        fresh = {w for _, ws in tabs.values() for w in ws
+                 if w not in seen} - roots
         if not fresh:
-            return seen, segs, dtabs, roots, first
+            segs = [s for a, b in hs for s in segments(get, a, b, ok)]
+            return seen, segs, tabs, roots, first, targets
         roots |= fresh
+
+
+def reach(binf, base, lines):
+    """(reached instructions, branch and table-entry targets) for a source.
+
+    The one definition of 'code' that boundary, labels and decode all use, so
+    they cannot disagree.  Table entries are followed only below the code
+    area's end (data_org once set, else the end of what branches reach).
+    """
+    data_org, end = get_bounds(lines)
+    seen, _, _, roots, _, targets = discover(
+        binf, base, end, data_org if data_org < end else None)
+    return seen, targets | roots
 
 
 def preview(get, a, b, kind):
@@ -114,7 +155,7 @@ def cmd_holes(binf, a86, base):
     data_org, end = get_bounds(lines)
     hi = data_org if data_org < end else None
     get = image_bytes(binf, base)
-    seen, segs, dtabs, roots, first = discover(binf, base, end, hi)
+    seen, segs, tabs, roots, first, _ = discover(binf, base, end, hi)
     top = hi or code_end(seen)
 
     total = lambda hs: sum(b - a for a, b in hs)
@@ -131,11 +172,12 @@ def cmd_holes(binf, a86, base):
     print('remaining, by kind      : ' + ', '.join(
         '%s %d bytes' % (k, kinds[k]) for k in sorted(kinds)))
 
-    if dtabs:
-        print('\njump tables found in the data area:')
-        for _, a, b, ws in dtabs:
-            print('  %04x..%04x  %d entries -> %s' % (
-                a, b, len(ws), ' '.join('%04x' % w for w in ws[:8])
+    if tabs:
+        print('\njump tables (found through an indirect jmp/call):')
+        for t in sorted(tabs):
+            site, ws = tabs[t]
+            print('  %04x  %d entries, indexed at %04x -> %s' % (
+                t, len(ws), site, ' '.join('%04x' % w for w in ws[:8])
                 + (' ...' if len(ws) > 8 else '')))
 
     print('\nremaining unreached ranges in the code:')

@@ -20,7 +20,7 @@ TOD      = $(CMDDIR)/tod/tod.cmd
 ASSIGN   = $(CMDDIR)/assign/assign.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
-TESTSUB  = $(CMDDIR)/submit/testcpm.cmd
+TESTSUB  = $(CMDDIR)/submit/testcpm.sub
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
 # take everything; the smaller formats take subsets.
@@ -39,7 +39,7 @@ CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/functio
              base/help.hlp \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
-             $(MFORM) $(FUNCTION) $(SHARED) $(HLP) $(TESTSUB) \
+             $(MFORM) $(FUNCTION) $(SHARED) $(HLP) $(TESTSUB) 
 EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS)

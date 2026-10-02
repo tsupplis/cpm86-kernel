@@ -17,7 +17,8 @@ import sys
 
 from .build import rebuild, require_covered
 from .disasm import Converter, disasm
-from .flow import CODE_START, analyse
+from .flow import CODE_START
+from .holes import reach
 from .source import get_bounds, line_size, load_equates
 from .splice import LABEL
 from .text import num, read_text, write_text
@@ -93,7 +94,7 @@ def cmd_decode(binf, a86, base):
     d, name = os.path.dirname(a86) or '.', os.path.basename(a86)
     lines = read_text(a86).split('\n')
     _, end = get_bounds(lines)
-    seen, _ = analyse(binf, base, end)
+    seen, _ = reach(binf, base, lines)
 
     regs, recs = regions(lines), {}
     for _, _, a, size in regs:

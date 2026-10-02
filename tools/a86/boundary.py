@@ -4,7 +4,8 @@ import re
 import sys
 
 from .build import verified_write
-from .flow import CODE_START, analyse, code_end, holes
+from .flow import CODE_START, code_end, holes
+from .holes import reach
 from .source import get_bounds
 from .splice import LABEL, first_insn_size, splice
 from .text import lbl, num, read_text
@@ -18,7 +19,7 @@ GROUP = ('; One group so the CMD has a single CODE descriptor (the 8080 model),\
 def cmd_boundary(binf, a86, base, set_to=None, verify=True):
     lines = read_text(a86).split('\n')
     _, end = get_bounds(lines)
-    seen, targets = analyse(binf, base, end)
+    seen, targets = reach(binf, base, lines)
     stop = code_end(seen)
     nbytes = sum(s for s, _ in seen.values())
     hs = holes(seen, CODE_START, stop)

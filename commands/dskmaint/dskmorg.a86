@@ -8,14 +8,20 @@
 ;***********************************************************
 
 ; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	1060h
+data_org	equ	0734h
 image_end	equ	1060h
+
+; One group so the CMD has a single CODE descriptor (the 8080 model),
+; but the data keeps its own segment.
+cgroup	group	code,data
 
 	cseg
 	org	100h
 
 start:
 	jmps	l0126
+
+l0102:
 	db	43h,6fh,70h,79h,72h,69h,67h,68h
 	db	74h,20h,28h,43h,29h,20h,31h,39h
 	db	38h,33h,2ch,20h,44h,69h,67h,69h
@@ -23,17 +29,40 @@ start:
 	db	61h,72h,63h,68h
 
 l0126:
-	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,53h
-	db	10h,0e8h,79h,04h,0e8h,85h,04h,75h
-	db	09h,0beh,5ah,0eh,0e8h,2ah,04h,0e9h
-	db	6fh,02h,0e8h,80h,02h,0e8h,6fh,02h
-	db	0e8h,0bbh,04h,0e8h,0b4h,05h,0beh,0f4h
-	db	07h,0b6h,04h,0e8h,00h,04h,0beh,0feh
-	db	07h,0b9h,05h,00h,0e8h,59h,03h,0beh
-	db	96h,08h,0b6h,06h,0e8h,0a9h,03h,0bfh
-	db	0a6h,08h,0b9h,05h,00h,0e8h,17h,04h
-	db	4bh,89h,1eh,41h,07h,0ffh,0a7h,0abh
-	db	08h,8ch,0c8h,8eh,0d8h,8eh,0c0h,0bch
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,1053h
+	call	l05ab
+	call	l05ba
+	jnz	l0140
+	mov	si,0e5ah
+	call	l0567
+	jmp	l03af
+
+l0140:
+	call	l03c3
+	call	l03b5
+	call	l0604
+	call	l0700
+	mov	si,07f4h
+	mov	dh,04h
+	call	l0554
+	mov	si,07feh
+	mov	cx,05h
+	call	l04b6
+	mov	si,0896h
+	mov	dh,06h
+	call	l050e
+	mov	di,08a6h
+	mov	cx,05h
+	call	l0585
+	dec	bx
+	mov	.0741h,bx
+	jmp	word ptr 08abh[bx]
+
+l0177:
+	db	8ch,0c8h,8eh,0d8h,8eh,0c0h,0bch
 	db	53h,10h,0e8h,0a2h,04h,0ebh,0c4h,0beh
 	db	02h,08h,0c7h,06h,43h,07h,0b5h,08h
 	db	0e8h,0aah,02h,0e8h,6ch,05h,0beh,84h
@@ -104,24 +133,88 @@ l0126:
 	db	01h,02h,0b9h,08h,00h,0fch,8bh,0c2h
 	db	0abh,8bh,0c3h,0abh,43h,0e2h,0f7h,0c3h
 	db	0e8h,4eh,02h,0beh,6fh,07h,0e8h,0b8h
-	db	01h,0b1h,00h,0b2h,00h,0cdh,0e0h,0cdh
-	db	11h,0b1h,06h,0d3h,0e8h,25h,03h,00h
-	db	40h,0a3h,34h,07h,0c3h,0beh,62h,07h
-	db	0e8h,9eh,01h,0b9h,4eh,00h,0bah,01h
-	db	00h,0b3h,0c4h,0e8h,49h,00h,0bah,01h
-	db	02h,0b3h,0cdh,0e8h,41h,00h,0bah,01h
-	db	17h,0b3h,0c4h,0e8h,39h,00h,0b9h,16h
-	db	00h,0bah,00h,01h,0b3h,0b3h,0e8h,3bh
-	db	00h,0bah,4fh,01h,0b3h,0b3h,0e8h,33h
-	db	00h,0beh,76h,07h,0b9h,06h,00h,0b0h
-	db	59h,0e8h,0dh,03h,0ach,04h,20h,0e8h
-	db	1ah,03h,0ach,04h,20h,0e8h,14h,03h
-	db	0ach,0e8h,10h,03h,0e2h,0e9h,0beh,88h
-	db	07h,0bah,00h,01h,0e9h,37h,01h,51h
-	db	0e8h,51h,01h,8ah,0c3h,0e8h,0fch,02h
-	db	0e2h,0f9h,59h,0c3h,51h,52h,0e8h,43h
-	db	01h,8ah,0c3h,0e8h,0eeh,02h,5ah,0feh
-	db	0c6h,0e2h,0f2h,59h,0c3h,0e8h,0c2h,02h
+	db	01h
+
+l03af:
+	mov	cl,00h
+	mov	dl,00h
+	int	0e0h
+
+l03b5:
+	int	11h
+	mov	cl,06h
+	shr	ax,cl
+	and	ax,03h
+	inc	ax
+	mov	.data_org,ax
+	ret
+
+l03c3:
+	mov	si,0762h
+	call	l0567
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	l041d
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	l041d
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	l041d
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	l042a
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	l042a
+	mov	si,0776h
+	mov	cx,06h
+
+l03fd:
+	mov	al,59h
+	call	l070f
+	lodsb
+	add	al,20h
+	call	l0722
+	lodsb
+	add	al,20h
+	call	l0722
+	lodsb
+	call	l0722
+	loop	l03fd
+	mov	si,0788h
+	mov	dx,0100h
+	jmp	l0554
+
+l041d:
+	push	cx
+	call	l0572
+
+l0421:
+	mov	al,bl
+	call	l0722
+	loop	l0421
+	pop	cx
+	ret
+
+l042a:
+	push	cx
+
+l042b:
+	push	dx
+	call	l0572
+	mov	al,bl
+	call	l0722
+	pop	dx
+	inc	dh
+	loop	l042b
+	pop	cx
+	ret
+
+l043b:
+	db	0e8h,0c2h,02h
 	db	0b6h,04h,0e8h,11h,01h,8bh,0eh,34h
 	db	07h,41h,51h,0beh,1eh,0ah,0e8h,67h
 	db	00h,8bh,36h,43h,07h,0b6h,06h,0e8h
@@ -137,52 +230,180 @@ l0126:
 	db	0d4h,0ah,0dh,30h,30h,80h,0fch,30h
 	db	75h,04h,0b4h,20h,86h,0e0h,50h,8ah
 	db	0c4h,0e8h,70h,02h,58h,0e9h,6ch,02h
-	db	0ach,8ah,0f0h,0ach,8ah,0d0h,0e8h,0b3h
-	db	00h,56h,0beh,0c6h,07h,0e8h,0a1h,00h
-	db	5eh,0ach,0e8h,57h,02h,0ach,0e8h,53h
-	db	02h,56h,0beh,0e8h,07h,0e8h,91h,00h
-	db	5eh,0e8h,8dh,00h,0e2h,0dah,0c3h,0beh
+
+l04b6:
+	lodsb
+	mov	dh,al
+	lodsb
+	mov	dl,al
+	call	l0572
+	push	si
+	mov	si,07c6h
+	call	l0567
+	pop	si
+	lodsb
+	call	l0722
+	lodsb
+	call	l0722
+	push	si
+	mov	si,07e8h
+	call	l0567
+	pop	si
+	call	l0567
+	loop	l04b6
+	ret
+
+l04dd:
+	db	0beh
 	db	1ch,09h,0ebh,03h,0beh,41h,09h,0a0h
 	db	40h,07h,3ah,06h,3fh,07h,74h,01h
 	db	0c3h,0b0h,07h,0e8h,2eh,02h,0b6h,07h
 	db	0e8h,15h,00h,0e8h,21h,02h,0b6h,07h
-	db	0b2h,01h,0e8h,6fh,00h,0b9h,4eh,00h
-	db	0b0h,20h,0e8h,17h,02h,0e2h,0f9h,0c3h
-	db	0b0h,72h,0e8h,0fch,01h,0e8h,3eh,00h
-	db	0b0h,75h,0e9h,0f4h,01h,56h,0beh,0cbh
+
+l04fe:
+	mov	dl,01h
+	call	l0572
+	mov	cx,4eh
+
+l0506:
+	mov	al,20h
+	call	l0722
+	loop	l0506
+	ret
+
+l050e:
+	mov	al,72h
+	call	l070f
+	call	l0554
+	mov	al,75h
+	jmp	l070f
+
+l051b:
+	db	56h,0beh,0cbh
 	db	09h,0bah,08h,07h,0e8h,4bh,0ffh,0beh
 	db	0f3h,09h,0bah,15h,09h,0e8h,36h,00h
 	db	0e8h,0ech,01h,24h,0dfh,3ch,59h,74h
 	db	0bh,3ch,4eh,74h,0ah,0b0h,07h,0e8h
 	db	0e2h,01h,0ebh,0ech,0f8h,0ebh,01h,0f9h
 	db	9ch,0b6h,07h,0e8h,0b2h,0ffh,0b6h,09h
-	db	0e8h,0adh,0ffh,9dh,5eh,0c3h,1eh,07h
-	db	8bh,0feh,0b0h,00h,0b9h,51h,00h,0fch
-	db	0f2h,0aeh,0d1h,0e9h,8ah,0d1h,0e8h,0bh
-	db	00h,0fch,0ach,0e8h,0b6h,01h,0ach,84h
-	db	0c0h,75h,0f8h,0c3h,0b0h,59h,0e8h,98h
-	db	01h,81h,0c2h,20h,20h,8ah,0c6h,0e8h
-	db	0a2h,01h,8ah,0c2h,0e9h,9dh,01h,0c6h
-	db	06h,3ch,07h,0ffh,51h,57h,0e8h,8eh
-	db	01h,1eh,07h,8ah,0c4h,2ch,3ah,0f2h
-	db	0aeh,5fh,59h,74h,07h,0b0h,07h,0e8h
-	db	82h,01h,0ebh,0e3h,8ah,0d8h,0b7h,00h
-	db	0b6h,06h,0e9h,53h,0ffh,0b1h,0bh,0cdh
-	db	0e0h,84h,0c0h,74h,06h,0b1h,01h,0cdh
-	db	0e0h,0ebh,0f2h,0c3h,0c7h,06h,47h,07h
-	db	0ffh,0ffh,0b1h,35h,0bah,45h,07h,0cdh
-	db	0e0h,0feh,0c0h,74h,2bh,0a1h,45h,07h
-	db	05h,0ffh,00h,0b0h,00h,0a3h,45h,07h
-	db	0feh,0c4h,0a3h,4ah,07h,8ah,26h,48h
-	db	07h,80h,0ech,01h,76h,12h,0a3h,47h
-	db	07h,0feh,0cch,88h,26h,4ch,07h,0b1h
-	db	38h,0bah,45h,07h,0cdh,0e0h,0feh,0c0h
-	db	0c3h,0c6h,06h,49h,07h,00h,0b1h,39h
-	db	0bah,45h,07h,0cdh,0e0h,0c3h,0c7h,06h
-	db	53h,07h,57h,07h,8ch,1eh,55h,07h
-	db	1eh,07h,2bh,0c0h,8eh,0d8h,0beh,78h
-	db	00h,0bfh,4fh,07h,0fch,0a5h,0a5h,06h
-	db	1fh,0c3h,0beh,53h,07h,0ebh,03h,0beh
+	db	0e8h,0adh,0ffh,9dh,5eh,0c3h
+
+l0554:
+	push	ds
+	pop	es
+	mov	di,si
+	mov	al,00h
+	mov	cx,51h
+	cld
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+	call	l0572
+
+l0567:
+	cld
+	lodsb
+
+l0569:
+	call	l0722
+	lodsb
+	test	al,al
+	jnz	l0569
+	ret
+
+l0572:
+	mov	al,59h
+	call	l070f
+	add	dx,2020h
+	mov	al,dh
+	call	l0722
+	mov	al,dl
+	jmp	l0722
+
+l0585:
+	mov	byte ptr .073ch,0ffh
+	push	cx
+	push	di
+	call	l071d
+	push	ds
+	pop	es
+	mov	al,ah
+	sub	al,3ah
+	repne	scasb
+	pop	di
+	pop	cx
+	jz	l05a2
+	mov	al,07h
+	call	l0722
+	jmps	l0585
+
+l05a2:
+	mov	bl,al
+	mov	bh,00h
+	mov	dh,06h
+	jmp	l04fe
+
+l05ab:
+	mov	cl,0bh
+	int	0e0h
+	test	al,al
+	jz	l05b9
+	mov	cl,01h
+	int	0e0h
+	jmps	l05ab
+
+l05b9:
+	ret
+
+l05ba:
+	mov	word ptr .0747h,0ffffh
+	mov	cl,35h
+	mov	dx,0745h
+	int	0e0h
+	inc	al
+	jz	l05f6
+	mov	ax,.0745h
+	add	ax,0ffh
+	mov	al,00h
+	mov	.0745h,ax
+	inc	ah
+	mov	.074ah,ax
+	mov	ah,.0748h
+	sub	ah,01h
+	jna	l05f6
+	mov	.0747h,ax
+	dec	ah
+	mov	.074ch,ah
+	mov	cl,38h
+	mov	dx,0745h
+	int	0e0h
+	inc	al
+
+l05f6:
+	ret
+
+l05f7:
+	db	0c6h,06h,49h,07h,00h,0b1h,39h
+	db	0bah,45h,07h,0cdh,0e0h,0c3h
+
+l0604:
+	mov	word ptr .0753h,0757h
+	mov	word ptr .0755h,ds
+	push	ds
+	pop	es
+	sub	ax,ax
+	mov	ds,ax
+	mov	si,78h
+	mov	di,074fh
+	cld
+	movsw
+	movsw
+	push	es
+	pop	ds
+	ret
+
+l0620:
+	db	0beh,53h,07h,0ebh,03h,0beh
 	db	4fh,07h,2bh,0c0h,8eh,0c0h,0bfh,78h
 	db	00h,0fch,0a5h,0a5h,0b4h,00h,0cdh,13h
 	db	0c3h,0c6h,06h,38h,07h,00h,0c6h,06h
@@ -210,13 +431,53 @@ l0126:
 	db	0dbh,8ah,26h,36h,07h,0b0h,08h,8ah
 	db	2eh,38h,07h,0b6h,00h,80h,0fdh,28h
 	db	72h,07h,0f6h,0ddh,80h,0c5h,4fh,0b6h
-	db	01h,0c3h,0b9h,01h,03h,0bah,4eh,16h
-	db	0bbh,07h,00h,0b8h,00h,07h,0cdh,10h
-	db	0c3h,50h,0b0h,1bh,0e8h,0dh,00h,58h
-	db	0ebh,0ah,0b4h,01h,0cdh,16h,0c3h,0b4h
-	db	00h,0cdh,16h,0c3h,53h,51h,52h,56h
-	db	57h,8ah,0d0h,0b1h,06h,0cdh,0e0h,5fh
-	db	5eh,5ah,59h,5bh,0fch,0c3h,00h,00h
+	db	01h,0c3h
+
+l0700:
+	mov	cx,0301h
+	mov	dx,164eh
+	mov	bx,07h
+	mov	ax,0700h
+	int	10h
+	ret
+
+l070f:
+	push	ax
+	mov	al,1bh
+	call	l0722
+	pop	ax
+	jmps	l0722
+
+l0718:
+	db	0b4h,01h,0cdh,16h,0c3h
+
+l071d:
+	mov	ah,00h
+	int	16h
+	ret
+
+l0722:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	mov	dl,al
+	mov	cl,06h
+	int	0e0h
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+l0734:
+
+; ---- data ----
+	dseg
+	db	00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
@@ -512,5 +773,4 @@ l0126:
 	db	00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h
 
-; ---- data ----
 	end

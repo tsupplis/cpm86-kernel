@@ -10,7 +10,8 @@ import sys
 
 from .build import verified_write
 from .disasm import disasm
-from .flow import CODE_START, analyse, runs
+from .flow import CODE_START, runs
+from .holes import reach
 from .source import get_bounds, line_size, split_db_line
 from .text import lbl, read_text
 
@@ -91,8 +92,7 @@ def splice(lines, wanted, first_size):
 
 def cmd_labels(binf, a86, base, verify=True):
     lines = read_text(a86).split('\n')
-    _, end = get_bounds(lines)
-    seen, targets = analyse(binf, base, end)
+    seen, targets = reach(binf, base, lines)
     edges = {x for a, e in runs(seen) for x in (a, e) if x < end}
     size = first_insn_size(binf, base)
     new, skipped = splice(lines, targets | edges, size)
