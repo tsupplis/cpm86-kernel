@@ -67,7 +67,34 @@ def code_db_lines(lines, first_size):
     return out
 
 
-def splice(lines, wanted, first_size):
+def decoded_hit(lines, t, binf, base):
+    """Index of the source line holding the instruction at address t, or None.
+
+    For a target inside a region that is already instructions: the enclosing
+    label gives the region start, the binary's disassembly gives each
+    instruction's address, and decoded regions are one line per instruction.
+    """
+    labs = [(i, int(m.group(1), 16)) for i, m in
+            ((i, LABEL.match(ln)) for i, ln in enumerate(lines)) if m]
+    below = [(i, a) for i, a in labs if a < t]
+    if not below:
+        return None
+    i0, a0 = max(below, key=lambda x: x[1])
+    ins = disasm(binf, a0, t + 1, base)
+    if not ins or ins[-1][0] != t:
+        return None
+    body = []
+    for k in range(i0 + 1, len(lines)):
+        ln = lines[k]
+        if LABEL.match(ln) or re.match(r'^(; ---- data|\s*dseg\b|\s*end\s*$)', ln):
+            break
+        if ln.strip() and not ln.strip().startswith(';'):
+            body.append(k)
+    n = len(ins) - 1
+    return body[n] if n < len(body) else None
+
+
+def splice(lines, wanted, first_size, binf=None, base=0):
     """(new lines, [addresses that could not be labelled])."""
     lines = list(lines)
     have = {int(m.group(1), 16) for m in map(LABEL.match, lines) if m}
@@ -78,7 +105,12 @@ def splice(lines, wanted, first_size):
         hit = next(((i, a) for i, a, sz in code_db_lines(lines, first_size)
                     if a <= t < a + sz), None)
         if hit is None:
-            skipped.append(t)
+            k = decoded_hit(lines, t, binf, base) if binf else None
+            if k is None:
+                skipped.append(t)
+                continue
+            lines[k:k] = ['', lbl(t) + ':']
+            have.add(t)
             continue
         i, a = hit
         if a == t:
@@ -92,10 +124,11 @@ def splice(lines, wanted, first_size):
 
 def cmd_labels(binf, a86, base, verify=True):
     lines = read_text(a86).split('\n')
+    _, end = get_bounds(lines)
     seen, targets = reach(binf, base, lines)
     edges = {x for a, e in runs(seen) for x in (a, e) if x < end}
     size = first_insn_size(binf, base)
-    new, skipped = splice(lines, targets | edges, size)
+    new, skipped = splice(lines, targets | edges, size, binf, base)
     added = sum(1 for ln in new if LABEL.match(ln)) - \
         sum(1 for ln in lines if LABEL.match(ln))
     if added == 0:
@@ -106,5 +139,5 @@ def cmd_labels(binf, a86, base, verify=True):
                           'edges), byte-identical'
                           % (added, len(targets), len(edges)))
     if skipped:
-        print('not labelled (inside already-decoded code): ' +
-              ' '.join('%04x' % t for t in skipped))
+        print('not labelled (not on an instruction boundary of decoded code): '
+              + ' '.join('%04x' % t for t in skipped))

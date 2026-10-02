@@ -83,7 +83,7 @@ def assemble_listing(d, name):
     errs = []
     for i, ln in enumerate(rows[:-1]):
         if 'ERROR NO' in ln:
-            a = re.match(r'^ ?([0-9A-F]{4}) {2,}', rows[i + 1])
+            a = re.match(r'^ ([0-9A-F]{4}) ', rows[i + 1])
             errs.append((int(a.group(1), 16) if a else None, ln.strip(),
                          rows[i + 1].strip()))
     return (int(m.group(1)) if m else -1), errs

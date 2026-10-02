@@ -4,6 +4,7 @@ import re
 import sys
 
 from . import __doc__ as USAGE
+from .annotate import cmd_annotate
 from .boundary import cmd_boundary
 from .decode import cmd_decode
 from .holes import cmd_holes
@@ -14,7 +15,7 @@ from .scaffold import cmd_scaffold
 from .splice import cmd_labels
 
 BIN_CMDS = {'boundary', 'gen', 'patch', 'data', 'mkvars', 'labels', 'decode',
-            'holes'}
+            'holes', 'annotate'}
 
 
 def opt(a, flag):
@@ -56,6 +57,11 @@ def main():
         cmd_decode(a[1], a[2], base)
     elif sub == 'holes':
         cmd_holes(a[1], a[2], base)
+    elif sub == 'annotate':
+        what = a[3] if len(a) > 3 else None
+        if what not in (None, 'text', 'tables'):
+            sys.exit('annotate takes `text` or `tables` (or nothing for both)')
+        cmd_annotate(a[1], a[2], base, what, verify)
     elif sub == 'gen':
         cmd_gen(a[1], a[2], int(a[3], 16), int(a[4], 16), base)
     elif sub == 'patch':

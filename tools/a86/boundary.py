@@ -53,7 +53,8 @@ def apply_boundary(binf, a86, base, lines, addr, verify):
     if MARK not in lines:
         sys.exit('no "%s" marker in the source' % MARK)
 
-    new, skipped = splice(lines, {addr}, first_insn_size(binf, base))
+    new, skipped = splice(lines, {addr}, first_insn_size(binf, base), binf,
+                          base)
     if skipped:
         sys.exit('%04xh is inside already-decoded code; cannot split there'
                  % addr)

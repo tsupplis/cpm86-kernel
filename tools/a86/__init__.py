@@ -11,6 +11,12 @@ binary is still byte-identical to the original.
       dump.  Runs `make check` once to prove the skeleton is byte-identical
       before any real reconstruction work starts.
 
+  a86tool.py annotate <bin> <a86> [text|tables] [--no-verify]
+      Quote strings and turn jump tables into dw, only where there is
+      evidence: text of 8+ printable bytes on plain db lines, and tables that
+      reached code indexes through an indirect jmp/call with every entry
+      already labelled.  Otherwise it changes nothing and says why.
+
   a86tool.py holes <bin> <a86>
       Classify the unreached bytes in the code (text, word tables, unknown)
       and follow table entries as new entry points.  Read-only.
