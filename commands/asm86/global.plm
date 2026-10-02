@@ -17,9 +17,9 @@ do;
         of the assmembler.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$INCLUDE (:F1:SUBR2.EXT)
+$include (macro.lit)
+$include (struc.lit)
+$include (subr2.ext)
 
 dcl
 

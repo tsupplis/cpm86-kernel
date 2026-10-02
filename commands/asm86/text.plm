@@ -1,7 +1,7 @@
 $title ('TEXT MODULE')
 text:
 do;
-$include (:f1:macro.lit)
+$include (macro.lit)
 
 /*
 
@@ -22,12 +22,12 @@ dcl yes byte public data ('Y'),
 /* Text strings: */
 
 dcl
-initials(*)  byte public data('CP/M ASM86 1.1N SOURCE: ',0),
+initials(*)  byte public data('CP/M ASM86 1.1N (10.2026) SOURCE: ',0),
 pagetext(*)  byte public data(' PAGE',0),
 endtext(*)   byte public data('END OF ASSEMBLY.  ',
                           'NUMBER OF ERRORS: ',0),
 USEFACTOR (*) BYTE PUBLIC DATA ('.  USE FACTOR: ',0),
-asm86text(*) byte public data(cr,lf,'CP/M 8086 ASSEMBLER VER 1.1N',
+asm86text(*) byte public data(cr,lf,'CP/M 8086 ASSEMBLER VER 1.1N (10.2026)',
                               cr,lf,0),
 parerrtext(*) byte public data(cr,lf,'PARAMETER ERROR',cr,lf,0),
 openerrtext(*) byte public data(cr,lf,'NO FILE',0),
@@ -38,6 +38,18 @@ CLOSEERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'CANNOT CLOSE',0),
 SYMBFULLERRTEXT (*) BYTE PUBLIC DATA (CR,LF,'SYMBOL TABLE OVERFLOW',0),
 usbreaktext(*) byte public data(cr,' USER BREAK. OK(Y/N)? ',0),
 pass0text  (*) byte public data('END OF PASS 1',cr,lf,0),
-pass1text  (*) byte public data('END OF PASS 2',cr,lf,0);
+pass1text  (*) byte public data('END OF PASS 2',cr,lf,0),
+/* PATCH: usage hint printed when no source file is given */
+usagetext  (*) byte public data(
+  cr,lf,'USAGE: ASM86 name[.A86] [$[A|H|P|S][d:][F[I|D]]]',
+  cr,lf,'  name      source file (default type .A86)',
+  cr,lf,'  $Ad:      source on drive d:',
+  cr,lf,'  $Hd:      hex output on drive d:',
+  cr,lf,'  $Pd:      print/listing on drive d:',
+  cr,lf,'  $Sd:      symbol file on drive d:',
+  cr,lf,'  $FI       Intel hex output format',
+  cr,lf,'  $FD       Digital Research hex output format (default)',
+  cr,lf,0);
+/* END PATCH */
 
 end$module text;

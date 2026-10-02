@@ -23,13 +23,13 @@ do;
         of errors throughout the assembly.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:ermod.lit)
-$include (:f1:subr1.ext)
-$include (:f1:subr2.ext)
-$include (:f1:print.ext)
-$include (:f1:global.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (ermod.lit)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (print.ext)
+$include (global.ext)
 
 
 /*       Error messages :       */

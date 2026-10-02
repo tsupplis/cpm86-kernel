@@ -1,9 +1,9 @@
 $title ('SUBROUTINE MODULE - PART 2')
 subr2:
 do;
-$include(:f1:macro.lit)
-$INCLUDE (:F1:STRUC.LIT)
-$include(:f1:io.ext)
+$include(macro.lit)
+$include (struc.lit)
+$include(io.ext)
 
 /*
 
@@ -34,6 +34,9 @@ OUTFILENAME: PROCEDURE (PTR);
   DO I = 9 TO 11;
     CALL WRITE$CONSOLE (X.FCBBLOCK (I) AND 7FH);
   END;
+  /* PATCH: set CP/M 3+ return code: fatal I/O error */
+  CALL SET$RETURN$CODE (0FF00H);
+  /* END PATCH */
   CALL SYSTEMRESET;
 END OUTFILENAME;
 

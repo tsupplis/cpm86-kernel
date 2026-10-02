@@ -12,16 +12,16 @@ do;
       which is not present in the already existing
       system. */
 
-$include (:f1:macro.lit)
-$include (:f1:equals.lit)
-$include (:f1:struc.lit)
-$include (:f1:cmacd.lit)
-$include (:f1:ermod.lit)
-$include (:f1:scan.ext)
-$include (:f1:ermod.ext)
-$include (:f1:cm2.ext)
-$include (:f1:cm.lit)
-$include (:f1:global.ext)
+$include (macro.lit)
+$include (equals.lit)
+$include (struc.lit)
+$include (cmacd.lit)
+$include (ermod.lit)
+$include (scan.ext)
+$include (ermod.ext)
+$include (cm2.ext)
+$include (cm.lit)
+$include (global.ext)
 
 $eject
 

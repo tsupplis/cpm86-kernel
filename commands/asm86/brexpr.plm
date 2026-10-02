@@ -8,10 +8,10 @@ brexpr:
 */
 
 do;
-$include (:f1:macro.lit)
-$include (:f1:brexpr.x86)
-$include (:f1:ermod.ext)
-$include (:f1:exglob.ext)
+$include (macro.lit)
+$include (brexpr.x86)
+$include (ermod.ext)
+$include (exglob.ext)
 $eject
 
 /* compute index expression within brackets */

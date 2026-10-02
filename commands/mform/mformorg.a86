@@ -1,16 +1,15 @@
 ;***********************************************************
-;  MFORM.A86 - CompuPro "MXdisk" memory drive formatter
+;  MXFORMAT.A86 - CompuPro "MXdisk" memory drive formatter
 ;  Reconstructed from ndisasm output, for RASM-86 (CP/M-86)
 ;
-;  Build:   pcdev_rasm86 mform
-;           pcdev_linkcmd mform [$sz, nofill, data[additional[200]]]
-;  (additional[200] = 200h extra paragraphs = 2000h bytes past CMD image;
-;   secbuf at 280h, dirbuf at 400h, worst-case dir 2000h -> total 2400h)
+;  Build:   RASM86 MXFORMAT
+;           GENCMD MXFORMAT DATA[M900]
+;  (M = minimum extra paragraphs, hex; the directory image at
+;   DS:0400h needs (DRM+1)*32 bytes, adjust as needed)
 ;
-;  Usage:   MFORM drive[option]
-;           X         confirmation required
-;           X!        LLO present no prompt
-;           X-        forced format no prompt
+;  Usage:   MXFORMAT X     format drive X after Y/N confirm
+;           MXFORMAT X!    format only if signature 'LLO' is
+;                          not already present (no prompt)
 ;***********************************************************
 
 ; ---- BDOS / BIOS numbers -----------------------------------
@@ -41,11 +40,10 @@ bio_setdmab     equ     17
         org     0
 
         jmp     start
-cprbanner db    'REV 1.2 2-9-83COPYRIGHT (C) 1982 COMPUPRO div. GODBOUT ELECTRONICS'
+banner  db      'REV 1.2 2-9-83COPYRIGHT (C) 1982 COMPUPRO div. GODBOUT ELECTRONICS'
 
 ; ---- parse command tail at DS:80h --------------------------
 start:
-        mov     quietflag,0
         mov     bx,80h
         mov     cl,[bx]                 ; tail length
 skipsp:
@@ -72,14 +70,6 @@ drvok:
         mov     al,[bx]
         cmp     al,'!'
         jz      nocnf
-        cmp     al,'-'
-        jnz     notquiet
-        mov     quietflag,1             ; '-' suffix: quiet mode
-        jmps    docnf
-notquiet:
-        mov     dx,offset msg_banner    ; banner before confirm prompt
-        call    print
-docnf:
         call    confirm
 nocnf:
         mov     mtflag,0
@@ -189,12 +179,8 @@ sigchk:
 
 ; ---- do the format -----------------------------------------
 dofmt:
-        mov     al,quietflag
-        or      al,al
-        jnz     dofmt1
         mov     dx,offset msgfmt
         call    print
-dofmt1:
         pop     es
         pop     bx                      ; BX = DPB-1
         inc     bx
@@ -396,11 +382,8 @@ baddrv:
         mov     dx,offset msginv
         jmps    pmsg
 nodrive:
-        mov     dx,offset msg_banner
-        call    print
-        mov     dx,offset msg_usage
-        call    print
-        jmps    done
+        mov     dx,offset msgnodrv
+        jmps    pmsg
 qerr:
         mov     dx,offset msgqerr
         jmps    pmsg
@@ -495,21 +478,15 @@ qname     db    'MXdisk  '              ; 10Dh  queue name
 xiosoff   dw    1003h                   ; 11Ah  far ptr: offset
 xiosseg   dw    0                       ; 11Ch          segment (runtime)
 
-msg_banner db   0dh,0ah,'CP/M-86 MFORM VER 1.0N (10.2026)',0dh,0ah,0dh,0ah,'$'
-msg_usage  db   'USAGE: MFORM drive[option]',0dh,0ah
-           db   '  X         confirmation required',0dh,0ah
-           db   '  X!        LLO present no prompt',0dh,0ah
-           db   '  X-        forced format no prompt',0dh,0ah,'$'
-msginv    db    'INVALID DRIVE',0dh,0ah,'$'
-msgnodrv  db    'NO DRIVE SPECIFIED',0dh,0ah,'$'
+msginv    db    'INVALID DRIVE',0dh,0ah,'$'                        ; 11Eh
+msgnodrv  db    'NO DRIVE SPECIFIED',0dh,0ah,'$'                   ; 12Eh
 msgnotmem db    'DRIVE SPECIFIED IS NOT A MEMORY DRIVE',0dh,0ah,'$' ; 143h
 msgfmt    db    0dh,0ah,'FORMATTING MEMORY DRIVE',0ah,0dh,'$'      ; 16Bh
 msgcnf    db    'CONFIRM DESTROY ALL FILES ON THE MEMORY DRIVE (Y or N)? $' ; 187h
 msgqerr   db    0dh,0ah,'ERROR IN GETTING MXdisk QUEUE','$'        ; 1C0h
 
-quietflag db    0                       ; 0 = normal, 1 = quiet (no banner/msgs)
-biosblk   db    0,0,0,0,0               ; func, CX, DX for BDOS 50
-drive     db    0
+biosblk   db    0,0,0,0,0               ; 1E0h  func, CX, DX for BDOS 50
+drive     db    0                       ; 1E5h
 dirsecs   dw    0                       ; 1E6h  directory sector count
 loopctr   dw    0                       ; 1E8h
 spt       dw    0                       ; 1EAh

@@ -1059,7 +1059,7 @@ plmstart:
          if cnt = 0 then
          do;
             level = 0;
-            call print$console$buf(.(cr,lf,'HELP UTILITY V1.1',cr,lf,lf,
+            call print$console$buf(.(cr,lf,'CP/M-86 HELP VER 1.1N (10.2026)',cr,lf,lf,
                                            'At "HELP>" enter ',
                                            'topic {,subtopic}...',cr,lf,lf,
                                            'EXAMPLE:  HELP> DIR EXAMPLES',

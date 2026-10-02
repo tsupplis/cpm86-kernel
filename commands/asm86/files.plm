@@ -74,14 +74,14 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:dev.lit)
-$include (:f1:io.ext)
-$include (:f1:subr1.ext)
-$include (:f1:subr2.ext)
-$INCLUDE (:F1:TEXT.EXT)
-$include (:f1:global.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (dev.lit)
+$include (io.ext)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (text.ext)
+$include (global.ext)
 
 dcl
 diskunit                byte,
@@ -331,6 +331,13 @@ closehex: proc public;
   call outputclose(.hexfile);
 end closehex;
 
+/* PATCH: delete the hex output file (called on assembly failure) */
+deletehex: proc public;
+  call disk$select(hexfile.disk);
+  call delete$file(.hexfile.fcbblock);
+end deletehex;
+/* END PATCH */
+
 closeprint: proc public;
   call outputclose(.printfile);
 end closeprint;
@@ -399,6 +406,10 @@ filesetup:      proc    byte public;
   call copy(8,.fcb(fn),.hexfile.fcbblock(fn));
   call copy(8,.fcb(fn),.printfile.fcbblock(fn));
   call copy(8,.fcb(fn),.symbolfile.fcbblock(fn));
+
+  /* PATCH: treat a blank filename (no argument given) as a parameter error */
+  if fcb(fn) = space then return false;
+  /* END PATCH */
 
   if FCB (FT) <> SPACE then$do       /* pick up specified source file type */
     call copy(3,.fcb(ft),.sourcefile.fcbblock(ft));

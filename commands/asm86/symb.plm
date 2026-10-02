@@ -33,16 +33,16 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:equals.lit)
-$include (:f1:struc.lit)
-$INCLUDE (:F1:DEV.LIT)
-$include (:f1:mnem.ext)
-$include (:f1:subr1.ext)
-$include (:f1:subr2.ext)
-$include (:f1:files.ext)
-$INCLUDE (:F1:TEXT.EXT)
-$INCLUDE (:F1:IO.EXT)
+$include (macro.lit)
+$include (equals.lit)
+$include (struc.lit)
+$include (dev.lit)
+$include (mnem.ext)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (files.ext)
+$include (text.ext)
+$include (io.ext)
 DECLARE SYMBOLDEVICE BYTE EXTERNAL;
 $eject
 
@@ -130,6 +130,9 @@ new: proc(lg,pt1,pt2,headlg,pt3) byte;
       symb based freept symbolhead;
   if freept > overflowlimit - (lg+headlg) then$DO
     CALL OUTTEXT (.SYMBFULLERRTEXT);
+    /* PATCH: set CP/M 3+ return code: fatal */
+    CALL SET$RETURN$CODE (0FF00H);
+    /* END PATCH */
     CALL SYSTEM$RESET;
   END$IF;
   current=.entrytab(hash(lg,.ascii(0)));

@@ -41,8 +41,8 @@ do;
 /*      definitions (literals).         */
 
 
-$include(:f1:macro.lit)
-$include(:f1:equals.lit)
+$include(macro.lit)
+$include(equals.lit)
 
 
 /*      Predefined numbers:     */

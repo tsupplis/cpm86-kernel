@@ -25,12 +25,12 @@ do;
         and prints the output code on the print line.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:outp.lit)
-$include (:f1:subr2.ext)
-$include (:f1:files.ext)
-$include (:f1:global.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (outp.lit)
+$include (subr2.ext)
+$include (files.ext)
+$include (global.ext)
 
 
 dcl

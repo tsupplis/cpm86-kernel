@@ -36,6 +36,16 @@ system$reset: procedure public;
   call mon1 (0,0);
 end system$reset;
 
+/* PATCH: set CP/M 3+ program return code (BDOS function 108 / 6Ch).
+   On CP/M 2.x the call is skipped — VERSION low byte < 30h.
+   Fatal codes: 0FF00h and above.  Clean exit: 0000h. */
+set$return$code: procedure (retcode) public;
+  declare retcode address;
+  if low (version) >= 30h then
+    call mon1 (6ch, retcode);
+end set$return$code;
+/* END PATCH */
+
 read$console: procedure byte public;
   return mon2 (1,0);
 end read$console;

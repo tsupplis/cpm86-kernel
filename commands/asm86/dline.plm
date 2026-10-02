@@ -21,22 +21,22 @@ do;
         line.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:equals.lit)
-$include (:f1:ermod.lit)
-$include (:f1:subr1.ext)
-$include (:f1:subr2.ext)
-$include (:f1:scan.ext)
-$include (:f1:print.ext)
-$include (:f1:instr.ext)
-$include (:f1:pseud1.ext)
-$include (:f1:pseud2.ext)
-$include (:f1:ermod.ext)
-$include (:f1:symb.ext)
-$include (:f1:exglob.ext)
-$include (:f1:dline.x86)
-$include (:f1:cm.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (equals.lit)
+$include (ermod.lit)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (scan.ext)
+$include (print.ext)
+$include (instr.ext)
+$include (pseud1.ext)
+$include (pseud2.ext)
+$include (ermod.ext)
+$include (symb.ext)
+$include (exglob.ext)
+$include (dline.x86)
+$include (cm.ext)
 
 
 

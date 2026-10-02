@@ -19,13 +19,13 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$INCLUDE (:F1:DEV.LIT)
-$include (:f1:files.ext)
-$include (:f1:subr2.ext)
-$include (:f1:global.ext)
-$include (:f1:text.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (dev.lit)
+$include (files.ext)
+$include (subr2.ext)
+$include (global.ext)
+$include (text.ext)
 
 dcl
 pageno          byte,   /* current page no */

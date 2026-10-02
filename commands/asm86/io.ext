@@ -36,6 +36,13 @@ declare endbuf address external;
     procedure external;
     end system$reset;
 
+  /* PATCH: set CP/M 3+ program return code (BDOS function 108 / 6Ch) */
+  set$return$code:
+    procedure (retcode) external;
+    declare retcode address;
+    end set$return$code;
+  /* END PATCH */
+
   read$console:
     procedure byte external;
     end read$console;

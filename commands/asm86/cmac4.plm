@@ -8,10 +8,10 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:cmacd.lit)
-$include (:f1:equals.lit)
-$include (:f1:cmac.lit)
+$include (macro.lit)
+$include (cmacd.lit)
+$include (equals.lit)
+$include (cmac.lit)
 
 dcl
 

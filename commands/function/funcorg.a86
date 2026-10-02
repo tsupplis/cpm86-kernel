@@ -799,7 +799,7 @@ scroff	db	1bh,45h,1bh,76h,1bh
 corner	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h
 	db	02h,4fh,0b5h,17h,00h,0c0h,17h,4fh,0d9h
 banner	db	'CP/M-86  Function Key Programmer for the'
-	db	' IBM PC version 1.0N',00h
+	db	' IBM PC   version 1.0',00h
 ; Three NUL-terminated lines each, printed together by showhelp.
 msgtype	db	'Type the Function Key you wish to prog','ram,'
 	db	00h,'or ESC to display the other set of keys,'

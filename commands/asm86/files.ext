@@ -52,6 +52,11 @@ end close$include;
 closehex: proc external;
 end closehex;
 
+/* PATCH: delete the hex output file (called on assembly failure) */
+deletehex: proc external;
+end deletehex;
+/* END PATCH */
+
 closeprint: proc external;
 end closeprint;
 

@@ -1,13 +1,15 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
 
-TOOLS=function.cmd
+TOOLS=function.cmd funcorg.cmd
 
 SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
 function.obj: function.a86
+
+functorg.obj: funcorg.a86
 
 # function is an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
@@ -30,7 +32,7 @@ function.obj: function.a86
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/function.cmd
 
-check: function.cmd
+check: funcorg.cmd
 	cmp $< $(REF)
 	@echo "PASS: function.cmd is byte-identical to $(REF)"
 

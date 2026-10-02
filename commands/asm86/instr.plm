@@ -7,18 +7,18 @@ do;
         by a number of PREFIX-instructions.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:cmacd.lit)
-$include (:f1:equals.lit)
-$include (:f1:ermod.lit)
-$include (:f1:subr1.ext)
-$include (:f1:expr.ext)
-$include (:f1:symb.ext)
-$include (:f1:scan.ext)
-$include (:f1:ermod.ext)
-$include (:f1:cmsubr.ext)
-$include (:f1:instr.x86)
+$include (macro.lit)
+$include (struc.lit)
+$include (cmacd.lit)
+$include (equals.lit)
+$include (ermod.lit)
+$include (subr1.ext)
+$include (expr.ext)
+$include (symb.ext)
+$include (scan.ext)
+$include (ermod.ext)
+$include (cmsubr.ext)
+$include (instr.x86)
 $eject
 dcl                   /* global variables */
 bytevar based macroptr byte,   /* byte within codemacro */

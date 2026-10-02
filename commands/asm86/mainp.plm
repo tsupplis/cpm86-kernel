@@ -25,22 +25,22 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:equals.lit)
-$include (:f1:dev.lit)
-$include (:f1:ermod.lit)
-$include (:f1:subr2.ext)
-$include (:f1:io.ext)
-$include (:f1:files.ext)
-$include (:f1:outp.ext)
-$include (:f1:scan.ext)
-$include (:f1:print.ext)
-$include (:f1:symb.ext)
-$include (:f1:ermod.ext)
-$include (:f1:mglob.ext)
-$include (:f1:text.ext)
-$include (:f1:dline.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (equals.lit)
+$include (dev.lit)
+$include (ermod.lit)
+$include (subr2.ext)
+$include (io.ext)
+$include (files.ext)
+$include (outp.ext)
+$include (scan.ext)
+$include (print.ext)
+$include (symb.ext)
+$include (ermod.ext)
+$include (mglob.ext)
+$include (text.ext)
+$include (dline.ext)
 
 DECLARE ASM86 LABEL PUBLIC;
 
@@ -115,6 +115,13 @@ pass2terminate: proc;  /* terminate pass 2 (last pass) */
   call symbterminate;    /* print symbols */
   if printdevice <> console then call printterminate (USEFACT);
   CALL CLOSEFILES;
+  /* PATCH: remove .h86 output if assembly had errors */
+  if errors <> 0 then call deletehex;
+  /* END PATCH */
+  /* PATCH: set CP/M 3+ return code: 0FF00h on errors, 0 on clean */
+  if errors <> 0 then call set$return$code (0ff00h);
+  else call set$return$code (0);
+  /* END PATCH */
   call outtext(.endtext);  /* END OF ASSEMBLY... */
   call decout(errors,.help(0));  /* print no of errors */
   call outtext(.help(2));
@@ -144,7 +151,12 @@ call globalinit;      /* initialize some globals */
 call outtext(.asm86text); /* CP/M 8086 ASSEMBLER.... */
 
 if not filesetup then$do
-  call outtext(.parerrtext);  /* PARAMETER ERROR */
+  /* PATCH: print usage instead of bare PARAMETER ERROR */
+  call outtext(.usagetext);
+  /* END PATCH */
+  /* PATCH: set CP/M 3+ return code: fatal */
+  call set$return$code (0ff00h);
+  /* END PATCH */
   CALL SYSTEMRESET;
 end$if;
 
@@ -162,7 +174,8 @@ do while (pass:=pass+1) < 3;
   call scaninit;
   call scan;
   do while not eofset;
-    if userbreak then$do
+    /* if userbreak then$do*/
+    if false then$do
       eofset=true;
       pass=3;
     else$do
@@ -181,6 +194,7 @@ do while (pass:=pass+1) < 3;
   end$case;
 end$while;
 
+/* PATCH: normal exit — return code already set in pass2terminate */
 call system$reset;
 
 end$module mainp;

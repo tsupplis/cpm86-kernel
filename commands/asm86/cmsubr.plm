@@ -24,16 +24,16 @@ do;
         physically send code bytes to the HEX output file.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:equals.lit)
-$include (:f1:cmacd.lit)
-$include (:f1:outp.lit)
-$include (:f1:scan.ext)
-$include (:f1:subr1.ext)
-$INCLUDE (:F1:SUBR2.EXT)
-$include (:f1:outp.ext)
-$include (:f1:ermod.ext)
-$include (:f1:cmsubr.x86)
+$include (macro.lit)
+$include (equals.lit)
+$include (cmacd.lit)
+$include (outp.lit)
+$include (scan.ext)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (outp.ext)
+$include (ermod.ext)
+$include (cmsubr.x86)
 $eject
 dcl                   /* global variables */
 bytevar  based   macroptr byte, /* variables within codemacros */

@@ -27,6 +27,9 @@ CLOSEERRTEXT (1) BYTE EXTERNAL,
 SYMBFULLERRTEXT (1) BYTE EXTERNAL,
 usbreaktext(1) byte external,
 pass0text  (1) byte external,
-pass1text  (1) byte external;
+pass1text  (1) byte external,
+/* PATCH: usage hint printed when no source file is given */
+usagetext  (1) byte external;
+/* END PATCH */
 
 $list

@@ -1,18 +1,23 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
 
-# Extra data paragraphs the loader must reserve past the CMD image, for the
-# sector buffer and the directory image.  0x1ff brings the data group's
-# minimum to 0x2400 (9216), the figure in the shipped base/mform.cmd.
-MFORM_ADD=1ff
+# Extra data paragraphs the loader must reserve past the CMD image.
+# Layout (DS-relative): base page 000h, data origin 100h, last static var
+#   ~1F0h (dmaoff), secbuf at 280h (128 bytes), dirbuf at 400h growing up.
+# CMD image ends at ~1F0h (nofill).  additional[NNN] appends NNN*16 bytes
+# past that end.  We must reach 2400h (400h + worst-case dir 2000h):
+#   2400h - 1F0h = 210h paragraphs minimum.  Use 220h for a small margin.
+MFORM_ADD=220
 
-TOOLS=mform.cmd
+TOOLS=mform.cmd mformorg.cmd
 
 SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
 mform.obj: mform.a86
+
+mformorg.obj: mformorg.a86
 
 %.cmd: %.obj
 	$(LINK86) $* '[$$sz, nofill, data[additional[$(MFORM_ADD)]]]'
@@ -30,7 +35,7 @@ mform.obj: mform.a86
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/mform.cmd
 
-check: mform.cmd
+check: mformorg.cmd
 	cmp $< $(REF)
 	@echo "PASS: mform.cmd is byte-identical to $(REF)"
 

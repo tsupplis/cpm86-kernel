@@ -20,18 +20,18 @@ do;
         pseudoinstruction.
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:equals.lit)
-$include (:f1:ermod.lit)
-$include (:f1:files.ext)
-$include (:f1:subr1.ext)
-$include (:f1:subr2.ext)
-$include (:f1:scan.ext)
-$include (:f1:print.ext)
-$include (:f1:expr.ext)
-$include (:f1:ermod.ext)
-$include (:f1:pseud2.x86)
+$include (macro.lit)
+$include (struc.lit)
+$include (equals.lit)
+$include (ermod.lit)
+$include (files.ext)
+$include (subr1.ext)
+$include (subr2.ext)
+$include (scan.ext)
+$include (print.ext)
+$include (expr.ext)
+$include (ermod.ext)
+$include (pseud2.x86)
 
 $eject
 /*************** COMMON SUBROUTINES *************/

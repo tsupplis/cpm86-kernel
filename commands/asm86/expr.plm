@@ -22,11 +22,11 @@ do;
          a single instruction operand. Both routines return
          FALSE if an error is found,otherwise true.
 */
-$include (:f1:macro.lit)
-$include (:f1:expr.x86)
-$include (:f1:ermod.ext)
-$include (:f1:exglob.ext)
-$INCLUDE (:F1:SUBR2.EXT)
+$include (macro.lit)
+$include (expr.x86)
+$include (ermod.ext)
+$include (exglob.ext)
+$include (subr2.ext)
 $eject
 /************** global variables: ************/
 
@@ -40,7 +40,7 @@ noforward    byte,    /* true if undefined symbols to be neglected */
 bracketlegal byte,    /* true if bracket expression is legal */
 udefflag     byte;    /* true if an udefined element found */
 $eject
-$include (:f1:bnf.tex)
+$include (bnf.tex)
 $eject
 /************  michellaneous subroutines: ***********/
 

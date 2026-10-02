@@ -12,8 +12,19 @@ SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
+# BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from pip.mp2:
+#   BBB = start of dats segment / 16 (e.g. 1000)
+#   MMM = (start of memory segment - start of dats segment) / 16
+# Recursively expanded on purpose: pip.mp2 only exists once pip.h86 is built.
+PARA = sub(/H$$/,"",s); sub(/.$$/,"",s); sub(/^0+/,"",s); print tolower(s); exit
+PIP_BASE = $(shell awk '/DATS +DATA/{s=$$1; $(PARA)}' pip.mp2)
+PIP_MEM  = $(shell awk '/MEMORY +MEMORY/{s=$$1; $(PARA)}' pip.mp2)
+PIP_MIN  = $(shell printf '%x' $$((0x$(PIP_MEM)-0x$(PIP_BASE))))
+
 pip.cmd: pip.h86
-	$(GENCMD) $< 'data[b1000 m280 xfff]'
+	@test -n "$(PIP_BASE)" -a -n "$(PIP_MEM)" || \
+	  { echo "pip: cannot derive DATS/MEMORY from pip.mp2"; exit 1; }
+	$(GENCMD) $< 'data[b$(PIP_BASE) m$(PIP_MIN) xfff]'
 	cmdinfo $@
 
 pip.loc: pip.obj inpout.obj scd1.obj

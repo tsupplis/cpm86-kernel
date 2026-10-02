@@ -2,7 +2,7 @@ $title ('SUBROUTINE MODULE - PART 1')
 subr1:
 do;
 
-$include (:f1:macro.lit)
+$include (macro.lit)
 
 /*
 

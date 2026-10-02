@@ -21,8 +21,8 @@ do;
         its codemacro definition.
 */
 
-$include (:f1:mnem.lit)
-$include (:f1:cmlink.ext)
+$include (mnem.lit)
+$include (cmlink.ext)
 
 
     /********* MNEMONICS TABLE ********/

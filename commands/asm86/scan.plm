@@ -11,14 +11,14 @@ do;
 
 */
 
-$include (:f1:macro.lit)
-$include (:f1:struc.lit)
-$include (:f1:equals.lit)
-$include (:f1:files.ext)
-$include (:f1:predef.ext)
-$include (:f1:subr2.ext)
-$include (:f1:print.ext)
-$include (:f1:global.ext)
+$include (macro.lit)
+$include (struc.lit)
+$include (equals.lit)
+$include (files.ext)
+$include (predef.ext)
+$include (subr2.ext)
+$include (print.ext)
+$include (global.ext)
 
         /* Variables : */
 
@@ -64,9 +64,15 @@ read$input: proc byte;
       if ch=cr then$do    /* test for CR */
         crfound=true;
       else$do;
-        crfound=false;
-        call putprintchar(ch);
-        if ch=lf then ch=space; /* interpret LF within line as space */
+        /* PATCH: treat bare LF (\n) as a line terminator, same as CR */
+        if ch=lf then$do
+          crfound=true;
+          ch=cr;
+        else$do;
+        /* END PATCH */
+          crfound=false;
+          call putprintchar(ch);
+        end$if;
       end$if;
     end$if;
   end$if;

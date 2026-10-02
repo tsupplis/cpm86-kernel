@@ -1496,7 +1496,7 @@ SCAN: PROCEDURE(FCBA);
 
         if multcom then
             do;
-            call printx(.('CP/M-86 PIP VERSION 1.1$'));
+            call print(.('CP/M-86 PIP VER 1.1N (10.2026)$'));
             call crlf;
             end;
 
