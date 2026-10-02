@@ -1,17 +1,17 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
 
-TOOLS=assign.cmd assiorg.cmd
+TOOLS=dskmaint.cmd dskmorg.cmd
 
 SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
-assign.obj: assign.a86
+dskmaint.obj: dskmaint.a86
 
-assiorg.obj: assiorg.a86
+dskmorg.obj: dskmorg.a86
 
-# assign is an 8080-model CMD: one CODE group holding code, data and stack,
+# dskmaint is an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
 %.cmd: %.obj
 	$(LINK86) $* '[$$sz, cod[ori[0]], dat[ori[0],max[0]]]'
@@ -27,11 +27,11 @@ assiorg.obj: assiorg.a86
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
-REF=../../base/assign.cmd
+REF=../../base/dskmaint.cmd
 
-check: assiorg.cmd
+check: dskmorg.cmd
 	cmp $< $(REF)
-	@echo "PASS: assign.cmd is byte-identical to $(REF)"
+	@echo "PASS: dskmaint.cmd is byte-identical to $(REF)"
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn

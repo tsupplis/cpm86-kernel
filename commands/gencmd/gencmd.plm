@@ -54,6 +54,16 @@ BOOT: PROCEDURE;
     call mon1 (0,0);
     END BOOT;
 
+/* set CP/M 3+ program return code (BDOS function 108 / 6Ch).
+   MON2(12,0) returns the version byte; no-op on CP/M 2.x. */
+SET$RETURN$CODE: PROCEDURE(RETCODE);
+    DECLARE RETCODE ADDRESS;
+    IF MON2(12,0) >= 30H THEN
+        CALL MON1(6CH, RETCODE);
+    END SET$RETURN$CODE;
+
+DECLARE OUTPUT$CREATED BYTE;
+
 declare segmts(11) structure (name(5) byte,begin$add address)
     initial ('CODE ',00h,'DATA ',0ffffh,'EXTRA',0ffffh,'STACK',0,
       'X1   ',0,'X2   ',0,'X3   ',0,'X4   ',0,'8080 ',0,'NZERO',0,
@@ -144,6 +154,8 @@ PERROR: PROCEDURE(A);
     CALL PRINTM(A);
     CALL PRINTM(.(', LOAD ADDRESS $'));
     CALL PRINTADDR(LA);
+    IF OUTPUT$CREATED THEN CALL DELETE(.FCBA);
+    CALL SET$RETURN$CODE(0FF00H);
     CALL BOOT;
     END PERROR;
 
@@ -226,6 +238,8 @@ comline$error: procedure;
        end;
     call printchar ('?');
     call crlf;
+    if output$created then call delete(.fcba);
+    call set$return$code(0ff00h);
     call boot;
     end comline$error;
   
@@ -345,9 +359,11 @@ RELOC: PROCEDURE;
     SETMEM: PROCEDURE(B);
        /* set mbuff to b at location la */
         DECLARE (B) BYTE;
-        if ((.memory+la) < 0) or ((.memory+la) > maxb) then 
+        if ((.memory+la) < 0) or ((.memory+la) > maxb) then
         do;
           call print (.('INSUFFICIENT MEMORY TO CREATE CMD FILE $'));
+          if output$created then call delete(.fcba);
+          call set$return$code(0ff00h);
           call boot;
           end;
         MBUFF(LA) = B;
@@ -383,6 +399,8 @@ RELOC: PROCEDURE;
         CALL PRINTCHAR(' ');
         END;
     CALL CRLF;
+    IF OUTPUT$CREATED THEN CALL DELETE(.FCBA);
+    CALL SET$RETURN$CODE(0FF00H);
     CALL BOOT;
     END DIAGNOSE;
  write$record: procedure;
@@ -742,6 +760,23 @@ mbuffadr = .memory;
 t8080 = false;
 nozero = false;
 head = true;
+output$created = false;
+
+CALL PRINT(.('CP/M 8086 GENCMD VER 1.0N (10.2026)$'));
+CALL CRLF;
+
+/* USAGE IF NO FILENAME GIVEN */
+IF FCBA(1) = ' ' THEN
+    DO;
+    CALL PRINT(.('USAGE: GENCMD name[.H86] [seg[switches]...]$'));
+    CALL PRINT(.('  seg:   DATA CODE EXTRA STACK X1..X4 8080 NZERO NHEAD$'));
+    CALL PRINT(.('  Baddr  base paragraph address (hex)$'));
+    CALL PRINT(.('  Mmin   minimum memory paragraphs (hex)$'));
+    CALL PRINT(.('  Xmax   maximum memory paragraphs (hex)$'));
+    CALL CRLF;
+    CALL SET$RETURN$CODE(0FF00H);
+    CALL BOOT;
+    END;
 
 SBP = LENGTH(SBUFF);
    /* SET UP THE SOURCE FILE */
@@ -758,6 +793,7 @@ SBP = LENGTH(SBUFF);
  CALL MAKE(.FCBA); CALL OPEN(.FCBA);
  IF DCNT = 255 THEN CALL PERROR(.('NO MORE DIRECTORY SPACE$')); ELSE
         DO;
+        output$created = true;
         call ignore$filename;
         call parse$tail;
         CALL RELOC;
@@ -766,6 +802,7 @@ SBP = LENGTH(SBUFF);
         END;
  CALL CRLF;
 
+ CALL SET$RETURN$CODE(0);
  CALL BOOT;
 END plmstart;
 END;

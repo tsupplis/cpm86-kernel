@@ -12,8 +12,19 @@ SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
+# BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from submit.mp2:
+#   BBB = start of dats segment / 16 (e.g. 1000)
+#   MMM = (start of memory segment - start of dats segment) / 16
+# Recursively expanded on purpose: submit.mp2 only exists once submit.h86 is built.
+PARA = sub(/H$$/,"",s); sub(/.$$/,"",s); sub(/^0+/,"",s); print tolower(s); exit
+SUBMIT_BASE = $(shell awk '/DATS +DATA/{s=$$1; $(PARA)}' submit.mp2)
+SUBMIT_MEM  = $(shell awk '/MEMORY +MEMORY/{s=$$1; $(PARA)}' submit.mp2)
+SUBMIT_MIN  = $(shell printf '%x' $$((0x$(SUBMIT_MEM)-0x$(SUBMIT_BASE))))
+
 submit.cmd: submit.h86
-	$(GENCMD) $< data[b1000]
+	@test -n "$(SUBMIT_BASE)" -a -n "$(SUBMIT_MEM)" || \
+	  { echo "submit: cannot derive DATS/MEMORY from submit.mp2"; exit 1; }
+	$(GENCMD) $< 'data[b$(SUBMIT_BASE) m$(SUBMIT_MIN) xfff]'
 	cmdinfo $@
 
 # scd links first so its entry stub lands at code offset 0.

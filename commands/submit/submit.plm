@@ -283,6 +283,12 @@ makefile: procedure;
     end makefile;
 
  /* enter here from the ccp with the fcb set */
+    call print(.(cr,lf,'CP/M-86 SUBMIT VER 2.0N (10.2026)',cr,lf,cr,lf,'$'));
+    if sfcb(1) = ' ' then
+        do;
+        call print(.('USAGE: SUBMIT file[.SUB] [parm1 parm2 ...]',cr,lf,'$'));
+        call mon1(0,0);
+    end;
     call setup;
     call fillrbuff;
     call makefile;

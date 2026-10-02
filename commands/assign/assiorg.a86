@@ -993,7 +993,7 @@ corner	db	000h,000h,0dah
 	db	017h,04fh,0d9h
 
 banner	db	'CP/M-86 Character I/O Assignment '
-	db	'for the IBM PC version 1.0N',0
+	db	'for the IBM PC   version 1.0',0
 
 ; Logical device name and type, both indexed by selection*2 (see putlog).
 lognam	dw	dvcon, dvcon, dvaux, dvaux, dvlst

@@ -2036,8 +2036,12 @@ $ eject
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
  
  
-plmstart:              /* entry of MP/M-86 Interface */  
- 
+plmstart:              /* entry of MP/M-86 Interface */
+
+    CALL PRINT(.('CP/M-86 ED VER 2.0N (10.2026)$'));
+    CALL CRLF;
+    CALL CRLF;
+
  /* INITIALIZE THE SYSTEM */
 
     ver = version;
