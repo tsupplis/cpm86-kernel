@@ -338,6 +338,14 @@ DECLARE
 
  /* INTEL HEX FORMAT LOADER */
 
+print$seg$name: procedure(si);
+    declare si byte;
+    declare np address, nc based np byte;
+    declare n byte;
+    np = .segmts(si).name(0);
+    do n = 0 to 4; call printchar(nc); np = np+1; end;
+    end print$seg$name;
+
 RELOC: PROCEDURE;
     DECLARE (RL, CS, RT,K) BYTE;
     declare multi$segments byte;
@@ -506,6 +514,8 @@ compute$la:  procedure (j) address;
        seglength(k) = 0;
        end;
   
+    call crlf;
+    call printm(.('GEN CODE ...$'));
     call zero$mem;
   
     ta=0;
@@ -582,13 +592,17 @@ second:
         do k = 1 to 7;
            if seg$length(k) <> 0 then
            do;
+             call crlf;
+             call printm(.('GEN $'));
+             call print$seg$name(k);
+             call printm(.('...$'));
              seg$length(k) = seg$length(k)+paragraph and 0fff0h;
              header(k).file$length = seg$length(k)/16;
              if header(k).minimum$mem=0 then
              header(k).minimum$mem=seg$length(k)/16;
              end;
            end;
-        segadjst = 0;
+         segadjst = 0;
         seg$length(0) = ta;
         sbp=length(sbuff);
   
@@ -631,6 +645,7 @@ afin:
   
     FIN:
     /* PRINT FINAL STATISTICS */
+    CALL CRLF;
     CALL PRINT(.('BYTES READ    $')); CALL PRINTADDR(NB);
     CALL PRINT(.('RECORDS WRITTEN $')); CALL PRINTHEX(P+1);
     CALL CRLF;
@@ -763,7 +778,7 @@ nozero = false;
 head = true;
 output$created = false;
 
-CALL PRINT(.('CP/M 8086 GENCMD VER 1.0N (10.2026)$'));
+CALL PRINT(.('CP/M 8086 GENCMD VER 1.1N (10.2026)$'));
 CALL CRLF;
 
 /* USAGE IF NO FILENAME GIVEN */
@@ -801,7 +816,6 @@ SBP = LENGTH(SBUFF);
         CALL CLOSE(.FCBA);
         IF DCNT = 255 THEN CALL PERROR(.('CANNOT CLOSE FILE$'));
         END;
- CALL CRLF;
 
  CALL SET$RETURN$CODE(0);
  CALL BOOT;
