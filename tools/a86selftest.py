@@ -404,13 +404,89 @@ def t_usedata_drops_what_does_not_build():
     assert 'nosuchlabel' not in text, 'a line that did not build was kept'
 
 
+def t_h862bin():
+    """Hex to flat image: both record flavours, what it refuses, the .inc."""
+    import h862bin as H
+
+    def rec(addr, typ, data=b''):
+        body = bytes([len(data), addr >> 8, addr & 0xff, typ]) + data
+        return ':' + (body + bytes([-sum(body) & 0xff])).hex().upper()
+
+    def hexfile(lines, tail=''):
+        p = tempfile.mkdtemp(dir=TMP) + '/t.h86'
+        with open(p, 'wb') as f:
+            f.write(('\r\n'.join(lines) + '\r\n' + tail).encode('latin-1'))
+        return p
+
+    def refused(lines, why):
+        try:
+            H.image(hexfile(lines))
+        except ValueError as e:
+            assert why in str(e), 'refused for the wrong reason: %s' % e
+            return
+        raise AssertionError('accepted, should refuse: ' + why)
+
+    eof = rec(0, 1)
+    # DR flavour, with the ^Z and stale buffer CP/M leaves after the end record
+    p = hexfile([rec(0, 3, b'\x00\x00\x01\x00'), rec(0x100, 0x81, b'ABC'),
+                 rec(0x103, 0x82, b'DE'), eof], '\x1a9756202090E0F\r\n')
+    assert H.image(p) == (0x100, b'ABCDE'), 'DR flavour'
+    assert H.image(hexfile([rec(0x7c00, 0, b'\xfa\x8c'), eof])) == \
+        (0x7c00, b'\xfa\x8c'), 'Intel flavour'
+
+    good = rec(0x100, 0x81, b'AB')
+    flipped = good[:-1] + ('0' if good[-1] != '0' else '1')
+    body = bytes([5, 1, 0, 0x81]) + b'AB'
+    wrong_len = ':' + (body + bytes([-sum(body) & 0xff])).hex()
+    refused([flipped, eof], 'bad checksum')
+    refused([wrong_len, eof], 'length')
+    refused([rec(0x100, 5, b'AB'), eof], 'unknown record type')
+    refused([good, rec(0x101, 0x82, b'C'), eof], 'covered twice')
+    refused([good, rec(0x110, 0x81, b'C'), eof], 'hole')
+    refused([good], 'no end of file')
+    refused([eof], 'no data records')
+    refused(['garbage', eof], 'not a hex record')
+    refused([':0Z', eof], 'not hexadecimal')
+
+    data = bytes(range(256)) + b"it's a 'quoted' text\r\n\x00" + \
+        b'Loading CPM.SYS.\x00' + b'abcd' * 30
+    inc = H.to_inc(data, 'img', 't.h86').decode('ascii')
+    assert inc.startswith('; Generated from t.h86'), inc[:40]
+    assert inc.count('\r\n') == inc.count('\n'), 'not CRLF throughout'
+    got = bytearray()
+    for ln in inc.replace('\r', '').split('\n')[1:]:
+        if not ln:
+            continue
+        assert len(ln) <= 72, 'line too long for RASM-86: %r' % ln
+        m = re.match(r'^(?:img)?\tdb\t(.*)$', ln)
+        assert m, 'not a db line: %r' % ln
+        for tok in re.findall(r"'[^']*'|[^,]+", m.group(1)):
+            if tok[0] == "'":
+                got += tok[1:-1].encode('ascii')
+            else:
+                assert re.fullmatch(r'[0-9][0-9a-f]*h', tok), tok
+                got.append(int(tok[:-1], 16))
+    assert bytes(got) == data, '.inc does not give the bytes back'
+    assert inc.split('\r\n')[1].startswith('img\tdb\t'), 'label on first line'
+
+    out = tempfile.mkdtemp(dir=TMP) + '/o.bin'
+    r = subprocess.run([sys.executable, HERE + '/h862bin.py',
+                        hexfile([flipped, eof]), out],
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and not os.path.exists(out), \
+        'a bad file must fail and leave no output'
+    r = subprocess.run([sys.executable, HERE + '/h862bin.py', p, out[:-4]],
+                       capture_output=True, text=True)
+    assert r.returncode != 0, 'an output that is not .bin or .inc'
+
+
 TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
          t_pipeline_dskmaint, t_markers_not_used_as_names, t_holes_known_tools, t_boundary_known_tools,
          t_annotate_restrictive, t_relabel_noop, t_guard_and_revert,
          t_decode_demotion, t_decode_restores_on_failure,
          t_datamap_known_tools, t_datamap_embedded_code, t_datamap_tiles,
          t_typedata_restrictive, t_usedata_restrictive,
-         t_usedata_drops_what_does_not_build]
+         t_usedata_drops_what_does_not_build, t_h862bin]
 
 
 def main():
