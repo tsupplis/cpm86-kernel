@@ -7,7 +7,7 @@ SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
-dskmaint.obj: dskmaint.a86
+dskmaint.obj: dskmaint.a86 bootimg.inc ldrimg.inc
 
 dskmorg.obj: dskmorg.a86
 
