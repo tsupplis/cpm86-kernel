@@ -69,7 +69,9 @@ class Converter:
             return '%s.%s' % (seg, self.name_or_num(int(m.group(1), 16)))
         m = re.match(r'^([a-z]{2})\+([a-z]{2})$', inner)
         if m:
-            return '%s[%s][%s]' % (seg, m.group(1), m.group(2))
+            if seg:                 # RASM-86 takes es:[bx+si], not es:[bx][si]
+                return '%s[%s+%s]' % (seg, m.group(1), m.group(2))
+            return '[%s][%s]' % (m.group(1), m.group(2))
         return '%s[%s]' % (seg, inner)
 
     def line(self, hexb, text):
@@ -81,6 +83,8 @@ class Converter:
         if mn in MNEMONIC:
             mn, ops = MNEMONIC[mn]
         ops = re.sub(r'\b(word|byte)\s+near\s+\[', r'\1 ptr [', ops)
+        if mn in ('les', 'lds'):    # a far pointer: dword, and RASM-86 wants it
+            ops = re.sub(r'\bword\s+\[', 'dword ptr [', ops)  # typed explicitly
         ops = re.sub(r'\b(word|byte)\s+\[', r'\1 ptr [', ops)
         if mn == 'int':
             ops = ops.replace('byte ', '')

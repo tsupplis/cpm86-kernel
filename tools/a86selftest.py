@@ -500,6 +500,22 @@ def t_read_table_extent():
         'must stop where another table starts'
 
 
+def t_converter_rasm86_spellings():
+    """ndisasm text to what RASM-86 accepts, for forms config exposed."""
+    from a86.disasm import Converter
+    c = Converter({}, {}, 0x100, 0x9a0)
+    want = {
+        ('C41EFE05', 'les bx,word [0x5fe]'): 'les\tbx,dword ptr .05feh',
+        ('C436FE05', 'les si,word [0x5fe]'): 'les\tsi,dword ptr .05feh',
+        ('268800', 'mov [es:bx+si],al'): 'mov\tes:[bx+si],al',
+        ('268B00', 'mov ax,[es:bx+si]'): 'mov\tax,es:[bx+si]',
+        ('8B00', 'mov ax,[bx+si]'): 'mov\tax,[bx][si]',
+    }
+    for (hexb, text), expect in want.items():
+        got = c.line(hexb, text).strip()
+        assert got == expect, '%s -> %r, wanted %r' % (text, got, expect)
+
+
 def t_setup_tables_and_odd_boundary():
     """setup reaches its tables through a pointer variable (add bx,[var] then
     call word [bx]) and its code ends on an odd address."""
@@ -548,7 +564,8 @@ TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
          t_datamap_known_tools, t_datamap_embedded_code, t_datamap_tiles,
          t_typedata_restrictive, t_usedata_restrictive,
          t_usedata_drops_what_does_not_build, t_h862bin,
-         t_read_table_extent, t_setup_tables_and_odd_boundary]
+         t_read_table_extent, t_converter_rasm86_spellings,
+         t_setup_tables_and_odd_boundary]
 
 
 def main():

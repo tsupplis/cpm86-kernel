@@ -798,15 +798,13 @@ scroff	db	1bh,45h,1bh,76h,1bh
 ; by 20h on the way out, so they are stored unbiased here.
 corner	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h
 	db	02h,4fh,0b5h,17h,00h,0c0h,17h,4fh,0d9h
-banner	db	'CP/M-86  Function Key Programmer for the'
-	db	' IBM PC version 1.0N',00h
+banner	db	'CP/M-86  Function Key Programmer for the IBM PC version 1.0N',00h
 ; Three NUL-terminated lines each, printed together by showhelp.
-msgtype	db	'Type the Function Key you wish to prog','ram,'
+msgtype	db	'Type the Function Key you wish to program,'
 	db	00h,'or ESC to display the other set of keys,'
 	db	00h,'or Carriage Return to exit this program.'
 	db	00h
-msgprog	db	'You are now Programming the selected '
-	db	'Key.',00h
+msgprog	db	'You are now Programming the selected Key.',00h
 	db	'To terminate sequence enter Ctrl @ or ','\00.'
 	db	00h,'Type ',11h,'-- to erase a character.',00h
 hexdig	db	'0123456789ABCDEF'

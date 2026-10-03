@@ -1,15 +1,34 @@
-;***********************************************************
-;  CONFIG.A86 - reconstructed from base/config.cmd
-;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
-;  the rest of the image is a raw db dump still to be decoded.
+;*****************************************************************************
 ;
-;  Build:   make
-;  Check:   make check
-;***********************************************************
+;	CONFIG - CP/M-86 serial port configuration for the IBM PC
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the shipped binary; assembles byte-identical.
+;
+;	Build:	make
+;	Check:	make check
+;
+;	Usage:	CONFIG				full screen menu
+;		CONFIG P0 1200 7 ODD 2		set one port from the command line
+;
+;	The settings live in the XIOS, in a table with one byte per port in
+;	the format of BIOS int 14h: baud rate in bits 7..5, parity in 4..3,
+;	stop bits in 2 and word length in 1..0.  BDOS 31h gives the XIOS
+;	segment and the table's offset is kept at 2552h in its pointer block.
+;
+;	The number of serial adapters comes from the equipment word (int 11h).
+;	One adapter has five menu entries, otherwise there are ten and the
+;	second port has its own column.  The screen is driven as in DSKMAINT.
+;
+;*****************************************************************************
 
 ; Bounds for tools/a86tool.py: where the data starts and the image ends.
 data_org	equ	049eh
 image_end	equ	09a0h
+
+; ---- addresses outside this image ----
+tailbuf	equ	0080h		; base page: command tail, length byte first
+xiosser	equ	2552h		; SER1 pointer in the XIOS pointer block
 
 ; One group so the CMD has a single CODE descriptor (the 8080 model),
 ; but the data keeps its own segment.
@@ -19,210 +38,216 @@ cgroup	group	code,data
 	org	100h
 
 start:
-	jmps	l0126
+	jmps	begin
 
-l0102:
+copyright:
 	db	'Copyright (C) 1983, Digital Research'
 
-l0126:
+;-----------------------------------------------------------------------------
+; Entry.  Discard anything typed ahead, find the XIOS serial table and count
+; the serial adapters; none ends the program.  A command tail selects the
+; command line mode, otherwise the screen is run.
+;-----------------------------------------------------------------------------
+begin:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
 	mov	sp,0994h
 	cld
-	call	l046a
+	call	flushkb
 	mov	cl,31h
 	int	0e0h
-	mov	word ptr d0600,es
-	mov	ax,es:.2552h
-	mov	d05fe,ax
+	mov	word ptr xiosseg,es
+	mov	ax,es:.xiosser
+	mov	xiosptr,ax
 	int	11h
 	and	ax,0e00h
-	jnz	l0152
-	mov	si,offset d049e
-	call	l0424
-	jmp	l0273
+	jnz	serialok
+	mov	si,offset noportmsg
+	call	puts
+	jmp	terminate
 
-l0152:
-	mov	byte ptr d05fa,01h
-	mov	word ptr d05fc,05h
+; ah is twice the adapter count: 02h is one adapter, anything else is two.
+serialok:
+	mov	byte ptr nports,01h
+	mov	word ptr nitems,05h
 	cmp	ah,02h
-	jz	l016d
-	mov	byte ptr d05fa,02h
-	mov	word ptr d05fc,0ah
+	jz	chkarg
+	mov	byte ptr nports,02h
+	mov	word ptr nitems,0ah
 
-l016d:
-	test	byte ptr .80h,0ffh
-	jnz	l018a
-	call	l02d4
-	call	l03e0
-	call	l0279
+chkarg:
+	test	byte ptr .tailbuf,0ffh
+	jnz	cmdline
+	call	drawscreen
+	call	drawmenu
+	call	getsettings
 
-l017d:
-	call	l0203
-	call	l0441
-	call	word ptr d060c[bx]
-	jmp	l017d
+screenloop:
+	call	showvals
+	call	getchoice
+	call	word ptr fntable[bx]
+	jmp	screenloop
 
-l018a:
-	call	l0279
-	mov	si,80h
+cmdline:
+	call	getsettings
+	mov	si,tailbuf
 	lodsb
-	mov	d06ca,si
+	mov	tailptr,si
 	mov	ah,00h
 	add	si,ax
 	mov	word ptr [si],20h
 
-l019d:
-	call	l036e
-	jc	l01a7
-	call	l03a4
-	jmps	l019d
+argloop:
+	call	nexttoken
+	jc	argdone
+	call	applytoken
+	jmps	argloop
 
-l01a7:
-	jmp	l026a
+argdone:
+	jmp	writeall
 
-l01aa:
-	mov	si,81h
-	call	l0424
+badarg:
+	mov	si,tailbuf+1
+	call	puts
 	mov	al,0dh
-	call	l0480
+	call	conout
 	mov	al,0ah
-	call	l0480
-	mov	cx,d06ca
-	sub	cx,80h
-	jz	l01cb
+	call	conout
+	mov	cx,tailptr
+	sub	cx,tailbuf
+	jz	showhelp
 
-l01c4:
+padloop:
 	mov	al,20h
-	call	l0480
-	loop	l01c4
+	call	conout
+	loop	padloop
 
-l01cb:
-	mov	si,offset d06d2
-	call	l0424
-	jmp	l0273
+showhelp:
+	mov	si,offset helpmsg
+	call	puts
+	jmp	terminate
 
-l01d4:
+baud1:
 	inc	dx
 
-l01d5:
-	mov	si,offset d0622
+baud0:
+	mov	si,offset baudval
 	mov	ah,07h
-	jmps	l01f8
+	jmps	cycle
 
-l01dc:
+wlen1:
 	inc	dx
 
-l01dd:
-	mov	si,offset d0624
+wlen0:
+	mov	si,offset wlenval
 	mov	ah,03h
-	jmps	l01f8
+	jmps	cycle
 
-l01e4:
+par1:
 	inc	dx
 
-l01e5:
-	mov	si,offset d0626
+par0:
+	mov	si,offset parval
 	mov	ah,03h
-	call	l01f8
+	call	cycle
 	cmp	al,02h
-	jz	l01fa
+	jz	cycleval
 	ret
 
-l01f2:
+stop1:
 	inc	dx
 
-l01f3:
-	mov	si,offset d0628
+stop0:
+	mov	si,offset stopval
 	mov	ah,01h
 
-l01f8:
+cycle:
 	add	si,dx
 
-l01fa:
+cycleval:
 	mov	al,[si]
 	inc	al
 	and	al,ah
 	mov	[si],al
 	ret
 
-l0203:
-	mov	al,d05fa
-	mov	d05fb,al
+showvals:
+	mov	al,nports
+	mov	portsleft,al
 	mov	al,72h
-	call	l0479
+	call	escout
 	mov	dx,090eh
 	sub	bx,bx
 
-l0213:
-	mov	si,offset d0632
-	mov	al,d0622[bx]
-	call	l024a
-	mov	si,offset d0652
-	mov	al,d0624[bx]
-	call	l024a
-	mov	si,offset d0662
-	mov	al,d0626[bx]
-	call	l024a
-	mov	si,offset d0672
-	mov	al,d0628[bx]
-	call	l024a
+showport:
+	mov	si,offset baudtxt
+	mov	al,baudval[bx]
+	call	showone
+	mov	si,offset wlentxt
+	mov	al,wlenval[bx]
+	call	showone
+	mov	si,offset partxt
+	mov	al,parval[bx]
+	call	showone
+	mov	si,offset stoptxt
+	mov	al,stopval[bx]
+	call	showone
 	mov	dx,093dh
 	inc	bx
-	dec	byte ptr d05fb
-	jnz	l0213
+	dec	byte ptr portsleft
+	jnz	showport
 	mov	al,75h
-	jmp	l0479
+	jmp	escout
 
-l024a:
+showone:
 	push	dx
 	mov	ah,00h
 	add	ax,ax
 	add	ax,ax
 	add	si,ax
-	call	l042e
+	call	gotoxy
 	mov	cx,04h
 
-l0259:
+showloop:
 	lodsb
-	call	l0480
-	loop	l0259
+	call	conout
+	loop	showloop
 	pop	dx
 	add	dh,03h
 	ret
 
-l0264:
-	mov	si,offset d04d6
-	call	l0424
+doexit:
+	mov	si,offset scrnrest
+	call	puts
 
-l026a:
+writeall:
 	sub	bx,bx
-	call	l02ac
+	call	setport
 	inc	bx
-	call	l02ac
+	call	setport
 
-l0273:
+terminate:
 	mov	cl,00h
 	mov	dl,00h
 	int	0e0h
 
-l0279:
-	db	0c4h,1eh,0feh,05h	; les bx,word [0x5fe]
+getsettings:
+	les	bx,dword ptr xiosptr
 	mov	ax,es:[bx]
-	mov	si,offset d0624
+	mov	si,offset wlenval
 	mov	cx,0302h
-	call	l02a1
-	mov	si,offset d0628
+	call	unpack
+	mov	si,offset stopval
 	mov	cx,0101h
-	call	l02a1
-	mov	si,offset d0626
+	call	unpack
+	mov	si,offset parval
 	mov	cx,0302h
-	call	l02a1
-	mov	si,offset d0622
+	call	unpack
+	mov	si,offset baudval
 	mov	cx,0701h
 
-l02a1:
+unpack:
 	push	ax
 	and	al,ch
 	and	ah,ch
@@ -231,208 +256,208 @@ l02a1:
 	ror	ax,cl
 	ret
 
-l02ac:
-	mov	al,d0622[bx]
+setport:
+	mov	al,baudval[bx]
 	mov	cl,02h
 	shl	ax,cl
-	or	al,d0626[bx]
+	or	al,parval[bx]
 	shl	ax,1
-	or	al,d0628[bx]
+	or	al,stopval[bx]
 	mov	cl,02h
 	shl	ax,cl
-	or	al,d0624[bx]
-	db	0c4h,36h,0feh,05h	; les si,word [0x5fe]
-	db	26h,88h,00h	; mov [es:bx+si],al
+	or	al,wlenval[bx]
+	les	si,dword ptr xiosptr
+	mov	es:[bx+si],al
 	mov	ah,00h
 	mov	dx,bx
 	int	14h
 	ret
 
-l02d4:
-	mov	si,offset d04c9
-	call	l0424
+drawscreen:
+	mov	si,offset scrninit
+	call	puts
 	mov	cx,4eh
 	mov	dx,01h
 	mov	bl,0c4h
-	call	l0350
+	call	hline
 	mov	dx,0201h
 	mov	bl,0cdh
-	call	l0350
+	call	hline
 	mov	dx,1701h
 	mov	bl,0c4h
-	call	l0350
+	call	hline
 	mov	cx,16h
 	mov	dx,0100h
 	mov	bl,0b3h
-	call	l035d
+	call	vline
 	mov	dx,014fh
 	mov	bl,0b3h
-	call	l035d
-	mov	si,offset d04dd
+	call	vline
+	mov	si,offset corners
 	mov	cx,06h
 
-l030e:
+cellloop:
 	mov	al,59h
-	call	l0479
+	call	escout
 	lodsb
 	add	al,20h
-	call	l0480
+	call	conout
 	lodsb
 	add	al,20h
-	call	l0480
+	call	conout
 	lodsb
-	call	l0480
-	loop	l030e
-	mov	si,offset d04ef
+	call	conout
+	loop	cellloop
+	mov	si,offset titlestr
 	mov	dh,01h
-	call	l0412
-	mov	si,offset d052e
+	call	putcent
+	mov	si,offset helpline
 	mov	dx,0416h
-	call	l0421
-	mov	si,offset d0557
+	call	putat
+	mov	si,offset port0title
 	mov	dx,060eh
-	call	l0421
-	cmp	byte ptr d05fa,01h
-	jnz	l0347
+	call	putat
+	cmp	byte ptr nports,01h
+	jnz	port1hdr
 	ret
 
-l0347:
-	mov	si,offset d0565
+port1hdr:
+	mov	si,offset port1title
 	mov	dx,0634h
-	jmp	l0421
+	jmp	putat
 
-l0350:
+hline:
 	push	cx
-	call	l042e
+	call	gotoxy
 
-l0354:
+hlloop:
 	mov	al,bl
-	call	l0480
-	loop	l0354
+	call	conout
+	loop	hlloop
 	pop	cx
 	ret
 
-l035d:
+vline:
 	push	cx
 
-l035e:
+vlloop:
 	push	dx
-	call	l042e
+	call	gotoxy
 	mov	al,bl
-	call	l0480
+	call	conout
 	pop	dx
 	inc	dh
-	loop	l035e
+	loop	vlloop
 	pop	cx
 	ret
 
-l036e:
+nexttoken:
 	push	ds
 	pop	es
-	mov	si,d06ca
+	mov	si,tailptr
 
-l0374:
+skipsp:
 	inc	si
 	cmp	byte ptr [si],20h
-	jz	l0374
+	jz	skipsp
 	cmp	byte ptr [si],00h
 	stc
-	jz	l03a3
+	jz	tokenret
 	mov	di,si
 	mov	al,20h
 	mov	cx,05h
 	repne	scasb
-	jz	l038e
-	jmp	l01aa
+	jz	padtoken
+	jmp	badarg
 
-l038e:
+padtoken:
 	mov	dx,cx
-	mov	di,offset d06ce
-	jcxz	l0397
+	mov	di,offset tokbuf
+	jcxz	copytoken
 	rep	stosb
 
-l0397:
+copytoken:
 	mov	cx,04h
 	sub	cx,dx
 	rep	movsb
-	mov	d06cc,si
+	mov	tokend,si
 	clc
 
-l03a3:
+tokenret:
 	ret
 
-l03a4:
-	mov	si,offset d062a
+applytoken:
+	mov	si,offset tokens
 	mov	cx,14h
-	call	l03c1
+	call	findtoken
 	add	si,50h
 	lodsw
 	mov	bx,ax
 	lodsw
 	cmp	bx,0620h
-	jz	l03be
-	add	bx,d0620
+	jz	storeval
+	add	bx,curport
 
-l03be:
+storeval:
 	mov	[bx],al
 	ret
 
-l03c1:
+findtoken:
 	push	ds
 	pop	es
 
-l03c3:
+findloop:
 	push	cx
 	push	si
-	mov	di,offset d06ce
+	mov	di,offset tokbuf
 	mov	cx,04h
 	repe	cmpsb
 	pop	si
 	pop	cx
-	jz	l03d9
+	jz	foundtoken
 	add	si,04h
-	loop	l03c3
-	jmp	l01aa
+	loop	findloop
+	jmp	badarg
 
-l03d9:
-	mov	ax,d06cc
-	mov	d06ca,ax
+foundtoken:
+	mov	ax,tokend
+	mov	tailptr,ax
 	ret
 
-l03e0:
-	mov	si,offset d0593
-	mov	cx,d05fc
+drawmenu:
+	mov	si,offset menuitems
+	mov	cx,nitems
 
-l03e7:
+menuloop:
 	push	cx
 	lodsb
 	mov	dh,al
 	lodsb
 	mov	dl,al
 	push	dx
-	call	l042e
+	call	gotoxy
 	pop	dx
 	inc	dh
 	push	si
-	mov	si,offset d0573
-	call	l0424
+	mov	si,offset itemfrm
+	call	puts
 	pop	si
 	lodsb
-	call	l0480
+	call	conout
 	lodsb
-	call	l0480
+	call	conout
 	lodsb
 	test	al,al
-	jz	l040e
+	jz	menunext
 	dec	si
-	call	l0412
+	call	putcent
 
-l040e:
+menunext:
 	pop	cx
-	loop	l03e7
+	loop	menuloop
 	ret
 
-l0412:
+putcent:
 	push	ds
 	pop	es
 	mov	di,si
@@ -442,49 +467,49 @@ l0412:
 	shr	cx,1
 	mov	dl,cl
 
-l0421:
-	call	l042e
+putat:
+	call	gotoxy
 
-l0424:
+puts:
 	lodsb
 
-l0425:
-	call	l0480
+putsloop:
+	call	conout
 	lodsb
 	test	al,al
-	jnz	l0425
+	jnz	putsloop
 	ret
 
-l042e:
+gotoxy:
 	mov	al,59h
-	call	l0479
+	call	escout
 	add	dx,2020h
 	mov	al,dh
-	call	l0480
+	call	conout
 	mov	al,dl
-	jmp	l0480
+	jmp	conout
 
-l0441:
-	mov	di,offset d0602
-	mov	cx,d05fc
+getchoice:
+	mov	di,offset keylist
+	mov	cx,nitems
 
-l0448:
+chooseloop:
 	push	cx
 	push	di
 	push	ds
 	pop	es
-	call	l0499
+	call	getraw
 	mov	al,ah
 	sub	al,3ah
 	repne	scasb
 	pop	di
 	pop	cx
-	jz	l0460
+	jz	gotchoice
 	mov	al,07h
-	call	l0480
-	jmps	l0448
+	call	conout
+	jmps	chooseloop
 
-l0460:
+gotchoice:
 	mov	bl,al
 	mov	bh,00h
 	dec	bx
@@ -492,25 +517,25 @@ l0460:
 	sub	dx,dx
 	ret
 
-l046a:
+flushkb:
 	mov	cl,0bh
 	int	0e0h
 	test	al,al
-	jz	l0478
+	jz	flushend
 	mov	cl,01h
 	int	0e0h
-	jmps	l046a
+	jmps	flushkb
 
-l0478:
+flushend:
 	ret
 
-l0479:
+escout:
 	push	ax
 	mov	al,1bh
-	call	l0480
+	call	conout
 	pop	ax
 
-l0480:
+conout:
 	push	bx
 	push	cx
 	push	dx
@@ -529,11 +554,12 @@ l0480:
 	pop	bx
 	ret
 
-l0494:
-	db	0b4h,01h
-	db	0cdh,16h,0c3h
+kbhit:
+	mov	ah,01h
+	int	16h
+	ret
 
-l0499:
+getraw:
 	mov	ah,00h
 	int	16h
 	ret
@@ -542,24 +568,24 @@ l049e:
 
 ; ---- data ----
 	dseg
-d049e	db	'No Serial Communication options instal','led.'
+noportmsg	db	'No Serial Communication options instal','led.'
 	db	00h
-d04c9	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
 	db	00h
-d04d6	db	1bh,45h,1bh,76h,1bh,6dh,00h
-d04dd	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
+corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
 	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
-d04ef	db	'CP/M-86 Serial Port Configuration for th'
+titlestr	db	'CP/M-86 Serial Port Configuration for th'
 	db	'e IBM PC   version 1.0',00h
-d052e	db	1bh
+helpline	db	1bh
 	db	'rPress function key to advance value.',1bh,75h
 	db	00h
-d0557	db	'Serial Port 0',00h
-d0565	db	'Serial Port 1',00h
-d0573	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+port0title	db	'Serial Port 0',00h
+port1title	db	'Serial Port 1',00h
+itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,46h,08h,08h,08h,0b3h,0ah,08h,0c0h
 	db	0c4h,0c4h,0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,00h
-d0593	db	08h,15h
+menuitems	db	08h,15h
 	db	'1 Baud Rate',00h
 	db	0bh,15h
 	db	'3 Word Length',00h
@@ -572,36 +598,34 @@ d0593	db	08h,15h
 	db	08h,34h,32h,20h,00h,0bh,34h,34h,20h,00h,0eh
 	db	34h,36h,20h,00h,11h,34h,38h,20h,00h,14h
 	db	34h,31h,30h,00h
-d05fa	db	00h
-d05fb	db	00h
-d05fc	dw	00h
-d05fe	dw	00h
-d0600	dw	00h
-d0602	db	01h,03h,05h,07h,09h,02h,04h,06h,08h,0ah
-d060c	dw	l01d5,l01d4,l01dd,l01dc,l01e5,l01e4,l01f3,l01f2,l0264,l0264
-d0620	dw	00h
-d0622	db	00h,00h
-d0624	db	00h,00h
-d0626	db	00h,00h
-d0628	db	00h,00h
-d062a	db	'  P0  P1'
-d0632	db	' 110 150 300 6001200240048009600'
-d0652	db	'   5   6   7   8'
-d0662	db	'NONE ODD????EVEN'
-d0672	db	'   1   2 ',06h,00h
-	db	00h,20h,06h,01h,00h,22h,06h,00h,00h,22h,06h,01h
-	db	00h,22h,06h,02h,00h,22h,06h,03h,00h,22h,06h,04h
-	db	00h,22h,06h,05h,00h,22h,06h,06h,00h,22h,06h,07h
-	db	00h,24h,06h,00h,00h,24h,06h,01h,00h,24h,06h,02h
-	db	00h,24h,06h,03h,00h,26h,06h,00h,00h,26h,06h,01h
-	db	00h,26h,06h,02h,00h,26h,06h,03h,00h,28h,06h,00h
-	db	00h,28h,06h,01h,00h
-d06ca	dw	00h
-d06cc	dw	00h
-d06ce	db	00h,00h,00h,00h
-d06d2	db	3fh,0dh,0ah
-	db	'Question mark is under the invalid ident'
-	db	'ifier in the command tail.',0dh,0ah,0ah
+nports	db	00h
+portsleft	db	00h
+nitems	dw	00h
+xiosptr	dw	00h
+xiosseg	dw	00h
+keylist	db	01h,03h,05h,07h,09h,02h,04h,06h,08h,0ah
+fntable	dw	baud0,baud1,wlen0,wlen1,par0,par1,stop0,stop1,doexit,doexit
+curport	dw	00h
+baudval	db	00h,00h
+wlenval	db	00h,00h
+parval	db	00h,00h
+stopval	db	00h,00h
+tokens	db	'  P0  P1'
+baudtxt	db	' 110 150 300 6001200240048009600'
+wlentxt	db	'   5   6   7   8'
+partxt	db	'NONE ODD????EVEN'
+stoptxt	db	'   1   2'
+tokvals	dw	offset curport,0,offset curport,1
+	dw	offset baudval,0,offset baudval,1,offset baudval,2,offset baudval,3
+	dw	offset baudval,4,offset baudval,5,offset baudval,6,offset baudval,7
+	dw	offset wlenval,0,offset wlenval,1,offset wlenval,2,offset wlenval,3
+	dw	offset parval,0,offset parval,1,offset parval,2,offset parval,3
+	dw	offset stopval,0,offset stopval,1
+tailptr	dw	00h
+tokend	dw	00h
+tokbuf	db	00h,00h,00h,00h
+helpmsg	db	3fh,0dh,0ah
+	db	'Question mark is under the invalid identifier in the command tail.',0dh,0ah,0ah
 	db	'Absence of a command tail invokes the sc'
 	db	'reen mode.',0dh,0ah
 	db	'If a command tail is present, all argume'
