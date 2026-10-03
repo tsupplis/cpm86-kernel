@@ -314,7 +314,7 @@ page$check:
            call print$console$buf(.(cr,lf,'Press RETURN to continue $'));
            line$cnt = 0;
            do while (line$cnt = 0);
-              line$cnt = direct$con$io(0FDH);
+              line$cnt = direct$con$io(0FFH);
            end;
            call print$console$buf(.(cr,'                             ',
                                                                   cr,'$'));
