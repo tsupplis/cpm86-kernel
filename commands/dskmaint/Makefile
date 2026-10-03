@@ -8,13 +8,16 @@ TOOLS=dskmaint.cmd dskmorg.cmd
 # The two images DSKMAINT writes to track 0, as flat binaries.
 IMAGES=bootsect.bin loader.bin
 
+# The same images as include files; DSKMAINT carries them in its data.
+INCS=bootsect.inc loader.inc
+
 SNIPPETS=$(IMAGES)
 
 all: $(TOOLS) $(SNIPPETS)
 
-dskmaint.obj: dskmaint.a86 bootsect.inc loader.inc
+dskmaint.obj: dskmaint.a86 $(INCS)
 
-dskmorg.obj: dskmorg.a86 bootsect.inc loader.inc
+dskmorg.obj: dskmorg.a86 $(INCS)
 
 # bootsect and loader are assembled by themselves (ASM-86, not RASM-86):
 # BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
@@ -60,4 +63,4 @@ check: dskmorg.cmd
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
-	rm -f *.loc *.mp? *.lnk *.log $(IMAGES)
+	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS)
