@@ -928,6 +928,8 @@ calctrk:
 calcret:
 	ret
 
+; Clear rows 3..22 inside the frame through BIOS video: scroll function 7 with
+; a line count of zero.
 clrwin:
 	mov	cx,0301h
 	mov	dx,164eh
@@ -936,6 +938,7 @@ clrwin:
 	int	10h
 	ret
 
+; Send ESC then al.  Ends in conout.
 escout:
 	push	ax
 	mov	al,1bh
@@ -943,16 +946,20 @@ escout:
 	pop	ax
 	jmps	conout
 
+; BIOS keyboard status: ZF set if no key is waiting.
 kbhit:
 	mov	ah,01h
 	int	16h
 	ret
 
+; BIOS keyboard read: al is the character, ah the scan code.
 getraw:
 	mov	ah,00h
 	int	16h
 	ret
 
+; Send al to the console through BDOS function 6.  Every register the string
+; and table loops depend on is preserved, and the direction flag is cleared.
 conout:
 	push	bx
 	push	cx
@@ -974,44 +981,60 @@ l0734:
 
 ; ---- data ----
 	dseg
-ndrives	dw	00h
-biosfunc	db	00h
-drive	db	00h
-track	db	00h
-trkcount	db	00h
-trktotal	db	00h
-retries	db	00h
-autofmt	db	00h
-sides	db	00h
-srcsides	db	00h
-dstdrive	db	00h
-srcdrive	db	00h
-menusel	dw	00h
-promptptr	dw	00h
-trkbuf	dw	00h
-buflen	db	00h
-buflenhi	db	00h
-bufflag	db	00h
-copyseg	dw	00h
-ntrkbuf	db	00h
-curseg	dw	00h
-oldvec	db	00h,00h,00h,00h
-newvec	dw	00h
-newvecseg	dw	00h
+ndrives	dw	00h	; number of diskette drives
+biosfunc	db	00h	; int 13h function: 2 read, 3 write, 4 verify, 5 format
+drive	db	00h	; selected drive, 0 for A:
+track	db	00h	; current track, 0..79
+trkcount	db	00h	; tracks still to do in this pass
+trktotal	db	00h	; tracks in the whole copy
+retries	db	00h	; attempts left for this track
+autofmt	db	00h	; the write function once a write failed as unformatted, else 0ffh
+sides	db	00h	; 0 single sided, 1 double sided
+srcsides	db	00h	; sides flag found on the source
+dstdrive	db	00h	; destination of a copy
+srcdrive	db	00h	; source of a copy
+menusel	dw	00h	; byte offset into fntable of the item in progress
+promptptr	dw	00h	; reverse video prompt shown by the drive menu
+trkbuf	dw	00h	; the BDOS memory parameter block starts here: base, which is
+buflen	db	00h	; also the segment of the track buffer, then the length,
+buflenhi	db	00h	; whose high byte counts 1000h byte units,
+bufflag	db	00h	; and a last byte that is cleared before the block is freed
+copyseg	dw	00h	; segment of the copy area, one track past trkbuf
+ntrkbuf	db	00h	; whole tracks that fit in it
+curseg	dw	00h	; segment of the track being moved
+oldvec	db	00h,00h,00h,00h	; BIOS diskette parameter pointer found at start
+newvec	dw	00h	; the replacement pointer: offset
+newvecseg	dw	00h	; and segment
+
+; The 8 sector diskette parameter table installed while formatting, at 0757h.
+; IBM layout: two specify bytes, motor off delay, 512 byte sectors, 8 sectors
+; a track, gap, data length, format gap, fill byte 0e5h, head settle, motor start.
 	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+
+; VT52 setup, sent at the start: ESC E clear, ESC w / ESC n / ESC q / ESC t /
+; ESC u.  The restore at the end is ESC E clear, ESC v, ESC m.
 scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
 	db	00h
 scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
+
+; Frame corner glyphs: row, column, character.  Row and column are biased by
+; 20h on the way out, so they are stored unbiased here.
 corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
 	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
 titlestr	db	'CP/M-86 Disk Maintenance Program for the'
 	db	' IBM PC   version 1.2',00h
+
+; Decoration of a menu entry.  itemfrm draws a 6 by 3 box and leaves the cursor
+; inside it with an F in reverse video; the key number follows; itemend ends
+; the reverse video and draws a rule and an arrow towards the text.
 itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
 	db	72h,46h,00h
 itemend	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
 mainhdr	db	'Main Menu',00h
+
+; Main menu entries: row, column, key label, text.
 menuitems	db	08h,14h,31h,20h
 vfytxt	db	'Verify a Diskette',00h
 	db	0bh,14h,33h,20h
@@ -1023,8 +1046,15 @@ fmt2txt	db	'Format a Double Sided Diskette',00h
 	db	14h,14h
 	db	'9 Exit this Program',00h
 selfunc	db	'SELECT FUNCTION',00h
+
+; Function keys accepted at the main menu: F1, F3, F5, F7, F9.
 mainkeys	db	01h,03h,05h,07h,09h
+
+; One handler per main menu item, in key order.
 fntable	dw	doverify,docopy,fmt1,fmt2,doexit
+
+; The reverse video prompts for the drive menu, at 08b5h, 08cfh, 08e6h and
+; 0902h.  The code loads them into promptptr by address.
 	db	'SELECT DISKETTE TO VERIFY',00h
 	db	'SELECT SOURCE DISKETTE',00h
 	db	'SELECT DESTINATION DISKETTE',00h
@@ -1053,11 +1083,19 @@ drvmenu	db	14h,14h
 	db	'6  C:',00h
 	db	11h,14h
 	db	'8  D:',00h
+
+; Function keys accepted at the drive menu: F10, then F2, F4, F6, F8.
 drvkeys	db	0ah,02h,04h,06h,08h
 indrvmsg	db	' the Diskette in Drive ',00h
 trkmsg	db	' track',00h
+
+; The boot sector written to track 0 by the formatter, 93h bytes.  It is meant
+; to run at 0000:7c00.  The sides flag goes into byte 1ffh of the track.
 ; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
 	include	bootsect.inc
+
+; The loader written at offset 900h of track 0, 34eh bytes.  It looks for
+; CPM.SYS or CCPM.SYS on the diskette and loads it.
 ; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
 	include	loader.inc
 nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
@@ -1065,6 +1103,9 @@ nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
 copymemmsg	db	' Memory not available for Copying ',00h
 mismatmsg	db	' Source and Destination data do not ma','tch '
 	db	00h
+
+; int 13h status and the address of its message: ten entries, then the
+; messages themselves.
 errtab	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
 	db	09h,44h,0fh,08h,59h,0fh,04h,6dh,0fh,03h,80h,0fh
 	db	02h,9ah,0fh,01h,0b2h,0fh
