@@ -1,0 +1,637 @@
+;***********************************************************
+;  CONFIG.A86 - reconstructed from base/config.cmd
+;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
+;  the rest of the image is a raw db dump still to be decoded.
+;
+;  Build:   make
+;  Check:   make check
+;***********************************************************
+
+; Bounds for tools/a86tool.py: where the data starts and the image ends.
+data_org	equ	049eh
+image_end	equ	09a0h
+
+; One group so the CMD has a single CODE descriptor (the 8080 model),
+; but the data keeps its own segment.
+cgroup	group	code,data
+
+	cseg
+	org	100h
+
+start:
+	jmps	l0126
+
+l0102:
+	db	'Copyright (C) 1983, Digital Research'
+
+l0126:
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,0994h
+	cld
+	call	l046a
+	mov	cl,31h
+	int	0e0h
+	mov	word ptr d0600,es
+	mov	ax,es:.2552h
+	mov	d05fe,ax
+	int	11h
+	and	ax,0e00h
+	jnz	l0152
+	mov	si,offset d049e
+	call	l0424
+	jmp	l0273
+
+l0152:
+	mov	byte ptr d05fa,01h
+	mov	word ptr d05fc,05h
+	cmp	ah,02h
+	jz	l016d
+	mov	byte ptr d05fa,02h
+	mov	word ptr d05fc,0ah
+
+l016d:
+	test	byte ptr .80h,0ffh
+	jnz	l018a
+	call	l02d4
+	call	l03e0
+	call	l0279
+
+l017d:
+	call	l0203
+	call	l0441
+	call	word ptr d060c[bx]
+	jmp	l017d
+
+l018a:
+	call	l0279
+	mov	si,80h
+	lodsb
+	mov	d06ca,si
+	mov	ah,00h
+	add	si,ax
+	mov	word ptr [si],20h
+
+l019d:
+	call	l036e
+	jc	l01a7
+	call	l03a4
+	jmps	l019d
+
+l01a7:
+	jmp	l026a
+
+l01aa:
+	mov	si,81h
+	call	l0424
+	mov	al,0dh
+	call	l0480
+	mov	al,0ah
+	call	l0480
+	mov	cx,d06ca
+	sub	cx,80h
+	jz	l01cb
+
+l01c4:
+	mov	al,20h
+	call	l0480
+	loop	l01c4
+
+l01cb:
+	mov	si,offset d06d2
+	call	l0424
+	jmp	l0273
+
+l01d4:
+	inc	dx
+
+l01d5:
+	mov	si,offset d0622
+	mov	ah,07h
+	jmps	l01f8
+
+l01dc:
+	inc	dx
+
+l01dd:
+	mov	si,offset d0624
+	mov	ah,03h
+	jmps	l01f8
+
+l01e4:
+	inc	dx
+
+l01e5:
+	mov	si,offset d0626
+	mov	ah,03h
+	call	l01f8
+	cmp	al,02h
+	jz	l01fa
+	ret
+
+l01f2:
+	inc	dx
+
+l01f3:
+	mov	si,offset d0628
+	mov	ah,01h
+
+l01f8:
+	add	si,dx
+
+l01fa:
+	mov	al,[si]
+	inc	al
+	and	al,ah
+	mov	[si],al
+	ret
+
+l0203:
+	mov	al,d05fa
+	mov	d05fb,al
+	mov	al,72h
+	call	l0479
+	mov	dx,090eh
+	sub	bx,bx
+
+l0213:
+	mov	si,offset d0632
+	mov	al,d0622[bx]
+	call	l024a
+	mov	si,offset d0652
+	mov	al,d0624[bx]
+	call	l024a
+	mov	si,offset d0662
+	mov	al,d0626[bx]
+	call	l024a
+	mov	si,offset d0672
+	mov	al,d0628[bx]
+	call	l024a
+	mov	dx,093dh
+	inc	bx
+	dec	byte ptr d05fb
+	jnz	l0213
+	mov	al,75h
+	jmp	l0479
+
+l024a:
+	push	dx
+	mov	ah,00h
+	add	ax,ax
+	add	ax,ax
+	add	si,ax
+	call	l042e
+	mov	cx,04h
+
+l0259:
+	lodsb
+	call	l0480
+	loop	l0259
+	pop	dx
+	add	dh,03h
+	ret
+
+l0264:
+	mov	si,offset d04d6
+	call	l0424
+
+l026a:
+	sub	bx,bx
+	call	l02ac
+	inc	bx
+	call	l02ac
+
+l0273:
+	mov	cl,00h
+	mov	dl,00h
+	int	0e0h
+
+l0279:
+	db	0c4h,1eh,0feh,05h	; les bx,word [0x5fe]
+	mov	ax,es:[bx]
+	mov	si,offset d0624
+	mov	cx,0302h
+	call	l02a1
+	mov	si,offset d0628
+	mov	cx,0101h
+	call	l02a1
+	mov	si,offset d0626
+	mov	cx,0302h
+	call	l02a1
+	mov	si,offset d0622
+	mov	cx,0701h
+
+l02a1:
+	push	ax
+	and	al,ch
+	and	ah,ch
+	mov	[si],ax
+	pop	ax
+	ror	ax,cl
+	ret
+
+l02ac:
+	mov	al,d0622[bx]
+	mov	cl,02h
+	shl	ax,cl
+	or	al,d0626[bx]
+	shl	ax,1
+	or	al,d0628[bx]
+	mov	cl,02h
+	shl	ax,cl
+	or	al,d0624[bx]
+	db	0c4h,36h,0feh,05h	; les si,word [0x5fe]
+	db	26h,88h,00h	; mov [es:bx+si],al
+	mov	ah,00h
+	mov	dx,bx
+	int	14h
+	ret
+
+l02d4:
+	mov	si,offset d04c9
+	call	l0424
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	l0350
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	l0350
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	l0350
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	l035d
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	l035d
+	mov	si,offset d04dd
+	mov	cx,06h
+
+l030e:
+	mov	al,59h
+	call	l0479
+	lodsb
+	add	al,20h
+	call	l0480
+	lodsb
+	add	al,20h
+	call	l0480
+	lodsb
+	call	l0480
+	loop	l030e
+	mov	si,offset d04ef
+	mov	dh,01h
+	call	l0412
+	mov	si,offset d052e
+	mov	dx,0416h
+	call	l0421
+	mov	si,offset d0557
+	mov	dx,060eh
+	call	l0421
+	cmp	byte ptr d05fa,01h
+	jnz	l0347
+	ret
+
+l0347:
+	mov	si,offset d0565
+	mov	dx,0634h
+	jmp	l0421
+
+l0350:
+	push	cx
+	call	l042e
+
+l0354:
+	mov	al,bl
+	call	l0480
+	loop	l0354
+	pop	cx
+	ret
+
+l035d:
+	push	cx
+
+l035e:
+	push	dx
+	call	l042e
+	mov	al,bl
+	call	l0480
+	pop	dx
+	inc	dh
+	loop	l035e
+	pop	cx
+	ret
+
+l036e:
+	push	ds
+	pop	es
+	mov	si,d06ca
+
+l0374:
+	inc	si
+	cmp	byte ptr [si],20h
+	jz	l0374
+	cmp	byte ptr [si],00h
+	stc
+	jz	l03a3
+	mov	di,si
+	mov	al,20h
+	mov	cx,05h
+	repne	scasb
+	jz	l038e
+	jmp	l01aa
+
+l038e:
+	mov	dx,cx
+	mov	di,offset d06ce
+	jcxz	l0397
+	rep	stosb
+
+l0397:
+	mov	cx,04h
+	sub	cx,dx
+	rep	movsb
+	mov	d06cc,si
+	clc
+
+l03a3:
+	ret
+
+l03a4:
+	mov	si,offset d062a
+	mov	cx,14h
+	call	l03c1
+	add	si,50h
+	lodsw
+	mov	bx,ax
+	lodsw
+	cmp	bx,0620h
+	jz	l03be
+	add	bx,d0620
+
+l03be:
+	mov	[bx],al
+	ret
+
+l03c1:
+	push	ds
+	pop	es
+
+l03c3:
+	push	cx
+	push	si
+	mov	di,offset d06ce
+	mov	cx,04h
+	repe	cmpsb
+	pop	si
+	pop	cx
+	jz	l03d9
+	add	si,04h
+	loop	l03c3
+	jmp	l01aa
+
+l03d9:
+	mov	ax,d06cc
+	mov	d06ca,ax
+	ret
+
+l03e0:
+	mov	si,offset d0593
+	mov	cx,d05fc
+
+l03e7:
+	push	cx
+	lodsb
+	mov	dh,al
+	lodsb
+	mov	dl,al
+	push	dx
+	call	l042e
+	pop	dx
+	inc	dh
+	push	si
+	mov	si,offset d0573
+	call	l0424
+	pop	si
+	lodsb
+	call	l0480
+	lodsb
+	call	l0480
+	lodsb
+	test	al,al
+	jz	l040e
+	dec	si
+	call	l0412
+
+l040e:
+	pop	cx
+	loop	l03e7
+	ret
+
+l0412:
+	push	ds
+	pop	es
+	mov	di,si
+	mov	al,00h
+	mov	cx,50h
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+
+l0421:
+	call	l042e
+
+l0424:
+	lodsb
+
+l0425:
+	call	l0480
+	lodsb
+	test	al,al
+	jnz	l0425
+	ret
+
+l042e:
+	mov	al,59h
+	call	l0479
+	add	dx,2020h
+	mov	al,dh
+	call	l0480
+	mov	al,dl
+	jmp	l0480
+
+l0441:
+	mov	di,offset d0602
+	mov	cx,d05fc
+
+l0448:
+	push	cx
+	push	di
+	push	ds
+	pop	es
+	call	l0499
+	mov	al,ah
+	sub	al,3ah
+	repne	scasb
+	pop	di
+	pop	cx
+	jz	l0460
+	mov	al,07h
+	call	l0480
+	jmps	l0448
+
+l0460:
+	mov	bl,al
+	mov	bh,00h
+	dec	bx
+	add	bx,bx
+	sub	dx,dx
+	ret
+
+l046a:
+	mov	cl,0bh
+	int	0e0h
+	test	al,al
+	jz	l0478
+	mov	cl,01h
+	int	0e0h
+	jmps	l046a
+
+l0478:
+	ret
+
+l0479:
+	push	ax
+	mov	al,1bh
+	call	l0480
+	pop	ax
+
+l0480:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	es
+	mov	dl,al
+	mov	cl,06h
+	int	0e0h
+	cld
+	pop	es
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	ret
+
+l0494:
+	db	0b4h,01h
+	db	0cdh,16h,0c3h
+
+l0499:
+	mov	ah,00h
+	int	16h
+	ret
+
+l049e:
+
+; ---- data ----
+	dseg
+d049e	db	'No Serial Communication options instal','led.'
+	db	00h
+d04c9	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+	db	00h
+d04d6	db	1bh,45h,1bh,76h,1bh,6dh,00h
+d04dd	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
+d04ef	db	'CP/M-86 Serial Port Configuration for th'
+	db	'e IBM PC   version 1.0',00h
+d052e	db	1bh
+	db	'rPress function key to advance value.',1bh,75h
+	db	00h
+d0557	db	'Serial Port 0',00h
+d0565	db	'Serial Port 1',00h
+d0573	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,46h,08h,08h,08h,0b3h,0ah,08h,0c0h
+	db	0c4h,0c4h,0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,00h
+d0593	db	08h,15h
+	db	'1 Baud Rate',00h
+	db	0bh,15h
+	db	'3 Word Length',00h
+	db	0eh,15h
+	db	'5 Parity',00h
+	db	11h,15h
+	db	'7 Stop Bits',00h
+	db	14h,15h
+	db	'9 Configure and Exit',00h
+	db	08h,34h,32h,20h,00h,0bh,34h,34h,20h,00h,0eh
+	db	34h,36h,20h,00h,11h,34h,38h,20h,00h,14h
+	db	34h,31h,30h,00h
+d05fa	db	00h
+d05fb	db	00h
+d05fc	dw	00h
+d05fe	dw	00h
+d0600	dw	00h
+d0602	db	01h,03h,05h,07h,09h,02h,04h,06h,08h,0ah
+d060c	dw	l01d5,l01d4,l01dd,l01dc,l01e5,l01e4,l01f3,l01f2,l0264,l0264
+d0620	dw	00h
+d0622	db	00h,00h
+d0624	db	00h,00h
+d0626	db	00h,00h
+d0628	db	00h,00h
+d062a	db	'  P0  P1'
+d0632	db	' 110 150 300 6001200240048009600'
+d0652	db	'   5   6   7   8'
+d0662	db	'NONE ODD????EVEN'
+d0672	db	'   1   2 ',06h,00h
+	db	00h,20h,06h,01h,00h,22h,06h,00h,00h,22h,06h,01h
+	db	00h,22h,06h,02h,00h,22h,06h,03h,00h,22h,06h,04h
+	db	00h,22h,06h,05h,00h,22h,06h,06h,00h,22h,06h,07h
+	db	00h,24h,06h,00h,00h,24h,06h,01h,00h,24h,06h,02h
+	db	00h,24h,06h,03h,00h,26h,06h,00h,00h,26h,06h,01h
+	db	00h,26h,06h,02h,00h,26h,06h,03h,00h,28h,06h,00h
+	db	00h,28h,06h,01h,00h
+d06ca	dw	00h
+d06cc	dw	00h
+d06ce	db	00h,00h,00h,00h
+d06d2	db	3fh,0dh,0ah
+	db	'Question mark is under the invalid ident'
+	db	'ifier in the command tail.',0dh,0ah,0ah
+	db	'Absence of a command tail invokes the sc'
+	db	'reen mode.',0dh,0ah
+	db	'If a command tail is present, all argume'
+	db	'nts must be separated by spaces.',0dh,0ah,0ah
+	db	'Valid port identifiers are:          P','0 P1'
+	db	0dh,0ah
+	db	'Valid speed identifiers are:         110'
+	db	' 150 300 600 1200 2400 4800 9600',0dh,0ah
+	db	'Valid word length identifiers are:   5 6',' 7 8'
+	db	0dh,0ah
+	db	'Valid parity identifiers are:        NON'
+	db	'E ODD EVEN',0dh,0ah
+	db	'Valid stop bit identifiers are:      1 2',0dh
+	db	0ah,0ah
+	db	'The following example sets Serial Port 0',' to:'
+	db	0dh,0ah
+	db	'1200 baud, 7 bit odd parity, with 2 stop'
+	db	' bits.',0dh,0ah,0ah,'CONFIG P0 1200 7 ODD 2',0dh
+	db	0ah,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h
+
+	end

@@ -480,13 +480,75 @@ def t_h862bin():
     assert r.returncode != 0, 'an output that is not .bin or .inc'
 
 
+def t_read_table_extent():
+    """A table ends where code one of its entries names begins, or at the
+    next table: the bytes after that are instructions, not more entries."""
+    from a86 import holes as H
+    mem = bytearray(0x200)
+    for i, w in enumerate([0x150, 0x106, 0x160, 0x170]):
+        mem[0x100 + 2 * i], mem[0x101 + 2 * i] = w & 255, w >> 8
+
+    def get(a, b):
+        return bytes(mem[a:b])
+
+    def ok(w):
+        return 0x100 <= w < 0x1f0
+
+    assert H.read_table(get, 0x100, 0x200, ok) == [0x150, 0x106, 0x160], \
+        'must stop where its own entry names code (0106)'
+    assert H.read_table(get, 0x100, 0x200, ok, {0x104}) == [0x150, 0x106], \
+        'must stop where another table starts'
+
+
+def t_setup_tables_and_odd_boundary():
+    """setup reaches its tables through a pointer variable (add bx,[var] then
+    call word [bx]) and its code ends on an odd address."""
+    root = sandbox(bins=['setup'])
+    rc, out = tool(root, None, 'scaffold', 'setup')
+    assert rc == 0 and 'PASS' in out, out
+    b, org = '../../base/setup.cmd', 'setuporg.a86'
+    rc, out = tool(root, 'setup', 'holes', b, org)
+    m = re.search(r'after following tables\s*:\s*(\d+) new entry points, '
+                  r'(\d+) bytes unreached', out)
+    assert m and int(m.group(1)) >= 20 and int(m.group(2)) < 300, \
+        'tables behind the pointer variable were not followed: ' + out
+
+    sys.path.insert(0, root + '/tools')
+    try:
+        from a86.holes import discover
+        seen, _, tabs, _, _, _ = discover(root + '/base/setup.cmd', -0x80,
+                                          0x1e90, 0x93b)
+    finally:
+        sys.path.remove(root + '/tools')
+        for k in [k for k in sys.modules if k == 'a86' or k.startswith('a86.')]:
+            del sys.modules[k]
+    assert len(tabs) >= 8, 'found only %d tables' % len(tabs)
+    spans = sorted((t, t + 2 * len(ws)) for t, (_, ws) in tabs.items())
+    for (_, b1), (a2, _) in zip(spans, spans[1:]):
+        assert b1 <= a2, 'two tables overlap at %04x' % a2
+    for t, (_, ws) in tabs.items():
+        for w in ws:
+            assert w in seen, 'table %04x entry %04x is not an instruction' \
+                % (t, w)
+        for a, (size, _) in seen.items():
+            assert not (a < t + 2 * len(ws) and a + size > t), \
+                'instruction %04x lies inside table %04x' % (a, t)
+
+    rc, out = tool(root, 'setup', 'labels', b, org)
+    assert rc == 0, out
+    rc, out = tool(root, 'setup', 'boundary', b, org, '--set')
+    assert rc == 0 and 'data_org set to 093ch' in out, out
+    assert make_check(root + '/commands/setup'), 'odd boundary does not rebuild'
+
+
 TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
          t_pipeline_dskmaint, t_markers_not_used_as_names, t_holes_known_tools, t_boundary_known_tools,
          t_annotate_restrictive, t_relabel_noop, t_guard_and_revert,
          t_decode_demotion, t_decode_restores_on_failure,
          t_datamap_known_tools, t_datamap_embedded_code, t_datamap_tiles,
          t_typedata_restrictive, t_usedata_restrictive,
-         t_usedata_drops_what_does_not_build, t_h862bin]
+         t_usedata_drops_what_does_not_build, t_h862bin,
+         t_read_table_extent, t_setup_tables_and_odd_boundary]
 
 
 def main():

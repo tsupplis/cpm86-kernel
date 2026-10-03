@@ -67,29 +67,82 @@ def segments(get, a, b, ok):
 
 
 INDIRECT = re.compile(r'\[(?:[a-z]{2}\+){0,2}0x([0-9a-f]+)\]')
+# call/jmp through a bare register: the table address was put there earlier
+BARE = re.compile(r'^(?:call|jmp)\s+word\s+(?:near\s+)?\[(bx|si|di|bp)\]$')
+ADD_VAR = re.compile(r'^add\s+(bx|si|di|bp),\[0x([0-9a-f]+)\]$')
+STORE_VAR = re.compile(r'^mov\s+word\s+\[0x([0-9a-f]+)\],0x([0-9a-f]+)$')
 
 
-def table_sites(seen):
-    """{table address: address of the indirect jmp/call that indexes it}."""
+def pointer_vars(seen):
+    """{variable address: site} for `add reg,[var]` that feeds `call word [reg]`.
+
+    The table is not named at the call: its address lives in a variable that
+    the code adds to the index.  Both instructions must be in one straight run.
+    """
+    order = sorted(seen)
+    out = {}
+    for i, a in enumerate(order):
+        m = BARE.match(seen[a][1])
+        if not m:
+            continue
+        for j in range(i - 1, max(i - 8, -1), -1):
+            b = order[j]
+            if b + seen[b][0] != order[j + 1]:
+                break
+            v = ADD_VAR.match(seen[b][1])
+            if v and v.group(1) == m.group(1):
+                out.setdefault(int(v.group(2), 16), a)
+                break
+    return out
+
+
+def table_sites(seen, get=None):
+    """{table address: address of the indirect jmp/call that indexes it}.
+
+    A table is named by a displacement on the call/jmp, or held in a variable
+    that is added to the index (pointer_vars).  For such a variable the table
+    addresses are its value in the image and every constant stored into it.
+    """
     out = {}
     for a, (_, text) in seen.items():
         if text.split(None, 1)[0] in ('jmp', 'call'):
             m = INDIRECT.search(text)
             if m and int(m.group(1), 16) >= CODE_START:
                 out.setdefault(int(m.group(1), 16), a)
+    if get is None:
+        return out
+    pv = pointer_vars(seen)
+    for v, site in pv.items():
+        raw = get(v, v + 2)
+        cands = {raw[0] | raw[1] << 8}
+        for _, text in seen.values():
+            s = STORE_VAR.match(text)
+            if s and int(s.group(1), 16) == v:
+                cands.add(int(s.group(2), 16))
+        for t in cands:
+            if t >= CODE_START:
+                out.setdefault(t, site)
     return out
 
 
-def read_table(get, t, end, ok):
-    """Words from t on, while each is a plausible code address."""
-    ws = []
-    while t + 2 * len(ws) + 2 <= end and len(ws) < 128:
+def read_table(get, t, end, ok, stops=()):
+    """Words from t on, while each is a plausible code address.
+
+    A table ends where the code one of its own entries names begins (those
+    bytes are instructions, not more entries), and where another table starts.
+    """
+    ws, cut = [], end
+    while t + 2 * len(ws) + 2 <= cut and len(ws) < 128:
         a = t + 2 * len(ws)
+        if a in stops:
+            break
         raw = get(a, a + 2)
         w = raw[0] | raw[1] << 8
         if not ok(w):
             break
         ws.append(w)
+        if a + 2 <= w < cut:
+            cut = w
     return ws
 
 
@@ -118,8 +171,9 @@ def discover(binf, base, end, hi):
             return not (i >= 0 and starts[i] != w
                         and w < starts[i] + seen[starts[i]][0])
 
-        for t, site in table_sites(seen).items():
-            ws = read_table(get, t, end, ok)
+        sites = table_sites(seen, get)
+        for t, site in sites.items():
+            ws = read_table(get, t, end, ok, set(sites) - {t})
             if len(ws) >= 2:
                 tabs[t] = (site, ws)
         fresh = {w for _, ws in tabs.values() for w in ws

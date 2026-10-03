@@ -1,0 +1,1403 @@
+;***********************************************************
+;  SETUP.A86 - reconstructed from base/setup.cmd
+;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
+;  the rest of the image is a raw db dump still to be decoded.
+;
+;  Build:   make
+;  Check:   make check
+;***********************************************************
+
+; Bounds for tools/a86tool.py: where the data starts and the image ends.
+data_org	equ	093ch
+image_end	equ	1e90h
+
+; One group so the CMD has a single CODE descriptor (the 8080 model),
+; but the data keeps its own segment.
+cgroup	group	code,data
+
+	cseg
+	org	100h
+
+start:
+	jmps	l0126
+
+l0102:
+	db	'Copyright (C) 1983, Digital Research'
+
+l0126:
+	mov	ax,cs
+	mov	ds,ax
+	call	l08f2
+	mov	cl,31h
+	int	0e0h
+	mov	word ptr d0b3b,es
+	call	l0730
+	call	l07a7
+
+l013b:
+	call	l0709
+	mov	di,d0bef
+	call	l08c9
+	add	bx,d0bf1
+	call	word ptr [bx]
+	call	l0901
+	jmps	l013b
+
+l0150:
+d0150	dw	l019e,l0291,l02f5,l044f,l051a,l0185,l0646,l06b6
+d0160	dw	l03fb,l04c6,l05ce,l016c,l0646,l06b6
+
+l016c:
+	mov	word ptr d0bed,0bf5h
+	mov	word ptr d0bf1,0150h
+	mov	word ptr d0bef,0c2dh
+	mov	word ptr d0bf3,0c3dh
+	ret
+
+l0185:
+	mov	word ptr d0bed,0bffh
+	mov	word ptr d0bf1,0160h
+	mov	word ptr d0bef,0c36h
+	mov	word ptr d0bf3,0cd2h
+	ret
+
+l019e:
+	mov	si,offset d0c42
+	mov	ax,0ddah
+	call	l0876
+	call	l01f3
+	mov	si,offset d0eac
+	call	l083d
+	mov	dh,0dh
+	call	l088e
+	mov	di,offset d0eee
+	call	l08c9
+	jmp	word ptr 01bfh[bx]
+
+l01bf:
+d01bf	dw	l01c5,l01eb,l016c
+
+l01c5:
+	mov	cx,0b01h
+	call	l0904
+	mov	si,offset d0efd
+	mov	dx,0d05h
+	call	l0883
+	mov	dh,12h
+	mov	si,offset d0fae
+	call	l0891
+	mov	dx,141dh
+	mov	cx,14h
+	mov	di,offset d094b
+	call	l0224
+	jmp	l019e
+
+l01eb:
+	mov	byte ptr d094b,00h
+	jmp	l019e
+
+l01f3:
+	mov	si,offset d0e8d
+	mov	dx,0a0eh
+	call	l08a9
+	call	l0910
+	mov	cx,14h
+	mov	si,offset d094b
+	cld
+	lodsb
+	test	al,al
+	jnz	l0213
+	mov	si,offset d0ef2
+	call	l08ac
+	jmps	l0221
+
+l0213:
+	cmp	al,0dh
+	jnz	l0219
+	mov	al,0b3h
+
+l0219:
+	call	l091d
+	lodsb
+	test	al,al
+	loopne	l0213
+
+l0221:
+	jmp	l0914
+
+l0224:
+	call	l08b6
+	mov	bx,cx
+
+l0229:
+	mov	al,5fh
+	call	l091d
+	loop	l0229
+	mov	cx,bx
+	call	l08b6
+	mov	al,6dh
+	call	l0916
+
+l023a:
+	mov	al,20h
+	call	l091d
+	mov	al,08h
+	call	l091d
+	call	l0936
+	and	al,7fh
+	cmp	al,0dh
+	jz	l026f
+	cmp	al,05h
+	jz	l0263
+	cmp	al,08h
+	jz	l0275
+	cmp	al,20h
+	jc	l025c
+	stosb
+	jmps	l0268
+
+l025c:
+	mov	al,07h
+	call	l091d
+	jmps	l023a
+
+l0263:
+	mov	al,0dh
+	stosb
+	mov	al,0b3h
+
+l0268:
+	call	l091d
+	loop	l023a
+	jmps	l028c
+
+l026f:
+	stosb
+	mov	al,00h
+	stosb
+	jmps	l028c
+
+l0275:
+	cmp	cx,bx
+	jz	l025c
+	inc	cx
+	dec	di
+	mov	al,5fh
+	call	l091d
+	mov	al,08h
+	call	l091d
+	mov	al,08h
+	call	l091d
+	jmps	l023a
+
+l028c:
+	mov	al,6eh
+	jmp	l0916
+
+l0291:
+	mov	si,offset d0c5c
+	mov	ax,0fc7h
+	call	l0876
+	mov	si,offset d1092
+	call	l083d
+
+l02a0:
+	call	l02d2
+	mov	dh,0ah
+	call	l088e
+	mov	di,offset d110a
+	call	l08c9
+	jmp	word ptr 02b2h[bx]
+
+l02b2:
+d02b2	dw	l02ba,l02c2,l02ca,l016c
+
+l02ba:
+	xor	byte ptr d0b3d,0ffh
+	jmp	l02a0
+
+l02c2:
+	xor	byte ptr d0b3e,0ffh
+	jmp	l02a0
+
+l02ca:
+	xor	byte ptr d0b3f,0ffh
+	jmp	l02a0
+
+l02d2:
+	mov	dx,0c0ch
+	mov	cx,03h
+	mov	bx,offset d0b3d
+	call	l0910
+
+l02de:
+	mov	si,offset d10fe
+	test	byte ptr [bx],0ffh
+	jnz	l02e9
+	mov	si,offset d1104
+
+l02e9:
+	call	l08a9
+	inc	bx
+	add	dh,03h
+	loop	l02de
+	jmp	l0914
+
+l02f5:
+	mov	si,offset d0c75
+	mov	ax,110fh
+	call	l0876
+	call	l0372
+	mov	si,12a8h
+	call	l083d
+	mov	dh,0fh
+	call	l088e
+	mov	di,offset d12ca
+	call	l08c9
+	jmp	word ptr 0316h[bx]
+
+l0316:
+d0316	dw	l031a,l016c
+
+l031a:
+	mov	cx,0f01h
+	call	l0904
+	mov	si,offset d12cd
+	mov	dx,0f05h
+	call	l0883
+	mov	si,offset d1386
+	mov	dh,13h
+	call	l0891
+	mov	si,offset d139d
+	mov	dx,1526h
+	call	l08a9
+	call	l03a7
+	mov	cl,04h
+	shl	al,cl
+	mov	dh,al
+	call	l03a7
+	or	dh,al
+	mov	al,6eh
+	call	l0916
+	mov	al,dh
+	cmp	al,00h
+	jz	l0369
+	cmp	al,08h
+	jc	l0363
+	cmp	al,90h
+	jna	l0369
+	cmp	al,0c0h
+	jc	l0363
+	cmp	al,0e0h
+	jna	l0369
+
+l0363:
+	call	l03d4
+	jmp	l02f5
+
+l0369:
+	mov	dl,00h
+	mov	d093d,dx
+	jmp	l02f5
+
+l0372:
+	mov	si,offset d126f
+	mov	dx,0c12h
+	call	l08a9
+	call	l0910
+	mov	dx,d093d
+	call	l0393
+	xchg	dh,dl
+	call	l0393
+	mov	si,offset d1292
+	call	l08ac
+	jmp	l0914
+
+l0393:
+	mov	al,dh
+	mov	cl,04h
+	shr	al,cl
+	call	l03a0
+	mov	al,dh
+	and	al,0fh
+
+l03a0:
+	mov	bx,offset d1298
+	xlat	bx
+	jmp	l091d
+
+l03a7:
+	call	l0936
+	cmp	al,60h
+	jc	l03b0
+	sub	al,20h
+
+l03b0:
+	mov	di,offset d1298
+	mov	cx,10h
+	cld
+	repne	scasb
+	jz	l03c2
+	mov	al,07h
+	call	l091d
+	jmps	l03a7
+
+l03c2:
+	call	l091d
+	mov	al,20h
+	call	l091d
+	mov	al,08h
+	call	l091d
+	mov	al,0fh
+	sub	al,cl
+	ret
+
+l03d4:
+	mov	al,70h
+	call	l0916
+	mov	si,offset d13a4
+	mov	dh,15h
+	call	l089a
+	mov	al,71h
+	call	l0916
+	mov	cx,03h
+
+l03e9:
+	mov	al,07h
+	call	l091d
+	loop	l03e9
+	mov	si,offset d13bf
+	mov	dh,13h
+	call	l0891
+	jmp	l0936
+
+l03fb:
+	mov	si,offset d0cd7
+	mov	ax,13d8h
+	call	l0876
+	mov	si,offset d14f1
+	call	l083d
+	mov	dh,0dh
+	call	l088e
+
+l040f:
+	call	l0430
+	mov	di,offset d1566
+	call	l08c9
+	jmp	word ptr 041ch[bx]
+
+l041c:
+d041c	dw	l0422,l0429,l0185
+
+l0422:
+	mov	byte ptr d093f,0ffh
+	jmps	l040f
+
+l0429:
+	mov	byte ptr d093f,00h
+	jmps	l040f
+
+l0430:
+	mov	si,offset d152f
+	mov	dx,0b11h
+	call	l08a9
+	call	l0910
+	mov	si,offset d1554
+	test	byte ptr d093f,0ffh
+	jnz	l0449
+	mov	si,offset d155d
+
+l0449:
+	call	l08ac
+	jmp	l0914
+
+l044f:
+	mov	si,offset d0c85
+	mov	ax,156ah
+	call	l0876
+	mov	si,offset d1682
+	call	l083d
+	mov	dh,0dh
+	call	l088e
+
+l0463:
+	call	l0490
+	mov	di,offset d16e8
+	call	l08c9
+	jmp	word ptr 0470h[bx]
+
+l0470:
+d0470	dw	l0476,l047d,l016c
+
+l0476:
+	mov	al,d0940
+	add	al,10h
+	jmps	l0482
+
+l047d:
+	mov	al,d0940
+	sub	al,10h
+
+l0482:
+	jc	l0489
+	mov	d0940,al
+	jmps	l0463
+
+l0489:
+	mov	al,07h
+	call	l091d
+	jmps	l0463
+
+l0490:
+	mov	si,offset d16bb
+	mov	dx,0b12h
+	call	l08a9
+	call	l0910
+	mov	al,d0940
+	mov	cl,04h
+	shr	al,cl
+	or	al,0f0h
+	neg	al
+	shl	al,1
+	aam
+	test	ah,ah
+	jz	l04b8
+	push	ax
+	mov	al,ah
+	or	al,30h
+	call	l091d
+	pop	ax
+
+l04b8:
+	or	al,30h
+	call	l091d
+	mov	si,offset d16e1
+	call	l08ac
+	jmp	l0914
+
+l04c6:
+	mov	si,offset d0cf3
+	mov	ax,16ech
+	call	l0876
+	mov	si,offset d17d4
+	call	l083d
+	mov	dh,0dh
+	call	l088e
+
+l04da:
+	call	l04fb
+	mov	di,offset d1822
+	call	l08c9
+	jmp	word ptr 04e7h[bx]
+
+l04e7:
+d04e7	dw	l04ed,l04f4,l0185
+
+l04ed:
+	mov	byte ptr d097b,0ffh
+	jmps	l04da
+
+l04f4:
+	mov	byte ptr d097b,00h
+	jmps	l04da
+
+l04fb:
+	mov	si,offset d1826
+	mov	dx,0b10h
+	call	l08a9
+	call	l0910
+	mov	si,offset d1554
+	test	byte ptr d097b,0ffh
+	jnz	l0514
+	mov	si,offset d155d
+
+l0514:
+	call	l08ac
+	jmp	l0914
+
+l051a:
+	mov	si,offset d184e
+	mov	ax,186eh
+	call	l0876
+	call	l057a
+	mov	si,offset d19dd
+	call	l083d
+	mov	dh,0fh
+	call	l088e
+	mov	di,offset d1a05
+	call	l08c9
+	jmp	word ptr 053bh[bx]
+
+l053b:
+d053b	dw	l053f,l016c
+
+l053f:
+	mov	cx,0f01h
+	call	l0904
+	mov	si,offset d1a08
+	mov	dx,0f05h
+	call	l0883
+	mov	si,offset d1acd
+	mov	dh,13h
+	call	l0891
+	mov	si,offset d139d
+	mov	dx,1526h
+	call	l08a9
+	call	l05aa
+	mov	cl,0ah
+	mul	cl
+	mov	cx,ax
+	call	l05aa
+	mov	ah,00h
+	add	ax,cx
+	mov	.096bh,ax
+	mov	al,6eh
+	call	l0916
+	jmp	l051a
+
+l057a:
+	mov	si,offset d19b2
+	mov	dx,0c13h
+	call	l08a9
+	call	l0910
+	mov	ax,.096bh
+	aam
+	test	ah,ah
+	jz	l0592
+	call	l05a0
+
+l0592:
+	xchg	ah,al
+	call	l05a0
+	mov	si,offset d19d8
+	call	l08ac
+	jmp	l0914
+
+l05a0:
+	push	ax
+	mov	al,ah
+	or	al,30h
+	call	l091d
+	pop	ax
+	ret
+
+l05aa:
+	call	l0936
+	cmp	al,30h
+	jc	l05c7
+	cmp	al,39h
+	ja	l05c7
+	push	ax
+	call	l091d
+	mov	al,20h
+	call	l091d
+	mov	al,08h
+	call	l091d
+	pop	ax
+	sub	al,30h
+	ret
+
+l05c7:
+	mov	al,07h
+	call	l091d
+	jmps	l05aa
+
+l05ce:
+	mov	si,offset d0d0e
+	mov	ax,1ae5h
+	call	l0876
+	mov	si,offset d1bfa
+	call	l083d
+	mov	dh,0dh
+	call	l088e
+
+l05e2:
+	call	l0627
+	mov	di,offset d1c7c
+	call	l08c9
+	jmp	word ptr 05efh[bx]
+
+l05ef:
+d05ef	dw	l05f5,l0185,l0608
+
+l05f5:
+	mov	byte ptr d0b40,00h
+	mov	word ptr d0b42,02h
+	mov	si,offset d1c64
+	call	l061b
+	jmps	l05e2
+
+l0608:
+	mov	byte ptr d0b40,80h
+	mov	ax,d0b44
+	mov	d0b42,ax
+	mov	si,offset d1c70
+	call	l061b
+	jmps	l05e2
+
+l061b:
+	push	ds
+	pop	es
+	mov	di,offset d0d46
+	mov	cx,0bh
+	cld
+	rep	movsb
+	ret
+
+l0627:
+	mov	si,offset d1c41
+	mov	dx,0b12h
+	call	l08a9
+	call	l0910
+	mov	si,offset d1c64
+	cmp	byte ptr d0b40,00h
+	jz	l0640
+	mov	si,offset d1c70
+
+l0640:
+	call	l08ac
+	jmp	l0914
+
+l0646:
+	call	l06c2
+	mov	al,d0b40
+	test	al,80h
+	jz	l065d
+	call	l0830
+	mov	bx,093bh
+	mov	ah,03h
+	int	13h
+	jmp	l06b6
+
+l065d:
+	mov	cl,0eh
+	mov	dl,al
+	int	0e0h
+	mov	cl,33h
+	mov	dx,ds
+	int	0e0h
+	mov	cl,32h
+	mov	dx,0b48h
+	int	0e0h
+	mov	word ptr d0b46,093bh
+	mov	word ptr d0b4e,04h
+	mov	word ptr d0b53,00h
+	mov	cx,04h
+
+l0685:
+	push	cx
+	mov	cl,1ah
+	mov	dx,d0b46
+	int	0e0h
+	mov	cl,32h
+	mov	dx,0b4dh
+	int	0e0h
+	cmp	word ptr d0b4e,07h
+	jnz	l06a2
+	mov	word ptr d0b53,01h
+
+l06a2:
+	mov	cl,32h
+	mov	dx,0b52h
+	int	0e0h
+	add	word ptr d0b46,80h
+	inc	word ptr d0b4e
+	pop	cx
+	loop	l0685
+
+l06b6:
+	mov	si,offset d0b64
+	call	l08ac
+	mov	cl,00h
+	mov	dl,00h
+	int	0e0h
+
+l06c2:
+	mov	di,offset d099f
+	mov	si,offset d099b
+	mov	cx,02h
+	mov	bx,2552h
+	mov	al,d0b3f
+	call	l06f5
+	mov	di,offset d09a1
+	mov	si,offset d099c
+	mov	cx,0ah
+	mov	bx,2554h
+	mov	al,d0b3e
+	call	l06f5
+	mov	di,offset d09ab
+	mov	si,offset d099d
+	mov	cx,0190h
+	mov	bx,254eh
+	mov	al,d0b3d
+
+l06f5:
+	test	al,al
+	jz	l0708
+	mov	[si],al
+	push	ds
+	pop	es
+	push	es
+	mov	ds,word ptr d0b3b
+	mov	si,[bx]
+	cld
+	rep	movsb
+	pop	ds
+
+l0708:
+	ret
+
+l0709:
+	mov	si,d0bed
+	mov	dh,03h
+	call	l089a
+	mov	si,d0bf3
+	call	l084d
+	mov	si,offset d0d3a
+	call	l084d
+	mov	si,offset d0d75
+	mov	dx,1605h
+	call	l08a9
+	mov	si,offset d0c0b
+	mov	dh,05h
+	jmp	l0891
+
+l0730:
+	mov	si,offset d0b57
+	call	l08ac
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	l0789
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	l0789
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	l0789
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	l0796
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	l0796
+	mov	si,offset d0b6b
+	mov	cx,06h
+
+l076a:
+	mov	al,59h
+	call	l0916
+	lodsb
+	add	al,20h
+	call	l091d
+	lodsb
+	add	al,20h
+	call	l091d
+	lodsb
+	call	l091d
+	loop	l076a
+	mov	si,offset d0b7d
+	mov	dh,01h
+	jmp	l089a
+
+l0789:
+	push	cx
+	call	l08b6
+
+l078d:
+	mov	al,bl
+	call	l091d
+	loop	l078d
+	pop	cx
+	ret
+
+l0796:
+	push	cx
+	push	dx
+
+l0798:
+	call	l08b6
+	mov	al,bl
+	call	l091d
+	inc	dh
+	loop	l0798
+	pop	dx
+	pop	cx
+	ret
+
+l07a7:
+	push	ds
+	pop	es
+	mov	dx,80h
+	mov	cx,01h
+	mov	bx,offset d1c80
+	mov	ax,0201h
+	int	13h
+	jc	l07e8
+	cmp	word ptr d1e7e,0aa55h
+	jnz	l07e8
+	mov	cx,04h
+	mov	si,offset d1e3e
+
+l07c7:
+	cmp	byte ptr 04h[si],0dbh
+	jz	l07d4
+	add	si,10h
+	loop	l07c7
+	jmps	l07e8
+
+l07d4:
+	mov	ax,02h[si]
+	and	al,0c0h
+	or	al,03h
+	mov	d0b44,ax
+	mov	byte ptr d1c7c,03h
+	mov	byte ptr d1bfa,02h
+
+l07e8:
+	mov	dx,00h
+	mov	cx,02h
+	mov	bx,offset d1c80
+	mov	ax,0201h
+	int	13h
+	jc	l0800
+	cmp	word ptr d1c80,0ddb2h
+	jz	l0823
+
+l0800:
+	mov	dl,80h
+	mov	cx,d0b44
+	mov	ax,0201h
+	int	13h
+	jc	l082f
+	cmp	word ptr d1c80,0ddb2h
+	jnz	l082f
+	mov	d0b40,dl
+	mov	d0b42,cx
+	mov	si,offset d1c70
+	call	l061b
+
+l0823:
+	mov	si,offset d1c80
+	mov	di,093bh
+	mov	cx,0100h
+	cld
+	rep	movsw
+
+l082f:
+	ret
+
+l0830:
+	push	ds
+	pop	es
+	mov	dx,.0b40h
+	mov	cx,d0b42
+	mov	al,01h
+	ret
+
+l083d:
+	call	l084d
+	mov	si,offset d0dca
+	call	l084d
+	mov	si,d0bed
+	jmp	l08ac
+
+l084d:
+	lodsb
+	cbw
+	xchg	ax,cx
+
+l0850:
+	lodsw
+	xchg	al,ah
+	mov	dx,ax
+	lodsw
+	mov	bx,ax
+	push	si
+	mov	si,offset d0bc4
+	call	l08a9
+	mov	al,bl
+	call	l091d
+	mov	al,bh
+	call	l091d
+	mov	si,offset d0be6
+	call	l08ac
+	pop	si
+	call	l08ac
+	loop	l0850
+	ret
+
+l0876:
+	push	ax
+	call	l0901
+	mov	dh,04h
+	call	l089a
+	pop	si
+	mov	dx,0605h
+
+l0883:
+	call	l08a9
+	inc	dh
+	test	byte ptr [si],0ffh
+	jnz	l0883
+	ret
+
+l088e:
+	mov	si,offset d0dba
+
+l0891:
+	call	l0910
+	call	l089a
+	jmp	l0914
+
+l089a:
+	push	ds
+	pop	es
+	mov	di,si
+	mov	al,00h
+	mov	cx,50h
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+
+l08a9:
+	call	l08b6
+
+l08ac:
+	lodsb
+
+l08ad:
+	call	l091d
+	lodsb
+	test	al,al
+	jnz	l08ad
+	ret
+
+l08b6:
+	mov	al,59h
+	call	l0916
+	mov	al,dh
+	add	al,20h
+	call	l091d
+	mov	al,dl
+	add	al,20h
+	jmp	l091d
+
+l08c9:
+	mov	cl,[di]
+	mov	ch,00h
+	inc	di
+
+l08ce:
+	push	cx
+	push	di
+	push	ds
+	pop	es
+	mov	bx,cx
+	call	l0936
+	mov	al,ah
+	sub	al,3ah
+	repne	scasb
+	mov	dx,cx
+	pop	di
+	pop	cx
+	jz	l08ea
+	mov	al,07h
+	call	l091d
+	jmps	l08ce
+
+l08ea:
+	sub	bx,dx
+	dec	bx
+	add	bx,bx
+	mov	ah,00h
+	ret
+
+l08f2:
+	mov	cl,0bh
+	int	0e0h
+	test	al,al
+	jz	l0900
+	mov	cl,01h
+	int	0e0h
+	jmps	l08f2
+
+l0900:
+	ret
+
+l0901:
+	mov	cx,0301h
+
+l0904:
+	mov	dx,164eh
+	mov	bx,07h
+	mov	ax,0700h
+	int	10h
+	ret
+
+l0910:
+	mov	al,72h
+	jmps	l0916
+
+l0914:
+	mov	al,75h
+
+l0916:
+	push	ax
+	mov	al,1bh
+	call	l091d
+	pop	ax
+
+l091d:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	es
+	mov	dl,al
+	mov	cl,06h
+	int	0e0h
+	cld
+	pop	es
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	ret
+
+l0931:
+	db	0b4h,01h,0cdh,16h,0c3h
+
+l0936:
+	mov	ah,00h
+	int	16h
+	ret
+
+l093b:
+	db	0b2h
+
+l093c:
+
+; ---- data ----
+	dseg
+	db	0ddh
+d093d	dw	0d000h
+d093f	db	00h
+d0940	db	0cfh
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+d094b	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h
+d096b	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h
+d097b	db	0ffh
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h
+d099b	db	00h
+d099c	db	00h
+d099d	db	00h,00h
+d099f	db	00h,00h
+d09a1	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+d09ab	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h
+d0b3b	dw	00h
+d0b3d	db	00h
+d0b3e	db	00h
+d0b3f	db	00h
+d0b40	db	00h
+	db	00h
+d0b42	dw	02h
+d0b44	dw	00h
+d0b46	dw	00h
+	db	0ah,00h,00h,00h,00h,0bh
+d0b4e	dw	04h
+	db	00h,00h,0eh
+d0b53	dw	00h
+	db	00h,00h
+d0b57	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+	db	00h
+d0b64	db	1bh,45h,1bh,76h,1bh,6dh,00h
+d0b6b	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
+d0b7d	db	'CP/M-86 BIOS Customization Program for t'
+	db	'he IBM PC and XT   version 1.2',00h
+d0bc4	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
+	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
+	db	72h,46h,00h
+d0be6	db	1bh,75h,1bh,43h,20h,20h,00h
+d0bed	dw	0bf5h
+d0bef	dw	0c2dh
+d0bf1	dw	0150h
+d0bf3	dw	0c3dh
+d0bf5	db	'Main Menu',00h
+	db	'Second Page',00h
+d0c0b	db	' SELECT BIOS CUSTOMIZATION OPTION',00h
+d0c2d	db	08h,01h,02h,03h,04h,05h,06h,09h,0ah,06h,01h,02h
+	db	03h,04h,09h,0ah
+d0c3d	db	06h,07h,04h,31h,20h
+d0c42	db	'Power-On Command Line',00h
+	db	07h,2ch,32h,20h
+d0c5c	db	'Save BIOS Parameters',00h
+	db	0ah,04h,33h,20h
+d0c75	db	'Memory Disk',00h
+	db	0ah,2ch,34h,20h
+d0c85	db	'Disk Head Step Time',00h
+	db	0dh,04h
+	db	'5 Field Inst. Device Driver',00h
+	db	0dh,',6 Second Page of Options',00h
+	db	04h,07h,04h,31h,20h
+d0cd7	db	'Verify After Disk Write',00h
+	db	07h,2ch,32h,20h
+d0cf3	db	'Musical Error Messages',00h
+	db	0ah,04h,33h,20h
+d0d0e	db	'Select Storage Disk',00h
+	db	0ah,',4 Return to Main Menu',00h
+d0d3a	db	02h,12h,04h
+	db	'9 Update '
+d0d46	db	'Floppy Disk and Exit',00h
+	db	12h
+	db	',10Exit without Updating',00h
+d0d75	db	'All modified options will take effect at'
+	db	' the next Power-On or Reset.',00h
+d0dba	db	'SELECT FUNCTION',00h
+d0dca	db	01h,14h,14h
+	db	'9 Return to ',00h
+	db	'      This option allows a single Comman'
+	db	'd Line of up to 20 characters',00h
+	db	'to be executed at Power-On, or following'
+	db	' a System Reset.   The ',27h,0b3h,27h
+	db	20h,69h,73h,00h
+	db	'used to show a Carriage Return (0DH).',00h
+	db	00h
+d0e8d	db	'The current Command Line is:  ',00h
+d0eac	db	02h,0eh,14h
+	db	'1 Enter a New Command Line',00h
+	db	11h,14h
+	db	'3 Cancel the Current Command Line',00h
+d0eee	db	03h,01h,03h,09h
+d0ef2	db	'  < none >',00h
+d0efd	db	'      Terminate the new Command Line wit'
+	db	'h a Carriage Return.   To put',00h
+	db	'a Carriage Return within the command, ty'
+	db	'pe a Control-E.  To erase one',00h
+	db	'character, type a Back Space (',11h,'--).',00h
+	db	00h
+d0fae	db	'ENTER A NEW COMMAND LINE',00h
+	db	'      This option allows the current sta'
+	db	'te of certain BIOS parameters',00h
+	db	'to be saved, and reinstated at the next '
+	db	'Power-On or System Reset.  To',00h
+	db	'cancel the Save command, retype the appr'
+	db	'opriate function key.',00h
+	db	00h
+d1092	db	03h,0bh,14h
+	db	'1 Save Programmable Function Keys',00h
+	db	0eh,14h
+	db	'3 Save Character I/O Assignments',00h
+	db	11h,14h
+	db	'5 Save Serial Port Configurations',00h
+d10fe	db	'Saved',00h
+d1104	db	'     ',00h
+d110a	db	04h,01h,03h,05h,09h
+	db	'      This option reserves a portion of '
+	db	'memory to be used as a Logical',00h
+	db	'Disk Drive, referred to as M:.  The user'
+	db	' selects the starting address,',00h
+	db	'and the BIOS allocates all of the contig'
+	db	'uous memory above that address',00h
+	db	'to Memory Disk.   If no memory is found '
+	db	'at the starting address, or if',00h
+	db	'the starting address is zero, then no Me'
+	db	'mory Disk will be created.',00h
+	db	00h
+d126f	db	'The current Starting Address is:  ',00h
+d1292	db	':0000',00h
+d1298	db	'0123456789ABCDEF',01h,11h,14h
+	db	'1 Enter a new Starting Address',00h
+d12ca	db	02h,01h,09h
+d12cd	db	'      Type the two most significant hexa'
+	db	'decimal digits (0-9 or A-F) of',00h
+	db	'the Starting Address segment.  The addre'
+	db	'ss must be within the range of',00h
+	db	'0800-9000 or C000-E000, or equal to 0','000.'
+	db	00h
+	db	00h
+d1386	db	'ENTER STARTING ADDRESS',00h
+d139d	db	20h,5fh,08h,08h,1bh,6dh,00h
+d13a4	db	' Invalid Starting Address ',00h
+d13bf	db	'TYPE ANY KEY TO CONTINUE',00h
+	db	'      This option controls the Verify Af'
+	db	'ter Write feature of the BIOS',00h
+	db	'Disk Drive software.   When enabled, the'
+	db	' Disk is verified after every',00h
+	db	'write operation, with automatic retries '
+	db	'for verification errors.  The',00h
+	db	'Verify feature results in greater data s'
+	db	'ecurity at the cost of speed.',00h
+	db	00h
+d14f1	db	02h,0eh,14h
+	db	'1 Enable Verify After Write',00h
+	db	11h,14h
+	db	'3 Disable Verify After Write',00h
+d152f	db	'The Verify After Write feature is:  ',00h
+d1554	db	'Enabled ',00h
+d155d	db	'Disabled',00h
+d1566	db	03h,01h,03h,09h
+	db	'      This option sets a Head Step Time '
+	db	'of 2 to 32 mSec for the Floppy',00h
+	db	'Disk Controller.  The smaller the time, '
+	db	'the faster the Disk Head moves',00h
+	db	'from track to track.   The default time '
+	db	'is set to 8 mSec, but times of',00h
+	db	'6 mSec or 4 mSec work with some Disk Dri'
+	db	'ves.  Caution is advised.',00h
+	db	00h
+d1682	db	02h,0eh,14h
+	db	'1 Decrease Head Step Time',00h
+	db	11h,14h
+	db	'3 Increase Head Step Time',00h
+d16bb	db	'The current Disk Head Step Time is:  ',00h
+d16e1	db	' mSec ',00h
+d16e8	db	03h,01h,03h,09h
+	db	'      This option controls the Musical M'
+	db	'essages which come with status',00h
+	db	'line errors.   When enabled, all status '
+	db	'line errors are accompanied by',00h
+	db	'a distinctive four toned melody.  If dis'
+	db	'abled, this melody is replaced',00h
+	db	'by a simple beep.',00h
+	db	00h
+d17d4	db	02h,0eh,14h
+	db	'1 Enable the Musical Error Messages',00h
+	db	11h,14h
+	db	'3 Disable the Musical Error Messages',00h
+d1822	db	03h,01h,03h,09h
+d1826	db	'Musical Error Messages are currently:  ',00h
+d184e	db	'Field Installable Device Driver',00h
+	db	'      This option reserves a block of me'
+	db	'mory at the top of the BIOS to',00h
+	db	'be used by Field Installable Device Driv'
+	db	'er Software (FIDDS).   The use',00h
+	db	'of this feature requires a separate FIDD'
+	db	'S program capable of attaching',00h
+	db	'itself to the BIOS.  For further informa'
+	db	'tion, refer to the application',00h
+	db	'note:  "CP/M-86 FIDDS for the IBM PC".',00h
+	db	00h
+d19b2	db	'Current FIDDS Memory Allocation is:  ',00h
+d19d8	db	' Kb ',00h
+d19dd	db	01h,11h,14h
+	db	'1 Change the FIDDS Memory Allocation',00h
+d1a05	db	02h,01h,09h
+d1a08	db	'      Type a two digit decimal number eq'
+	db	'ual to the number of kilobytes',00h
+	db	'you want to reserve for FIDDS.  To enter'
+	db	' a number less than 10, type a',00h
+	db	'leading zero.  To disable the FIDDS feat'
+	db	'ure, type 00.',00h
+	db	00h
+d1acd	db	'ENTER FIDDS MEMORY SIZE',00h
+	db	'      This option controls which disk is'
+	db	' used to store the information',00h
+	db	'which is created by the SETUP program.  '
+	db	'Selecting the Floppy Disk will',00h
+	db	'send this information to drive A:.   Sel'
+	db	'ecting the Hard Disk will send',00h
+	db	'it to the Hard Disk with the lowest driv'
+	db	'e letter (usually B:).',00h
+	db	00h
+d1bfa	db	01h
+	db	0eh,14h
+	db	'1 Store SETUP data on Floppy Disk',00h
+	db	11h,14h
+	db	'3 Store SETUP data on Hard Disk',00h
+d1c41	db	'The current Storage Disk is the:  ',00h
+d1c64	db	'Floppy Disk',00h
+d1c70	db	' Hard Disk ',00h
+d1c7c	db	02h
+	db	01h,09h,03h
+d1c80	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h
+d1e3e	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h
+d1e7e	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h
+
+	end

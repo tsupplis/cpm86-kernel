@@ -28,7 +28,9 @@ def cmd_boundary(binf, a86, base, set_to=None, verify=True):
           % (CODE_START, len(seen), nbytes, len(targets)))
     print('reached code ends at %04xh  (image ends at %04xh, %d bytes beyond)'
           % (stop, end, end - stop))
-    print('proposed data_org: %04xh%s' % (stop, '  (ODD: dseg is word aligned)'
+    print('proposed data_org: %04xh%s' % (stop, '  (odd: the byte at %04xh '
+                                          'stays in the code segment, the dseg '
+                                          'starts at %04xh)' % (stop, stop + 1)
                                           if stop % 2 else ''))
     if hs:
         print('%d unreached ranges inside the code (tables, or code reached '
@@ -44,10 +46,19 @@ def cmd_boundary(binf, a86, base, set_to=None, verify=True):
 
 
 def apply_boundary(binf, a86, base, lines, addr, verify):
-    """Move [addr, image end) into a dseg and record data_org."""
+    """Move [addr, image end) into a dseg and record data_org.
+
+    A dseg is word aligned.  When addr is odd the one byte at addr stays in
+    the code segment as a db and the dseg starts at addr + 1, which is the
+    layout the binary has.
+    """
     if addr % 2:
-        sys.exit('%04xh is odd: dseg is word aligned and would add a pad byte '
-                 'the binary does not have.' % addr)
+        if addr + 1 >= get_bounds(lines)[1]:
+            sys.exit('%04xh is odd and the image ends right after it' % addr)
+        print('%04xh is odd and dseg is word aligned: the byte at %04xh stays '
+              'in the code segment, data_org becomes %04xh'
+              % (addr, addr, addr + 1))
+        addr += 1
     if any(re.match(r'^\s*dseg\b', ln) for ln in lines):
         sys.exit('a dseg already exists; the boundary is already set')
     if MARK not in lines:
