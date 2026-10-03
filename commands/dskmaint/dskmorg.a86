@@ -471,7 +471,7 @@ askbeep:
 askwait:
 	mov	dh,07h
 	call	putrev
-	call	getkey
+	call	getraw
 	mov	dh,07h
 
 clrrow:
@@ -502,7 +502,7 @@ confirm:
 	call	putat
 
 ynkey:
-	call	getkey
+	call	getraw
 	and	al,0dfh
 	cmp	al,59h
 	jz	yesans
@@ -567,7 +567,7 @@ getchoice:
 	mov	byte ptr autofmt,0ffh
 	push	cx
 	push	di
-	call	getkey
+	call	getraw
 	push	ds
 	pop	es
 	mov	al,ah
@@ -688,7 +688,7 @@ diskioes:
 	mov	byte ptr retries,05h
 	call	kbhit
 	jz	tryio
-	call	getkey
+	call	getraw
 	cmp	al,03h
 	jnz	tryio
 	jmp	restart
@@ -794,7 +794,7 @@ kbhit:
 	int	16h
 	ret
 
-getkey:
+getraw:
 	mov	ah,00h
 	int	16h
 	ret

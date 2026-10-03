@@ -2,7 +2,7 @@
 
 ## Synopsis
 
-The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel (BIOS, BDOS and CCP) that incorporates all existing patches plus the capacity to run on modern hardware and virtualization. A distribution of the CP/M-86 OS is also provided fully patched as well as progressive reverse engineering/forensics of each of the basic commands. (tod, ed, help, submit, pip, asm86, ddt86, gencmd, stat have been reconstituted from sources of CP/M-80, CCP/M-86 whenever available). All the remaining tools will go through disassembly and a format command for disk and hard drive is also planned at a laterstage
+The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel (BIOS, BDOS and CCP) that incorporates all existing patches plus the capacity to run on modern hardware and virtualization. A distribution of the CP/M-86 OS is also provided fully patched as well as progressive reverse engineering/forensics of each of the basic commands. (tod, ed, help, submit, pip, asm86, ddt86, gencmd, stat have been reconstituted from sources of CP/M-80, CCP/M-86 whenever available). All the remaining tools will go through disassembly and a format command for disk and hard drive is also planned at a later stage. Only 4 tools remain to be disassembled. So we are very close to a full source based CP/M-86 1.1 for IBM PC XT.
 
 The distribution also packages digital research assembler tools and various basic environments.
 
@@ -218,6 +218,7 @@ guards and for calls into BDOS functions this kernel does not implement.
 | `ddt86` `ed` `help` | CCP/M-86 3.1 sources. Compatible with CP/M-86 |
 | `function` | Assembly reverse engineeering |
 | `assign` | Assembly reverse engineeering |
+| `dskmaint` | Assembly reverse engineeering |
 | `mform` | Assembly reverse engineeering |
 | `pip` | Reconstructed from CCP/M-86 3.1 sources |
 | `stat` | Reconstructed from CP/M-80 2.2 sources |

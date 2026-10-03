@@ -97,6 +97,9 @@ def pipeline():
     out['annotate'] = tool(root, 'dskmaint', 'annotate', binf, org)
     out['typedata'] = tool(root, 'dskmaint', 'typedata', binf, org)
     out['typedata2'] = tool(root, 'dskmaint', 'typedata', binf, org)
+    STAGES['typed'] = clone(root)
+    out['usedata'] = tool(root, 'dskmaint', 'usedata', org)
+    out['usedata2'] = tool(root, 'dskmaint', 'usedata', org)
     out['check'] = make_check(d)
     out['db_left'] = code_db_lines(d + '/' + org)
     STAGES['out'] = out
@@ -152,8 +155,24 @@ def t_pipeline_dskmaint():
     assert 'left as they were' not in p['typedata'][1], \
         'some data segments were not typed: ' + p['typedata'][1]
     assert 'nothing to type' in p['typedata2'][1], 'typedata is not idempotent'
+    rc, out = p['usedata']
+    assert rc == 0 and out.startswith('OK  '), out
+    assert 'did not build' not in out, 'some substitutions did not build: ' + out
+    assert 'nothing to substitute' in p['usedata2'][1], \
+        'usedata is not idempotent'
     assert p['check'], 'final make check failed'
     assert p['db_left'] == 1, '%d db lines left in the code' % p['db_left']
+
+
+def t_markers_not_used_as_names():
+    """data_org / image_end are tool bookkeeping, never program symbols."""
+    p = pipeline()
+    text = read(p['root'] + '/commands/dskmaint/' + p['org']).decode('latin-1')
+    body = [ln for ln in text.replace('\r', '').split('\n')
+            if not re.match(r'^(data_org|image_end)\s+equ\b', ln)]
+    leaks = [ln for ln in body
+             if re.search(r'\b(data_org|image_end)\b', ln.split(';')[0])]
+    assert not leaks, 'markers used as names: %s' % leaks[:3]
 
 
 def finished():
@@ -348,12 +367,50 @@ def t_typedata_restrictive():
         assert read(f) == before, '%s was modified' % org
 
 
+def t_usedata_restrictive():
+    root = finished()
+    for name, org, _, _, _ in KNOWN:
+        f = '%s/commands/%s/%s.a86' % (root, name, org)
+        before = read(f)
+        rc, out = tool(root, name, 'usedata', org + '.a86')
+        assert rc == 0 and 'nothing to substitute' in out, out
+        assert read(f) == before, '%s was modified' % org
+
+
+def t_usedata_drops_what_does_not_build():
+    """Poison one candidate so it cannot assemble: it must stay numeric."""
+    p = pipeline()
+    root = clone(STAGES['typed'])
+    code = ("import os, sys\n"
+            "sys.path.insert(0, sys.argv[1] + '/tools')\n"
+            "from a86 import usedata as U\n"
+            "orig = U.rewrite\n"
+            "def rw(line, labels, lo, end):\n"
+            "    new, forms, skips = orig(line, labels, lo, end)\n"
+            "    if forms and new.startswith('\\tinc\\t'):\n"
+            "        return '\\tinc\\tbyte ptr nosuchlabel', forms, skips\n"
+            "    return new, forms, skips\n"
+            "U.rewrite = rw\n"
+            "os.chdir(sys.argv[1] + '/commands/dskmaint')\n"
+            "U.cmd_usedata(sys.argv[2])\n")
+    d = root + '/commands/dskmaint'
+    r = subprocess.run([sys.executable, '-c', code, root, p['org']], cwd=d,
+                       capture_output=True, text=True)
+    out = r.stdout + r.stderr
+    assert r.returncode == 0 and 'did not build' in out, out
+    assert 'OK  ' in out, out
+    assert make_check(d), 'result does not rebuild identically'
+    text = read(d + '/' + p['org']).decode('latin-1')
+    assert 'nosuchlabel' not in text, 'a line that did not build was kept'
+
+
 TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
-         t_pipeline_dskmaint, t_holes_known_tools, t_boundary_known_tools,
+         t_pipeline_dskmaint, t_markers_not_used_as_names, t_holes_known_tools, t_boundary_known_tools,
          t_annotate_restrictive, t_relabel_noop, t_guard_and_revert,
          t_decode_demotion, t_decode_restores_on_failure,
          t_datamap_known_tools, t_datamap_embedded_code, t_datamap_tiles,
-         t_typedata_restrictive]
+         t_typedata_restrictive, t_usedata_restrictive,
+         t_usedata_drops_what_does_not_build]
 
 
 def main():

@@ -11,6 +11,13 @@ binary is still byte-identical to the original.
       dump.  Runs `make check` once to prove the skeleton is byte-identical
       before any real reconstruction work starts.
 
+  a86tool.py usedata <a86> [--no-verify]
+      Refer to data by label instead of by number in the code: absolute
+      operands, indexed operands and `mov si,addr` pointer loads, only where
+      a data label sits at that exact address and the width fits.  Every
+      candidate is checked by the assembler; lines that do not build stay
+      numeric.
+
   a86tool.py typedata <bin> <a86> [--no-verify]
       Type and label the data area from the datamap classification: variables
       as db/dw with their initial value, strings quoted, zeros and binary as

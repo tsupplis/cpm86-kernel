@@ -29,11 +29,14 @@ def get_bounds(lines):
 
 
 def load_equates(a86):
-    """value -> name, from the `name equ 0xxxxh` block."""
+    """value -> name, from the `name equ 0xxxxh` block.
+
+    The two bookkeeping markers (data_org, image_end) are boundaries for
+    the tools, not program symbols, so they are never offered as names."""
     eq = {}
     for ln in read_text(a86).splitlines():
         m = re.match(r'^(\w+)\s+equ\s+([0-9][0-9a-fA-F]*)h\s*(;.*)?$', ln)
-        if m:
+        if m and m.group(1) not in ('data_org', 'image_end'):
             eq.setdefault(int(m.group(2), 16), m.group(1))
     return eq
 

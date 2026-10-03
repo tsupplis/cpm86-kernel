@@ -51,6 +51,21 @@ def rebuild(d):
                           text=True)
 
 
+def trial(a86, lines):
+    """True if this source builds byte-identical.  The file is left as it was.
+
+    For searching: try a candidate edit without committing to it.
+    """
+    with open(a86, 'rb') as f:
+        original = f.read()
+    try:
+        write_text(a86, '\n'.join(lines))
+        return rebuild(os.path.dirname(a86) or '.').returncode == 0
+    finally:
+        with open(a86, 'wb') as f:
+            f.write(original)
+
+
 def verified_write(a86, lines, verify=True, what='change', ok=None, tail=6):
     """Write the source, rebuild, and put the original back if it broke.
 

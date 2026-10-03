@@ -15,6 +15,7 @@ from .commands import (cmd_data, cmd_gen, cmd_mklabel,
 from .scaffold import cmd_scaffold
 from .splice import cmd_labels
 from .typedata import cmd_typedata
+from .usedata import cmd_usedata
 
 BIN_CMDS = {'boundary', 'gen', 'patch', 'data', 'mkvars', 'labels', 'decode',
             'holes', 'annotate', 'datamap', 'typedata'}
@@ -63,6 +64,8 @@ def main():
         cmd_datamap(a[1], a[2], base)
     elif sub == 'typedata':
         cmd_typedata(a[1], a[2], base, verify)
+    elif sub == 'usedata':
+        cmd_usedata(a[1], verify)
     elif sub == 'annotate':
         what = a[3] if len(a) > 3 else None
         if what not in (None, 'text', 'tables'):

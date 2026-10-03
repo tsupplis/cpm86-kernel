@@ -18,6 +18,7 @@ STAT     = $(CMDDIR)/stat/stat.cmd
 SUBMIT   = $(CMDDIR)/submit/submit.cmd
 TOD      = $(CMDDIR)/tod/tod.cmd
 ASSIGN   = $(CMDDIR)/assign/assign.cmd
+DSKMAINT = $(CMDDIR)/dskmaint/dskmaint.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
 TESTSUB  = $(CMDDIR)/submit/testcpm.sub
