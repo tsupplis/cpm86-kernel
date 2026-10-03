@@ -95,6 +95,8 @@ def pipeline():
     STAGES['bounded'] = clone(root)
     out['decode'] = tool(root, 'dskmaint', 'decode', binf, org)
     out['annotate'] = tool(root, 'dskmaint', 'annotate', binf, org)
+    out['typedata'] = tool(root, 'dskmaint', 'typedata', binf, org)
+    out['typedata2'] = tool(root, 'dskmaint', 'typedata', binf, org)
     out['check'] = make_check(d)
     out['db_left'] = code_db_lines(d + '/' + org)
     STAGES['out'] = out
@@ -134,7 +136,8 @@ def t_scaffold_assign():
 
 def t_pipeline_dskmaint():
     p = pipeline()
-    for step in ('scaffold', 'labels', 'boundary', 'decode', 'annotate'):
+    for step in ('scaffold', 'labels', 'boundary', 'decode', 'annotate',
+                 'typedata'):
         rc, out = p[step]
         assert rc == 0, '%s failed: %s' % (step, out)
     assert 'OK  data_org set to 0734h' in p['boundary'][1], p['boundary'][1]
@@ -145,6 +148,10 @@ def t_pipeline_dskmaint():
         % m.group(2)
     assert 'kept as db' not in p['decode'][1], p['decode'][1]
     assert 'OK  2 annotated' in p['annotate'][1], p['annotate'][1]
+    assert 'OK  typed' in p['typedata'][1], p['typedata'][1]
+    assert 'left as they were' not in p['typedata'][1], \
+        'some data segments were not typed: ' + p['typedata'][1]
+    assert 'nothing to type' in p['typedata2'][1], 'typedata is not idempotent'
     assert p['check'], 'final make check failed'
     assert p['db_left'] == 1, '%d db lines left in the code' % p['db_left']
 
@@ -305,11 +312,48 @@ def t_datamap_embedded_code():
     assert re.search(r'08ab\.\.08b5 table', out), 'jump table not found'
 
 
+def tiles(out):
+    area = int(re.search(r'data area .*?, (\d+) bytes', out).group(1))
+    kinds = re.search(r'by kind: (.*)', out).group(1)
+    return area, sum(int(x) for x in re.findall(r'\w+ (\d+)', kinds))
+
+
+def t_datamap_tiles():
+    root = finished()
+    outs = []
+    for name, org, _, _, _ in KNOWN:
+        rc, out = tool(root, name, 'datamap', '../../base/%s.cmd' % name,
+                       org + '.a86')
+        assert rc == 0, out
+        outs.append((name, out))
+    p = pipeline()
+    rc, out = tool(p['root'], 'dskmaint', 'datamap', '../../base/dskmaint.cmd',
+                   p['org'])
+    assert rc == 0, out
+    outs.append(('dskmaint', out))
+    for name, out in outs:
+        area, total = tiles(out)
+        assert area == total, '%s: segments cover %d bytes of a %d byte area' \
+            % (name, total, area)
+
+
+def t_typedata_restrictive():
+    root = finished()
+    for name, org, _, _, _ in KNOWN:
+        f = '%s/commands/%s/%s.a86' % (root, name, org)
+        before = read(f)
+        rc, out = tool(root, name, 'typedata', '../../base/%s.cmd' % name,
+                       org + '.a86')
+        assert rc == 0 and 'nothing to type' in out, out
+        assert read(f) == before, '%s was modified' % org
+
+
 TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
          t_pipeline_dskmaint, t_holes_known_tools, t_boundary_known_tools,
          t_annotate_restrictive, t_relabel_noop, t_guard_and_revert,
          t_decode_demotion, t_decode_restores_on_failure,
-         t_datamap_known_tools, t_datamap_embedded_code]
+         t_datamap_known_tools, t_datamap_embedded_code, t_datamap_tiles,
+         t_typedata_restrictive]
 
 
 def main():

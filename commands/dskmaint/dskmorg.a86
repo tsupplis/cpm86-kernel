@@ -19,517 +19,517 @@ cgroup	group	code,data
 	org	100h
 
 start:
-	jmps	l0126
+	jmps	main
 
-l0102:
+copyright:
 	db	'Copyright (C) 1983, Digital Research'
 
-l0126:
+main:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
 	mov	sp,1053h
-	call	l05ab
-	call	l05ba
-	jnz	l0140
-	mov	si,0e5ah
-	call	l0567
-	jmp	l03af
+	call	flushkb
+	call	allocmem
+	jnz	memok
+	mov	si,offset nomemmsg
+	call	puts
+	jmp	terminate
 
-l0140:
-	call	l03c3
-	call	l03b5
-	call	l0604
+memok:
+	call	drawframe
+	call	cntdrives
+	call	initvec
 
-l0149:
-	call	l0700
-	mov	si,07f4h
+mainmenu:
+	call	clrwin
+	mov	si,offset mainhdr
 	mov	dh,04h
-	call	l0554
-	mov	si,07feh
+	call	putcent
+	mov	si,offset menuitems
 	mov	cx,05h
-	call	l04b6
-	mov	si,0896h
+	call	drawmenu
+	mov	si,offset selfunc
 	mov	dh,06h
-	call	l050e
-	mov	di,08a6h
+	call	putrev
+	mov	di,offset mainkeys
 	mov	cx,05h
-	call	l0585
+	call	getchoice
 	dec	bx
-	mov	.0741h,bx
-	jmp	word ptr 08abh[bx]
+	mov	menusel,bx
+	jmp	word ptr fntable[bx]
 
-l0177:
+restart:
 	mov	ax,cs
 	mov	ds,ax
 	mov	es,ax
 	mov	sp,1053h
-	call	l0625
-	jmps	l0149
+	call	setoldvec
+	jmps	mainmenu
 
-l0185:
-	mov	si,0802h
-	mov	word ptr .0743h,08b5h
-	call	l043b
-	call	l0700
-	mov	si,0984h
+doverify:
+	mov	si,offset vfytxt
+	mov	word ptr promptptr,08b5h
+	call	seldrive
+	call	clrwin
+	mov	si,offset vfyingmsg
 	mov	dx,0516h
-	call	l0470
+	call	drvprompt
 
-l019d:
-	call	l0637
-	call	l0489
-	mov	byte ptr .0736h,04h
+vfyall:
+	call	getsides
+	call	trkhdr
+	mov	byte ptr biosfunc,04h
 
-l01a8:
-	call	l0495
-	call	l065c
-	inc	byte ptr .0738h
-	dec	byte ptr .0739h
-	jnz	l01a8
-	call	l0637
-	mov	bx,.0741h
-	jmp	word ptr 08abh[bx]
+vfyloop:
+	call	showtrk
+	call	diskio
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	vfyloop
+	call	getsides
+	mov	bx,menusel
+	jmp	word ptr fntable[bx]
 
-l01c3:
-	test	byte ptr .074ch,0ffh
-	jnz	l01d0
-	mov	si,0e7bh
-	jmp	l06b9
+docopy:
+	test	byte ptr ntrkbuf,0ffh
+	jnz	copypick
+	mov	si,offset copymemmsg
+	jmp	showerr
 
-l01d0:
-	mov	si,0818h
-	mov	word ptr .0743h,08cfh
-	call	l043b
-	mov	.0740h,bl
-	call	l0637
-	mov	.073eh,al
-	mov	si,0818h
-	mov	word ptr .0743h,08e6h
-	call	l043b
-	mov	.073fh,bl
-	call	l0700
-	mov	al,.0740h
-	mov	.0737h,al
-	mov	si,098fh
+copypick:
+	mov	si,offset copytxt
+	mov	word ptr promptptr,08cfh
+	call	seldrive
+	mov	srcdrive,bl
+	call	getsides
+	mov	srcsides,al
+	mov	si,offset copytxt
+	mov	word ptr promptptr,08e6h
+	call	seldrive
+	mov	dstdrive,bl
+	call	clrwin
+	mov	al,srcdrive
+	mov	drive,al
+	mov	si,offset copyingmsg
 	mov	dx,0415h
-	call	l0470
-	mov	al,.073fh
-	mov	.0737h,al
-	mov	si,099ch
+	call	drvprompt
+	mov	al,dstdrive
+	mov	drive,al
+	mov	si,offset tomsg
 	mov	dx,051fh
-	call	l0470
-	call	l051b
-	jc	l01c3
-	mov	al,.0739h
-	mov	.073ah,al
+	call	drvprompt
+	call	confirm
+	jc	docopy
+	mov	al,trkcount
+	mov	trktotal,al
 
-l0222:
-	mov	al,.073ah
-	sub	al,.0738h
-	jz	l0294
-	cmp	al,.074ch
-	jc	l0234
-	mov	al,.074ch
+copynext:
+	mov	al,trktotal
+	sub	al,track
+	jz	copyend
+	cmp	al,ntrkbuf
+	jc	copyrd
+	mov	al,ntrkbuf
 
-l0234:
-	mov	.0739h,al
-	call	l04dd
+copyrd:
+	mov	trkcount,al
+	call	askinsrc
 	mov	al,02h
-	mov	ah,.0740h
-	mov	si,09aah
-	call	l02a3
-	call	l04e2
+	mov	ah,srcdrive
+	mov	si,offset readmsg
+	call	xfer
+	call	askindst
 	mov	al,03h
-	mov	ah,.073fh
-	mov	si,09b5h
-	call	l02a3
-	mov	byte ptr .0736h,02h
-	mov	ax,.074ah
-	mov	.074dh,ax
-	mov	si,09c0h
-	call	l0489
+	mov	ah,dstdrive
+	mov	si,offset writemsg
+	call	xfer
+	mov	byte ptr biosfunc,02h
+	mov	ax,copyseg
+	mov	curseg,ax
+	mov	si,offset checkmsg
+	call	trkhdr
 
-l0266:
-	call	l0495
-	call	l065c
-	call	l02cf
+cmploop:
+	call	showtrk
+	call	diskio
+	call	nextseg
 	push	ds
-	mov	ds,word ptr .0745h
+	mov	ds,word ptr trkbuf
 	sub	si,si
 	sub	di,di
 	mov	cx,1000h
 	cld
 	repe	cmpsb
 	pop	ds
-	jz	l0287
-	mov	si,0e9eh
-	jmp	l06b9
+	jz	cmpnext
+	mov	si,offset mismatmsg
+	jmp	showerr
 
-l0287:
-	inc	byte ptr .0738h
-	dec	byte ptr .0739h
-	jnz	l0266
-	jmp	l0222
+cmpnext:
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	cmploop
+	jmp	copynext
 
-l0294:
-	call	l0637
-	mov	al,.0740h
-	mov	.0737h,al
-	call	l0637
-	jmp	l01c3
+copyend:
+	call	getsides
+	mov	al,srcdrive
+	mov	drive,al
+	call	getsides
+	jmp	docopy
 
-l02a3:
-	push	word ptr .0738h
-	mov	.0736h,al
-	mov	.0737h,ah
-	mov	ax,.074ah
-	mov	.074dh,ax
-	call	l0489
+xfer:
+	push	word ptr track
+	mov	biosfunc,al
+	mov	drive,ah
+	mov	ax,copyseg
+	mov	curseg,ax
+	call	trkhdr
 
-l02b7:
-	call	l0495
-	call	l02cf
-	call	l0660
-	inc	byte ptr .0738h
-	dec	byte ptr .0739h
-	jnz	l02b7
-	pop	word ptr .0738h
+xferloop:
+	call	showtrk
+	call	nextseg
+	call	diskioes
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	xferloop
+	pop	word ptr track
 	ret
 
-l02cf:
-	mov	es,word ptr .074dh
-	add	word ptr .074dh,0100h
+nextseg:
+	mov	es,word ptr curseg
+	add	word ptr curseg,0100h
 	ret
 
-l02da:
-	mov	byte ptr .073dh,00h
-	mov	byte ptr .0739h,28h
-	mov	si,083eh
-	jmps	l02f6
+fmt1:
+	mov	byte ptr sides,00h
+	mov	byte ptr trkcount,28h
+	mov	si,offset fmt1txt
+	jmps	fmtcommon
 
-l02e9:
-	mov	byte ptr .073dh,01h
-	mov	byte ptr .0739h,50h
-	mov	si,0861h
+fmt2:
+	mov	byte ptr sides,01h
+	mov	byte ptr trkcount,50h
+	mov	si,offset fmt2txt
 
-l02f6:
-	mov	word ptr .0743h,0902h
-	call	l043b
-	call	l0700
-	mov	si,099fh
+fmtcommon:
+	mov	word ptr promptptr,0902h
+	call	seldrive
+	call	clrwin
+	mov	si,offset fmtingmsg
 	mov	dx,0516h
-	call	l0470
-	call	l051b
-	jnc	l0318
-	mov	bx,.0741h
-	jmp	word ptr 08abh[bx]
+	call	drvprompt
+	call	confirm
+	jnc	fmtgo
+	mov	bx,menusel
+	jmp	word ptr fntable[bx]
 
-l0318:
-	call	l0620
-	mov	si,099fh
-	mov	byte ptr .0738h,00h
-	call	l0489
-	mov	byte ptr .0736h,05h
+fmtgo:
+	call	setnewvec
+	mov	si,offset fmtingmsg
+	mov	byte ptr track,00h
+	call	trkhdr
+	mov	byte ptr biosfunc,05h
 
-l032b:
-	call	l0495
-	call	l0389
-	call	l065c
-	inc	byte ptr .0738h
-	dec	byte ptr .0739h
-	jnz	l032b
-	call	l0625
-	mov	es,word ptr .0745h
+fmtloop:
+	call	showtrk
+	call	mkidtab
+	call	diskio
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	fmtloop
+	call	setoldvec
+	mov	es,word ptr trkbuf
 	mov	di,00h
 	mov	al,0e5h
 	mov	cx,1000h
 	cld
 	rep	stosb
-	mov	si,09b5h
-	mov	byte ptr .0738h,00h
-	call	l0489
-	mov	si,0a79h
-	mov	es,word ptr .0745h
+	mov	si,offset writemsg
+	mov	byte ptr track,00h
+	call	trkhdr
+	mov	si,offset bootimg
+	mov	es,word ptr trkbuf
 	sub	di,di
-	mov	al,.073dh
+	mov	al,sides
 	mov	es:.01ffh,al
 	mov	cx,93h
 	rep	movsb
-	mov	si,0b0ch
+	mov	si,offset ldrimg
 	mov	di,0900h
 	mov	cx,034eh
 	rep	movsb
-	mov	byte ptr .0736h,03h
-	call	l065c
-	mov	si,0984h
-	jmp	l019d
+	mov	byte ptr biosfunc,03h
+	call	diskio
+	mov	si,offset vfyingmsg
+	jmp	vfyall
 
-l0389:
-	mov	es,word ptr .0745h
+mkidtab:
+	mov	es,word ptr trkbuf
 	mov	di,00h
-	call	l06ed
+	call	calctrk
 	mov	dl,ch
 	mov	bx,0201h
 	mov	cx,08h
 	cld
 
-l039c:
+idloop:
 	mov	ax,dx
 	stosw
 	mov	ax,bx
 	stosw
 	inc	bx
-	loop	l039c
+	loop	idloop
 	ret
 
-l03a6:
-	call	l05f7
-	mov	si,076fh
-	call	l0567
+doexit:
+	call	freemem
+	mov	si,offset scrnrest
+	call	puts
 
-l03af:
+terminate:
 	mov	cl,00h
 	mov	dl,00h
 	int	0e0h
 
-l03b5:
+cntdrives:
 	int	11h
 	mov	cl,06h
 	shr	ax,cl
 	and	ax,03h
 	inc	ax
-	mov	.data_org,ax
+	mov	ndrives,ax
 	ret
 
-l03c3:
-	mov	si,0762h
-	call	l0567
+drawframe:
+	mov	si,offset scrninit
+	call	puts
 	mov	cx,4eh
 	mov	dx,01h
 	mov	bl,0c4h
-	call	l041d
+	call	hline
 	mov	dx,0201h
 	mov	bl,0cdh
-	call	l041d
+	call	hline
 	mov	dx,1701h
 	mov	bl,0c4h
-	call	l041d
+	call	hline
 	mov	cx,16h
 	mov	dx,0100h
 	mov	bl,0b3h
-	call	l042a
+	call	vline
 	mov	dx,014fh
 	mov	bl,0b3h
-	call	l042a
-	mov	si,0776h
+	call	vline
+	mov	si,offset corners
 	mov	cx,06h
 
-l03fd:
+cellloop:
 	mov	al,59h
-	call	l070f
+	call	escout
 	lodsb
 	add	al,20h
-	call	l0722
+	call	conout
 	lodsb
 	add	al,20h
-	call	l0722
+	call	conout
 	lodsb
-	call	l0722
-	loop	l03fd
-	mov	si,0788h
+	call	conout
+	loop	cellloop
+	mov	si,offset titlestr
 	mov	dx,0100h
-	jmp	l0554
+	jmp	putcent
 
-l041d:
+hline:
 	push	cx
-	call	l0572
+	call	gotoxy
 
-l0421:
+hlloop:
 	mov	al,bl
-	call	l0722
-	loop	l0421
+	call	conout
+	loop	hlloop
 	pop	cx
 	ret
 
-l042a:
+vline:
 	push	cx
 
-l042b:
+vlloop:
 	push	dx
-	call	l0572
+	call	gotoxy
 	mov	al,bl
-	call	l0722
+	call	conout
 	pop	dx
 	inc	dh
-	loop	l042b
+	loop	vlloop
 	pop	cx
 	ret
 
-l043b:
-	call	l0700
+seldrive:
+	call	clrwin
 	mov	dh,04h
-	call	l0554
-	mov	cx,.data_org
+	call	putcent
+	mov	cx,ndrives
 	inc	cx
 	push	cx
-	mov	si,0a1eh
-	call	l04b6
-	mov	si,.0743h
+	mov	si,offset drvmenu
+	call	drawmenu
+	mov	si,promptptr
 	mov	dh,06h
-	call	l050e
-	mov	di,0a55h
+	call	putrev
+	mov	di,offset drvkeys
 	pop	cx
-	call	l0585
+	call	getchoice
 	cmp	bx,0ah
-	jz	l046c
+	jz	selabort
 	shr	bx,1
 	dec	bx
-	mov	.0737h,bl
+	mov	drive,bl
 	ret
 
-l046c:
+selabort:
 	pop	ax
-	jmp	l0149
+	jmp	mainmenu
 
-l0470:
+drvprompt:
 	push	si
-	call	l0564
-	mov	si,0a5ah
-	call	l0567
-	mov	al,.0737h
+	call	putat
+	mov	si,offset indrvmsg
+	call	puts
+	mov	al,drive
 	add	al,41h
-	call	l0722
+	call	conout
 	mov	al,3ah
-	call	l0722
+	call	conout
 	pop	si
 	ret
 
-l0489:
+trkhdr:
 	mov	dx,091dh
-	call	l0564
-	mov	si,0a72h
-	call	l0567
+	call	putat
+	mov	si,offset trkmsg
+	call	puts
 
-l0495:
+showtrk:
 	mov	dx,092eh
-	call	l0572
-	mov	al,.0738h
+	call	gotoxy
+	mov	al,track
 	aam
 	or	ax,3030h
 	cmp	ah,30h
-	jnz	l04ac
+	jnz	trkdigit
 	mov	ah,20h
 	xchg	ah,al
 
-l04ac:
+trkdigit:
 	push	ax
 	mov	al,ah
-	call	l0722
+	call	conout
 	pop	ax
-	jmp	l0722
+	jmp	conout
 
-l04b6:
+drawmenu:
 	lodsb
 	mov	dh,al
 	lodsb
 	mov	dl,al
-	call	l0572
+	call	gotoxy
 	push	si
-	mov	si,07c6h
-	call	l0567
+	mov	si,offset itemfrm
+	call	puts
 	pop	si
 	lodsb
-	call	l0722
+	call	conout
 	lodsb
-	call	l0722
+	call	conout
 	push	si
-	mov	si,07e8h
-	call	l0567
+	mov	si,offset itemend
+	call	puts
 	pop	si
-	call	l0567
-	loop	l04b6
+	call	puts
+	loop	drawmenu
 	ret
 
-l04dd:
-	mov	si,091ch
-	jmps	l04e5
+askinsrc:
+	mov	si,offset insrcmsg
+	jmps	askins
 
-l04e2:
-	mov	si,0941h
+askindst:
+	mov	si,offset indstmsg
 
-l04e5:
-	mov	al,.0740h
-	cmp	al,.073fh
-	jz	l04ef
+askins:
+	mov	al,srcdrive
+	cmp	al,dstdrive
+	jz	askbeep
 	ret
 
-l04ef:
+askbeep:
 	mov	al,07h
-	call	l0722
+	call	conout
 
-l04f4:
+askwait:
 	mov	dh,07h
-	call	l050e
-	call	l071d
+	call	putrev
+	call	getkey
 	mov	dh,07h
 
-l04fe:
+clrrow:
 	mov	dl,01h
-	call	l0572
+	call	gotoxy
 	mov	cx,4eh
 
-l0506:
+clrloop:
 	mov	al,20h
-	call	l0722
-	loop	l0506
+	call	conout
+	loop	clrloop
 	ret
 
-l050e:
+putrev:
 	mov	al,72h
-	call	l070f
-	call	l0554
+	call	escout
+	call	putcent
 	mov	al,75h
-	jmp	l070f
+	jmp	escout
 
-l051b:
+confirm:
 	push	si
-	mov	si,09cbh
+	mov	si,offset destroymsg
 	mov	dx,0708h
-	call	l0470
-	mov	si,09f3h
+	call	drvprompt
+	mov	si,offset askmsg
 	mov	dx,0915h
-	call	l0564
+	call	putat
 
-l052e:
-	call	l071d
+ynkey:
+	call	getkey
 	and	al,0dfh
 	cmp	al,59h
-	jz	l0542
+	jz	yesans
 	cmp	al,4eh
-	jz	l0545
+	jz	noans
 	mov	al,07h
-	call	l0722
-	jmps	l052e
+	call	conout
+	jmps	ynkey
 
-l0542:
+yesans:
 	clc
-	jmps	l0546
+	jmps	ynend
 
-l0545:
+noans:
 	stc
 
-l0546:
+ynend:
 	pushf
 	mov	dh,07h
-	call	l04fe
+	call	clrrow
 	mov	dh,09h
-	call	l04fe
+	call	clrrow
 	popf
 	pop	si
 	ret
 
-l0554:
+putcent:
 	push	ds
 	pop	es
 	mov	di,si
@@ -540,34 +540,34 @@ l0554:
 	shr	cx,1
 	mov	dl,cl
 
-l0564:
-	call	l0572
+putat:
+	call	gotoxy
 
-l0567:
+puts:
 	cld
 	lodsb
 
-l0569:
-	call	l0722
+putsloop:
+	call	conout
 	lodsb
 	test	al,al
-	jnz	l0569
+	jnz	putsloop
 	ret
 
-l0572:
+gotoxy:
 	mov	al,59h
-	call	l070f
+	call	escout
 	add	dx,2020h
 	mov	al,dh
-	call	l0722
+	call	conout
 	mov	al,dl
-	jmp	l0722
+	jmp	conout
 
-l0585:
-	mov	byte ptr .073ch,0ffh
+getchoice:
+	mov	byte ptr autofmt,0ffh
 	push	cx
 	push	di
-	call	l071d
+	call	getkey
 	push	ds
 	pop	es
 	mov	al,ah
@@ -575,72 +575,72 @@ l0585:
 	repne	scasb
 	pop	di
 	pop	cx
-	jz	l05a2
+	jz	gotchoice
 	mov	al,07h
-	call	l0722
-	jmps	l0585
+	call	conout
+	jmps	getchoice
 
-l05a2:
+gotchoice:
 	mov	bl,al
 	mov	bh,00h
 	mov	dh,06h
-	jmp	l04fe
+	jmp	clrrow
 
-l05ab:
+flushkb:
 	mov	cl,0bh
 	int	0e0h
 	test	al,al
-	jz	l05b9
+	jz	flushend
 	mov	cl,01h
 	int	0e0h
-	jmps	l05ab
+	jmps	flushkb
 
-l05b9:
+flushend:
 	ret
 
-l05ba:
-	mov	word ptr .0747h,0ffffh
+allocmem:
+	mov	word ptr buflen,0ffffh
 	mov	cl,35h
 	mov	dx,0745h
 	int	0e0h
 	inc	al
-	jz	l05f6
-	mov	ax,.0745h
+	jz	allocret
+	mov	ax,trkbuf
 	add	ax,0ffh
 	mov	al,00h
-	mov	.0745h,ax
+	mov	trkbuf,ax
 	inc	ah
-	mov	.074ah,ax
-	mov	ah,.0748h
+	mov	copyseg,ax
+	mov	ah,buflenhi
 	sub	ah,01h
-	jna	l05f6
+	jna	allocret
 	mov	.0747h,ax
 	dec	ah
-	mov	.074ch,ah
+	mov	ntrkbuf,ah
 	mov	cl,38h
 	mov	dx,0745h
 	int	0e0h
 	inc	al
 
-l05f6:
+allocret:
 	ret
 
-l05f7:
-	mov	byte ptr .0749h,00h
+freemem:
+	mov	byte ptr bufflag,00h
 	mov	cl,39h
 	mov	dx,0745h
 	int	0e0h
 	ret
 
-l0604:
-	mov	word ptr .0753h,0757h
-	mov	word ptr .0755h,ds
+initvec:
+	mov	word ptr newvec,0757h
+	mov	word ptr newvecseg,ds
 	push	ds
 	pop	es
 	sub	ax,ax
 	mov	ds,ax
 	mov	si,78h
-	mov	di,074fh
+	mov	di,offset oldvec
 	cld
 	movsw
 	movsw
@@ -648,14 +648,14 @@ l0604:
 	pop	ds
 	ret
 
-l0620:
-	mov	si,0753h
-	jmps	l0628
+setnewvec:
+	mov	si,offset newvec
+	jmps	setvec
 
-l0625:
-	mov	si,074fh
+setoldvec:
+	mov	si,offset oldvec
 
-l0628:
+setvec:
 	sub	ax,ax
 	mov	es,ax
 	mov	di,78h
@@ -666,115 +666,115 @@ l0628:
 	int	13h
 	ret
 
-l0637:
-	mov	byte ptr .0738h,00h
-	mov	byte ptr .0736h,02h
-	call	l065c
+getsides:
+	mov	byte ptr track,00h
+	mov	byte ptr biosfunc,02h
+	call	diskio
 	mov	al,es:.01ffh
-	mov	byte ptr .0739h,50h
+	mov	byte ptr trkcount,50h
 	cmp	al,01h
-	jz	l0658
-	mov	byte ptr .0739h,28h
+	jz	gsdone
+	mov	byte ptr trkcount,28h
 	mov	al,00h
 
-l0658:
-	mov	.073dh,al
+gsdone:
+	mov	sides,al
 	ret
 
-l065c:
-	mov	es,word ptr .0745h
+diskio:
+	mov	es,word ptr trkbuf
 
-l0660:
-	mov	byte ptr .073bh,05h
-	call	l0718
-	jz	l0674
-	call	l071d
+diskioes:
+	mov	byte ptr retries,05h
+	call	kbhit
+	jz	tryio
+	call	getkey
 	cmp	al,03h
-	jnz	l0674
-	jmp	l0177
+	jnz	tryio
+	jmp	restart
 
-l0674:
-	call	l06df
-	cmp	ah,.073ch
-	jnz	l068c
+tryio:
+	call	iosetup
+	cmp	ah,autofmt
+	jnz	bios13
 	push	es
-	call	l0389
-	call	l06df
+	call	mkidtab
+	call	iosetup
 	mov	ah,05h
 	int	13h
-	call	l06df
+	call	iosetup
 	pop	es
 
-l068c:
+bios13:
 	int	13h
-	jc	l0691
+	jc	ioerror
 	ret
 
-l0691:
-	mov	al,.0736h
+ioerror:
+	mov	al,biosfunc
 	cmp	ax,0203h
-	jnz	l069c
-	mov	.073ch,al
+	jnz	retryio
+	mov	autofmt,al
 
-l069c:
-	dec	byte ptr .073bh
-	jnz	l0674
-	mov	si,0ec9h
+retryio:
+	dec	byte ptr retries
+	jnz	tryio
+	mov	si,offset errtab
 	mov	cx,0ah
 
-l06a8:
+errloop:
 	cld
 	lodsb
 	cmp	al,ah
-	jz	l06b7
+	jz	errfound
 	inc	si
 	inc	si
-	loop	l06a8
-	mov	si,0fc0h
-	jmps	l06b9
+	loop	errloop
+	mov	si,offset fatalmsg
+	jmps	showerr
 
-l06b7:
+errfound:
 	mov	si,[si]
 
-l06b9:
+showerr:
 	mov	ax,ds
 	mov	es,ax
 	mov	cx,03h
 
-l06c0:
+beeploop:
 	mov	al,07h
-	call	l0722
-	loop	l06c0
+	call	conout
+	loop	beeploop
 	mov	al,70h
-	call	l070f
+	call	escout
 	mov	dh,03h
-	call	l0554
+	call	putcent
 	mov	al,71h
-	call	l070f
-	mov	si,096bh
-	call	l04f4
-	jmp	l0177
+	call	escout
+	mov	si,offset anykeymsg
+	call	askwait
+	jmp	restart
 
-l06df:
-	mov	dl,.0737h
+iosetup:
+	mov	dl,drive
 	mov	cl,01h
 	sub	bx,bx
-	mov	ah,.0736h
+	mov	ah,biosfunc
 	mov	al,08h
 
-l06ed:
-	mov	ch,.0738h
+calctrk:
+	mov	ch,track
 	mov	dh,00h
 	cmp	ch,28h
-	jc	l06ff
+	jc	calcret
 	neg	ch
 	add	ch,4fh
 	mov	dh,01h
 
-l06ff:
+calcret:
 	ret
 
-l0700:
+clrwin:
 	mov	cx,0301h
 	mov	dx,164eh
 	mov	bx,07h
@@ -782,24 +782,24 @@ l0700:
 	int	10h
 	ret
 
-l070f:
+escout:
 	push	ax
 	mov	al,1bh
-	call	l0722
+	call	conout
 	pop	ax
-	jmps	l0722
+	jmps	conout
 
-l0718:
+kbhit:
 	mov	ah,01h
 	int	16h
 	ret
 
-l071d:
+getkey:
 	mov	ah,00h
 	int	16h
 	ret
 
-l0722:
+conout:
 	push	bx
 	push	cx
 	push	dx
@@ -820,76 +820,76 @@ l0734:
 
 ; ---- data ----
 	dseg
-d0734	dw	00h
-d0736	db	00h
-d0737	db	00h
-d0738	db	00h
-d0739	db	00h
-d073a	db	00h
-d073b	db	00h
-d073c	db	00h
-d073d	db	00h
-d073e	db	00h
-d073f	db	00h
-d0740	db	00h
-d0741	dw	00h
-d0743	dw	00h
-d0745	dw	00h
-d0747	db	00h
-d0748	db	00h
-d0749	db	00h
-d074a	dw	00h
-d074c	db	00h
-d074d	dw	00h
-d074f	db	00h,00h,00h,00h
-d0753	dw	00h
-d0755	dw	00h
+ndrives	dw	00h
+biosfunc	db	00h
+drive	db	00h
+track	db	00h
+trkcount	db	00h
+trktotal	db	00h
+retries	db	00h
+autofmt	db	00h
+sides	db	00h
+srcsides	db	00h
+dstdrive	db	00h
+srcdrive	db	00h
+menusel	dw	00h
+promptptr	dw	00h
+trkbuf	dw	00h
+buflen	db	00h
+buflenhi	db	00h
+bufflag	db	00h
+copyseg	dw	00h
+ntrkbuf	db	00h
+curseg	dw	00h
+oldvec	db	00h,00h,00h,00h
+newvec	dw	00h
+newvecseg	dw	00h
 	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
-d0762	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
 	db	00h
-d076f	db	1bh,45h,1bh,76h,1bh,6dh,00h
-d0776	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
+corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
 	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
-d0788	db	'CP/M-86 Disk Maintenance Program for the'
+titlestr	db	'CP/M-86 Disk Maintenance Program for the'
 	db	' IBM PC   version 1.2',00h
-d07c6	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
 	db	72h,46h,00h
-d07e8	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
-d07f4	db	'Main Menu',00h
-d07fe	db	08h,14h,31h,20h
-d0802	db	'Verify a Diskette',00h
+itemend	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
+mainhdr	db	'Main Menu',00h
+menuitems	db	08h,14h,31h,20h
+vfytxt	db	'Verify a Diskette',00h
 	db	0bh,14h,33h,20h
-d0818	db	'Copy from one Diskette to another',00h
+copytxt	db	'Copy from one Diskette to another',00h
 	db	0eh,14h,35h,20h
-d083e	db	'Format a Single Sided Diskette',00h
+fmt1txt	db	'Format a Single Sided Diskette',00h
 	db	11h,14h,37h,20h
-d0861	db	'Format a Double Sided Diskette',00h
+fmt2txt	db	'Format a Double Sided Diskette',00h
 	db	14h,14h
 	db	'9 Exit this Program',00h
-d0896	db	'SELECT FUNCTION',00h
-d08a6	db	01h,03h,05h,07h,09h
-d08ab	dw	l0185,l01c3,l02da,l02e9,l03a6
+selfunc	db	'SELECT FUNCTION',00h
+mainkeys	db	01h,03h,05h,07h,09h
+fntable	dw	doverify,docopy,fmt1,fmt2,doexit
 	db	'SELECT DISKETTE TO VERIFY',00h
 	db	'SELECT SOURCE DISKETTE',00h
 	db	'SELECT DESTINATION DISKETTE',00h
 	db	'SELECT DISKETTE TO FORMAT',00h
-d091c	db	'INSERT SOURCE DISK, AND TYPE ANY KEY',00h
-d0941	db	'INSERT DESTINATION DISK, AND TYPE ANY',' KEY'
+insrcmsg	db	'INSERT SOURCE DISK, AND TYPE ANY KEY',00h
+indstmsg	db	'INSERT DESTINATION DISK, AND TYPE ANY',' KEY'
 	db	00h
-d096b	db	'TYPE ANY KEY TO CONTINUE',00h
-d0984	db	' Verifying',00h
-d098f	db	'Copying from',00h
-d099c	db	74h,6fh,00h
-d099f	db	'Formatting',00h
-d09aa	db	'   Reading',00h
-d09b5	db	'   Writing',00h
-d09c0	db	'  Checking',00h
-d09cb	db	'This operation will Destroy any data on',00h
-d09f3	db	'Is this what you want to do (Y or N) ',1bh
+anykeymsg	db	'TYPE ANY KEY TO CONTINUE',00h
+vfyingmsg	db	' Verifying',00h
+copyingmsg	db	'Copying from',00h
+tomsg	db	74h,6fh,00h
+fmtingmsg	db	'Formatting',00h
+readmsg	db	'   Reading',00h
+writemsg	db	'   Writing',00h
+checkmsg	db	'  Checking',00h
+destroymsg	db	'This operation will Destroy any data on',00h
+askmsg	db	'Is this what you want to do (Y or N) ',1bh
 	db	73h,3fh,1bh,74h,00h
-d0a1e	db	14h,14h
+drvmenu	db	14h,14h
 	db	'10 Exit to Main Menu',00h
 	db	08h,14h
 	db	'2  A:',00h
@@ -899,11 +899,11 @@ d0a1e	db	14h,14h
 	db	'6  C:',00h
 	db	11h,14h
 	db	'8  D:',00h
-d0a55	db	0ah,02h,04h,06h,08h
-d0a5a	db	' the Diskette in Drive ',00h
-d0a72	db	' track',00h
+drvkeys	db	0ah,02h,04h,06h,08h
+indrvmsg	db	' the Diskette in Drive ',00h
+trkmsg	db	' track',00h
 ; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
-d0a79	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
+bootimg	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
 	db	0cdh,12h,2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
 	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h,51h,7ch,0bah
 	db	00h,00h,0b9h,05h,00h,0bbh,00h,00h,0b8h,04h,02h
@@ -914,7 +914,7 @@ d0a79	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
 	db	0dh,0ah,0ah,'*** Error while reading Loader ***'
 	db	0dh,0ah,'Try another diskette.',0dh,0ah,00h
 ; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
-d0b0c	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
+ldrimg	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
 	db	01h,0e8h,0bdh,00h,0c7h,06h,3ah,03h,8ch,03h,0c7h
 	db	06h,3ch,03h,0a6h,03h,0c7h,06h,34h,03h,00h,25h
 	db	0e8h,1bh,00h,0c7h,06h,3ah,03h,99h,03h,0c7h,06h
@@ -983,12 +983,12 @@ d0b0c	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
 	db	0dh,0ah,0ah
 	db	'*** Error while reading System File ***',0dh,0ah
 	db	'Try another diskette.',0dh,0ah,00h
-d0e5a	db	0dh,0ah,'Not enough available memory.',0dh,0ah
+nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
 	db	00h
-d0e7b	db	' Memory not available for Copying ',00h
-d0e9e	db	' Source and Destination data do not ma','tch '
+copymemmsg	db	' Memory not available for Copying ',00h
+mismatmsg	db	' Source and Destination data do not ma','tch '
 	db	00h
-d0ec9	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
+errtab	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
 	db	09h,44h,0fh,08h,59h,0fh,04h,6dh,0fh,03h,80h,0fh
 	db	02h,9ah,0fh,01h,0b2h,0fh
 	db	' Drive does not respond ',00h
@@ -1001,7 +1001,7 @@ d0ec9	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
 	db	' Disk is Write Protected ',00h
 	db	' Disk is not Formatted ',00h
 	db	' Bad Command ',00h
-d0fc0	db	' Fatal Disk Error ',00h
+fatalmsg	db	' Fatal Disk Error ',00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h

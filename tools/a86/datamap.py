@@ -150,10 +150,9 @@ def classify(img, lo, tables, refs):
         end = min(n if z < 0 else z + 1, next_cut(p))
         start = text_span(img, p, end)
         if start is not None:
-            if start > p:
-                if pend is None:
-                    pend = p
-                close(start)
+            if start > p and pend is None:
+                pend = p
+            close(start)
             segs.append(('text', lo + start, lo + end))
             p = end
             continue
@@ -230,6 +229,15 @@ def survey(binf, base, lines):
     refs = pointer_vars(img, lo, references(seen, lo, end))
     tables = {t: (s, ws) for t, (s, ws) in tabs.items() if lo <= t < end}
     segs = classify(img, lo, {t: ws for t, (_, ws) in tables.items()}, refs)
+    pos = lo
+    for kind, a, b in segs:
+        if a != pos or b <= a:
+            raise SystemExit('internal error: %s %04x..%04x does not follow '
+                             'the previous segment (%04x)' % (kind, a, b, pos))
+        pos = b
+    if pos != end:
+        raise SystemExit('internal error: segments end at %04x, not %04x'
+                         % (pos, end))
     return lo, end, get, refs, tables, segs
 
 
