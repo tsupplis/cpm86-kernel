@@ -452,8 +452,8 @@ vlloop:
 	ret
 
 ;-----------------------------------------------------------------------------
-; Drive menu.  si is the heading and promptptr the text for the reverse video
-; line; the entries are F10 for the main menu and one function key per drive.
+; Drive menu.  si is the heading and promptptr the prompt shown under it; the
+; entries are F10 for the main menu and one function key per drive.
 ; Returns the drive (0..3) in drive and bl.  F10 does not return: it drops
 ; this routine's caller and goes back to the main menu.
 ;-----------------------------------------------------------------------------
@@ -588,7 +588,7 @@ clrloop:
 	loop	clrloop
 	ret
 
-; Print the string at si centred on row dh, in reverse video.
+; Print the string at si centred on row dh, in high intensity (ESC r, ESC u).
 putrev:
 	mov	al,72h
 	call	escout
@@ -883,9 +883,9 @@ errloop:
 errfound:
 	mov	si,[si]
 
-; Report an error: three beeps, the message at si on row 3 between ESC p and
-; ESC q, then wait for a key.  Does not return; it ends in restart.  The copy
-; errors come here as well.
+; Report an error: three beeps, the message at si on row 3 in reverse video
+; (ESC p, ESC q), then wait for a key.  Does not return; it ends in restart.
+; The copy errors come here as well.
 showerr:
 	mov	ax,ds
 	mov	es,ax
@@ -994,7 +994,7 @@ srcsides	db	00h	; sides flag found on the source
 dstdrive	db	00h	; destination of a copy
 srcdrive	db	00h	; source of a copy
 menusel	dw	00h	; byte offset into fntable of the item in progress
-promptptr	dw	00h	; reverse video prompt shown by the drive menu
+promptptr	dw	00h	; prompt line shown by the drive menu
 trkbuf	dw	00h	; the BDOS memory parameter block starts here: base, which is
 buflen	db	00h	; also the segment of the track buffer, then the length,
 buflenhi	db	00h	; whose high byte counts 1000h byte units,
@@ -1011,8 +1011,9 @@ newvecseg	dw	00h	; and segment
 ; a track, gap, data length, format gap, fill byte 0e5h, head settle, motor start.
 	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
 
-; VT52 setup, sent at the start: ESC E clear, ESC w / ESC n / ESC q / ESC t /
-; ESC u.  The restore at the end is ESC E clear, ESC v, ESC m.
+; Screen setup, sent at the start: clear (ESC E), text wrap off (w), cursor off
+; (n), and reverse video (q), blinking (t) and high intensity (u) all off.  The
+; restore at the end: clear, text wrap on (v), cursor on (m).
 scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
 	db	00h
 scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
@@ -1025,8 +1026,8 @@ titlestr	db	'CP/M-86 Disk Maintenance Program for the'
 	db	' IBM PC   version 1.2',00h
 
 ; Decoration of a menu entry.  itemfrm draws a 6 by 3 box and leaves the cursor
-; inside it with an F in reverse video; the key number follows; itemend ends
-; the reverse video and draws a rule and an arrow towards the text.
+; inside it with an F in high intensity (ESC r); the key number follows; itemend
+; ends the high intensity (ESC u) and draws a rule and an arrow towards the text.
 itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
@@ -1053,8 +1054,8 @@ mainkeys	db	01h,03h,05h,07h,09h
 ; One handler per main menu item, in key order.
 fntable	dw	doverify,docopy,fmt1,fmt2,doexit
 
-; The reverse video prompts for the drive menu, at 08b5h, 08cfh, 08e6h and
-; 0902h.  The code loads them into promptptr by address.
+; The prompts for the drive menu, at 08b5h, 08cfh, 08e6h and 0902h, shown in
+; high intensity.  The code loads them into promptptr by address.
 	db	'SELECT DISKETTE TO VERIFY',00h
 	db	'SELECT SOURCE DISKETTE',00h
 	db	'SELECT DESTINATION DISKETTE',00h
@@ -1071,6 +1072,7 @@ readmsg	db	'   Reading',00h
 writemsg	db	'   Writing',00h
 checkmsg	db	'  Checking',00h
 destroymsg	db	'This operation will Destroy any data on',00h
+; The question ends in a blinking '?': ESC s is blinking on, ESC t off.
 askmsg	db	'Is this what you want to do (Y or N) ',1bh
 	db	73h,3fh,1bh,74h,00h
 drvmenu	db	14h,14h
