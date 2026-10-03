@@ -6,7 +6,7 @@ The goal of this project is to provide an out-of-the-box CP/M-86 1.1 kernel (BIO
 
 - tod, ed, help, submit, pip, help, asm86, ddt86, gencmd, stat have been reconstituted from sources of CP/M-80, CCP/M-86 whenever available. 
 
-- dskmaint, function, mform, assign are available in assembler. All the remaining tools will go through disassembly and a format command for disk and hard drive is also planned at a later stage. Only 4 tools remain to be disassembled. 
+- config, dskmaint, function, mform, assign are available in assembler. All the remaining tools will go through disassembly and a format command for disk and hard drive is also planned at a later stage. Only 3 tools remain to be disassembled. 
 
 - the boot sector and loader are also available in source as part of dskmaint.cmd sources. 
 
@@ -227,6 +227,7 @@ guards and for calls into BDOS functions this kernel does not implement.
 | `function` | Assembly reverse engineeering |
 | `assign` | Assembly reverse engineeering |
 | `dskmaint` | Assembly reverse engineeering |
+| `config` | Assembly reverse engineeering |
 | `mform` | Assembly reverse engineeering |
 | `pip` | Reconstructed from CCP/M-86 3.1 sources |
 | `stat` | Reconstructed from CP/M-80 2.2 sources |
