@@ -22,11 +22,7 @@ start:
 	jmps	l0126
 
 l0102:
-	db	43h,6fh,70h,79h,72h,69h,67h,68h
-	db	74h,20h,28h,43h,29h,20h,31h,39h
-	db	38h,33h,2ch,20h,44h,69h,67h,69h
-	db	74h,61h,6ch,20h,52h,65h,73h,65h
-	db	61h,72h,63h,68h
+	db	'Copyright (C) 1983, Digital Research'
 
 l0126:
 	mov	ax,cs
@@ -871,8 +867,9 @@ l0734:
 	db	50h,72h,6fh,67h,72h,61h,6dh,00h
 	db	53h,45h,4ch,45h,43h,54h,20h,46h
 	db	55h,4eh,43h,54h,49h,4fh,4eh,00h
-	db	01h,03h,05h,07h,09h,85h,01h,0c3h
-	db	01h,0dah,02h,0e9h,02h,0a6h,03h,53h
+	db	01h,03h,05h,07h,09h
+d08ab	dw	l0185,l01c3,l02da,l02e9,l03a6
+	db	53h
 	db	45h,4ch,45h,43h,54h,20h,44h,49h
 	db	53h,4bh,45h,54h,54h,45h,20h,54h
 	db	4fh,20h,56h,45h,52h,49h,46h,59h
