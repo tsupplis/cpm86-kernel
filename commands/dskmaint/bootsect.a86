@@ -1,0 +1,72 @@
+;*****************************************************************************
+;
+;	BOOTSECT - boot sector written to track 0 by DSKMAINT
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the bytes DSKMAINT carries; assembles byte-identical
+;	to them.  Not a CP/M-86 program: the BIOS loads it at 0000:7c00.
+;
+;	Build:	cpm86_asm86 bootsect	(writes bootsect.h86)
+;
+;	It finds the top of memory, reads the loader into a segment 8K below
+;	it (sectors 5 to 8 of track 0) and jumps to offset 100h of that
+;	segment, which is where DSKMAINT puts the loader image.  Four
+;	attempts, then it prints a message and stops.
+;
+;	The variables are in their own segment so that ASM-86 does not put a
+;	CS: override in front of each reference.
+;
+;*****************************************************************************
+
+	cseg
+	org	7c00h
+
+boot:	cli
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,7c00h
+	sti
+	int	12h			    ; memory size in K
+	sub	ax,8
+	mov	cl,6
+	shl	ax,cl			; K to paragraphs
+	mov	loadseg,ax
+
+retry:	mov	ah,0
+	int	13h			; reset the controller
+	mov	es,loadseg
+	mov	dx,0			; head 0, drive A
+	mov	cx,5			; cylinder 0, sector 5
+	mov	bx,0
+	mov	ax,0204h		; read four sectors
+	int	13h
+	jnc	loaded
+	dec	tries
+	jnz	retry
+	jmp	fail
+
+loaded:	jmpf	dword ptr loadptr
+
+fail:	mov	si,offset msg
+	cld
+	lodsb
+
+putc:	mov	ah,0eh			; BIOS teletype
+	sub	bx,bx
+	int	10h
+	lodsb
+	test	al,al
+	jnz	putc
+
+halt:	sti
+	jmps	halt
+
+	dseg
+	org	7c4fh
+loadptr	dw	0100h			; offset, then the segment below
+loadseg	dw	0
+tries	db	4
+msg	db	0dh,0ah,0ah,'*** Error while reading Loader ***'
+	db	0dh,0ah,'Try another diskette.',0dh,0ah,00h
+	end
