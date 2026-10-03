@@ -1,5 +1,5 @@
 ; Boot sector written to track 0 by dskmaint, included into its data segment.
-bootimg	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
+bootsect	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
 	db	0cdh,12h,2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
 	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h,51h,7ch,0bah
 	db	00h,00h,0b9h,05h,00h,0bbh,00h,00h,0b8h,04h,02h

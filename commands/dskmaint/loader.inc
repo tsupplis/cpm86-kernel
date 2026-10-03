@@ -1,5 +1,5 @@
 ; Loader written at offset 900h of track 0 by dskmaint, included into its data segment.
-ldrimg	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
+loader	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
 	db	01h,0e8h,0bdh,00h,0c7h,06h,3ah,03h,8ch,03h,0c7h
 	db	06h,3ch,03h,0a6h,03h,0c7h,06h,34h,03h,00h,25h
 	db	0e8h,1bh,00h,0c7h,06h,3ah,03h,99h,03h,0c7h,06h
