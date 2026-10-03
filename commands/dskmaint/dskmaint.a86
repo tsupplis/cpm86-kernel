@@ -725,7 +725,7 @@ flushend:
 allocmem:
 	mov	word ptr buflen,0ffffh	; ask for everything
 	mov	cl,35h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	inc	al
 	jz	allocret

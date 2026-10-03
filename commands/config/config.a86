@@ -1,300 +1,779 @@
-;***********************************************************
-;  CONFIG.A86 - reconstructed from base/config.cmd
-;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
-;  the rest of the image is a raw db dump still to be decoded.
+;*****************************************************************************
 ;
-;  Build:   make
-;  Check:   make check
-;***********************************************************
+;	CONFIG - CP/M-86 serial port configuration for the IBM PC
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the shipped binary; assembles byte-identical.
+;
+;	Build:	make
+;	Check:	make check
+;
+;	Usage:	CONFIG				full screen menu
+;		CONFIG P0 1200 7 ODD 2		set one port from the command line
+;
+;	The settings live in the XIOS, in a table with one byte per port in
+;	the format of BIOS int 14h: baud rate in bits 7..5, parity in 4..3,
+;	stop bits in 2 and word length in 1..0.  BDOS 31h gives the XIOS
+;	segment and the table's offset is kept at 2552h in its pointer block.
+;
+;	The number of serial adapters comes from the equipment word (int 11h).
+;	One adapter has five menu entries, otherwise there are ten and the
+;	second port has its own column.  The screen is driven as in DSKMAINT.
+;
+;*****************************************************************************
 
 ; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	09a0h
+data_org	equ	049eh
 image_end	equ	09a0h
+
+; ---- addresses outside this image ----
+tailbuf	equ	0080h		; base page: command tail, length byte first
+xiosser	equ	2552h		; SER1 pointer in the XIOS pointer block
+
+; One group so the CMD has a single CODE descriptor (the 8080 model),
+; but the data keeps its own segment.
+cgroup	group	code,data
 
 	cseg
 	org	100h
 
 start:
-	jmps	l0126
-	db	43h,6fh,70h,79h,72h,69h,67h,68h
-	db	74h,20h,28h,43h,29h,20h,31h,39h
-	db	38h,33h,2ch,20h,44h,69h,67h,69h
-	db	74h,61h,6ch,20h,52h,65h,73h,65h
-	db	61h,72h,63h,68h
+	jmps	begin
 
-l0126:
-	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,94h
-	db	09h,0fch,0e8h,37h,03h,0b1h,31h,0cdh
-	db	0e0h,8ch,06h,00h,06h,26h,0a1h,52h
-	db	25h,0a3h,0feh,05h,0cdh,11h,25h,00h
-	db	0eh,75h,09h,0beh,9eh,04h,0e8h,0d5h
-	db	02h,0e9h,21h,01h,0c6h,06h,0fah,05h
-	db	01h,0c7h,06h,0fch,05h,05h,00h,80h
-	db	0fch,02h,74h,0bh,0c6h,06h,0fah,05h
-	db	02h,0c7h,06h,0fch,05h,0ah,00h,0f6h
-	db	06h,80h,00h,0ffh,75h,16h,0e8h,5dh
-	db	01h,0e8h,66h,02h,0e8h,0fch,00h,0e8h
-	db	83h,00h,0e8h,0beh,02h,0ffh,97h,0ch
-	db	06h,0e9h,0f3h,0ffh,0e8h,0ech,00h,0beh
-	db	80h,00h,0ach,89h,36h,0cah,06h,0b4h
-	db	00h,03h,0f0h,0c7h,04h,20h,00h,0e8h
-	db	0ceh,01h,72h,05h,0e8h,0ffh,01h,0ebh
-	db	0f6h,0e9h,0c0h,00h,0beh,81h,00h,0e8h
-	db	74h,02h,0b0h,0dh,0e8h,0cbh,02h,0b0h
-	db	0ah,0e8h,0c6h,02h,8bh,0eh,0cah,06h
-	db	81h,0e9h,80h,00h,74h,07h,0b0h,20h
-	db	0e8h,0b7h,02h,0e2h,0f9h,0beh,0d2h,06h
-	db	0e8h,53h,02h,0e9h,9fh,00h,42h,0beh
-	db	22h,06h,0b4h,07h,0ebh,1ch,42h,0beh
-	db	24h,06h,0b4h,03h,0ebh,14h,42h,0beh
-	db	26h,06h,0b4h,03h,0e8h,0bh,00h,3ch
-	db	02h,74h,09h,0c3h,42h,0beh,28h,06h
-	db	0b4h,01h,03h,0f2h,8ah,04h,0feh,0c0h
-	db	22h,0c4h,88h,04h,0c3h,0a0h,0fah,05h
-	db	0a2h,0fbh,05h,0b0h,72h,0e8h,6bh,02h
-	db	0bah,0eh,09h,2bh,0dbh,0beh,32h,06h
-	db	8ah,87h,22h,06h,0e8h,2dh,00h,0beh
-	db	52h,06h,8ah,87h,24h,06h,0e8h,23h
-	db	00h,0beh,62h,06h,8ah,87h,26h,06h
-	db	0e8h,19h,00h,0beh,72h,06h,8ah,87h
-	db	28h,06h,0e8h,0fh,00h,0bah,3dh,09h
-	db	43h,0feh,0eh,0fbh,05h,75h,0ceh,0b0h
-	db	75h,0e9h,2fh,02h,52h,0b4h,00h,03h
-	db	0c0h,03h,0c0h,03h,0f0h,0e8h,0d8h,01h
-	db	0b9h,04h,00h,0ach,0e8h,23h,02h,0e2h
-	db	0fah,5ah,80h,0c6h,03h,0c3h,0beh,0d6h
-	db	04h,0e8h,0bah,01h,2bh,0dbh,0e8h,3dh
-	db	00h,43h,0e8h,39h,00h,0b1h,00h,0b2h
-	db	00h,0cdh,0e0h,0c4h,1eh,0feh,05h,26h
-	db	8bh,07h,0beh,24h,06h,0b9h,02h,03h
-	db	0e8h,18h,00h,0beh,28h,06h,0b9h,01h
-	db	01h,0e8h,0fh,00h,0beh,26h,06h,0b9h
-	db	02h,03h,0e8h,06h,00h,0beh,22h,06h
-	db	0b9h,01h,07h,50h,22h,0c5h,22h,0e5h
-	db	89h,04h,58h,0d3h,0c8h,0c3h,8ah,87h
-	db	22h,06h,0b1h,02h,0d3h,0e0h,0ah,87h
-	db	26h,06h,0d1h,0e0h,0ah,87h,28h,06h
-	db	0b1h,02h,0d3h,0e0h,0ah,87h,24h,06h
-	db	0c4h,36h,0feh,05h,26h,88h,00h,0b4h
-	db	00h,8bh,0d3h,0cdh,14h,0c3h,0beh,0c9h
-	db	04h,0e8h,4ah,01h,0b9h,4eh,00h,0bah
-	db	01h,00h,0b3h,0c4h,0e8h,6bh,00h,0bah
-	db	01h,02h,0b3h,0cdh,0e8h,63h,00h,0bah
-	db	01h,17h,0b3h,0c4h,0e8h,5bh,00h,0b9h
-	db	16h,00h,0bah,00h,01h,0b3h,0b3h,0e8h
-	db	5dh,00h,0bah,4fh,01h,0b3h,0b3h,0e8h
-	db	55h,00h,0beh,0ddh,04h,0b9h,06h,00h
-	db	0b0h,59h,0e8h,66h,01h,0ach,04h,20h
-	db	0e8h,67h,01h,0ach,04h,20h,0e8h,61h
-	db	01h,0ach,0e8h,5dh,01h,0e2h,0e9h,0beh
-	db	0efh,04h,0b6h,01h,0e8h,0e5h,00h,0beh
-	db	2eh,05h,0bah,16h,04h,0e8h,0ebh,00h
-	db	0beh,57h,05h,0bah,0eh,06h,0e8h,0e2h
-	db	00h,80h,3eh,0fah,05h,01h,75h,01h
-	db	0c3h,0beh,65h,05h,0bah,34h,06h,0e9h
-	db	0d1h,00h,51h,0e8h,0dah,00h,8ah,0c3h
-	db	0e8h,27h,01h,0e2h,0f9h,59h,0c3h,51h
-	db	52h,0e8h,0cch,00h,8ah,0c3h,0e8h,19h
-	db	01h,5ah,0feh,0c6h,0e2h,0f2h,59h,0c3h
-	db	1eh,07h,8bh,36h,0cah,06h,46h,80h
-	db	3ch,20h,74h,0fah,80h,3ch,00h,0f9h
-	db	74h,23h,8bh,0feh,0b0h,20h,0b9h,05h
-	db	00h,0f2h,0aeh,74h,03h,0e9h,1ch,0feh
-	db	8bh,0d1h,0bfh,0ceh,06h,0e3h,02h,0f3h
-	db	0aah,0b9h,04h,00h,2bh,0cah,0f3h,0a4h
-	db	89h,36h,0cch,06h,0f8h,0c3h,0beh,2ah
-	db	06h,0b9h,14h,00h,0e8h,14h,00h,83h
-	db	0c6h,50h,0adh,8bh,0d8h,0adh,81h,0fbh
-	db	20h,06h,74h,04h,03h,1eh,20h,06h
-	db	88h,07h,0c3h,1eh,07h,51h,56h,0bfh
-	db	0ceh,06h,0b9h,04h,00h,0f3h,0a6h,5eh
-	db	59h,74h,08h,83h,0c6h,04h,0e2h,0edh
-	db	0e9h,0d1h,0fdh,0a1h,0cch,06h,0a3h,0cah
-	db	06h,0c3h,0beh,93h,05h,8bh,0eh,0fch
-	db	05h,51h,0ach,8ah,0f0h,0ach,8ah,0d0h
-	db	52h,0e8h,3ch,00h,5ah,0feh,0c6h,56h
-	db	0beh,73h,05h,0e8h,28h,00h,5eh,0ach
-	db	0e8h,7fh,00h,0ach,0e8h,7bh,00h,0ach
-	db	84h,0c0h,74h,04h,4eh,0e8h,04h,00h
-	db	59h,0e2h,0d6h,0c3h,1eh,07h,8bh,0feh
-	db	0b0h,00h,0b9h,50h,00h,0f2h,0aeh,0d1h
-	db	0e9h,8ah,0d1h,0e8h,0ah,00h,0ach,0e8h
-	db	58h,00h,0ach,84h,0c0h,75h,0f8h,0c3h
-	db	0b0h,59h,0e8h,46h,00h,81h,0c2h,20h
-	db	20h,8ah,0c6h,0e8h,44h,00h,8ah,0c2h
-	db	0e9h,3fh,00h,0bfh,02h,06h,8bh,0eh
-	db	0fch,05h,51h,57h,1eh,07h,0e8h,4ah
-	db	00h,8ah,0c4h,2ch,3ah,0f2h,0aeh,5fh
-	db	59h,74h,07h,0b0h,07h,0e8h,22h,00h
-	db	0ebh,0e8h,8ah,0d8h,0b7h,00h,4bh,03h
-	db	0dbh,2bh,0d2h,0c3h,0b1h,0bh,0cdh,0e0h
-	db	84h,0c0h,74h,06h,0b1h,01h,0cdh,0e0h
-	db	0ebh,0f2h,0c3h,50h,0b0h,1bh,0e8h,01h
-	db	00h,58h,53h,51h,52h,56h,57h,06h
-	db	8ah,0d0h,0b1h,06h,0cdh,0e0h,0fch,07h
-	db	5fh,5eh,5ah,59h,5bh,0c3h,0b4h,01h
-	db	0cdh,16h,0c3h,0b4h,00h,0cdh,16h,0c3h
-	db	4eh,6fh,20h,53h,65h,72h,69h,61h
-	db	6ch,20h,43h,6fh,6dh,6dh,75h,6eh
-	db	69h,63h,61h,74h,69h,6fh,6eh,20h
-	db	6fh,70h,74h,69h,6fh,6eh,73h,20h
-	db	69h,6eh,73h,74h,61h,6ch,6ch,65h
-	db	64h,2eh,00h,1bh,45h,1bh,77h,1bh
-	db	6eh,1bh,71h,1bh,74h,1bh,75h,00h
-	db	1bh,45h,1bh,76h,1bh,6dh,00h,00h
-	db	00h,0dah,00h,4fh,0bfh,02h,00h,0c6h
-	db	02h,4fh,0b5h,17h,00h,0c0h,17h,4fh
-	db	0d9h,43h,50h,2fh,4dh,2dh,38h,36h
-	db	20h,53h,65h,72h,69h,61h,6ch,20h
-	db	50h,6fh,72h,74h,20h,43h,6fh,6eh
-	db	66h,69h,67h,75h,72h,61h,74h,69h
-	db	6fh,6eh,20h,66h,6fh,72h,20h,74h
-	db	68h,65h,20h,49h,42h,4dh,20h,50h
-	db	43h,20h,20h,20h,76h,65h,72h,73h
-	db	69h,6fh,6eh,20h,31h,2eh,30h,00h
-	db	1bh,72h,50h,72h,65h,73h,73h,20h
-	db	66h,75h,6eh,63h,74h,69h,6fh,6eh
-	db	20h,6bh,65h,79h,20h,74h,6fh,20h
-	db	61h,64h,76h,61h,6eh,63h,65h,20h
-	db	76h,61h,6ch,75h,65h,2eh,1bh,75h
-	db	00h,53h,65h,72h,69h,61h,6ch,20h
-	db	50h,6fh,72h,74h,20h,30h,00h,53h
-	db	65h,72h,69h,61h,6ch,20h,50h,6fh
-	db	72h,74h,20h,31h,00h,0dah,0c4h,0c4h
-	db	0c4h,0c4h,0bfh,0ah,08h,0b3h,08h,08h
-	db	08h,08h,46h,08h,08h,08h,0b3h,0ah
-	db	08h,0c0h,0c4h,0c4h,0c4h,0c4h,0d9h,1bh
-	db	41h,08h,08h,08h,00h,08h,15h,31h
-	db	20h,42h,61h,75h,64h,20h,52h,61h
-	db	74h,65h,00h,0bh,15h,33h,20h,57h
-	db	6fh,72h,64h,20h,4ch,65h,6eh,67h
-	db	74h,68h,00h,0eh,15h,35h,20h,50h
-	db	61h,72h,69h,74h,79h,00h,11h,15h
-	db	37h,20h,53h,74h,6fh,70h,20h,42h
-	db	69h,74h,73h,00h,14h,15h,39h,20h
-	db	43h,6fh,6eh,66h,69h,67h,75h,72h
-	db	65h,20h,61h,6eh,64h,20h,45h,78h
-	db	69h,74h,00h,08h,34h,32h,20h,00h
-	db	0bh,34h,34h,20h,00h,0eh,34h,36h
-	db	20h,00h,11h,34h,38h,20h,00h,14h
-	db	34h,31h,30h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,01h,03h,05h,07h
-	db	09h,02h,04h,06h,08h,0ah,0d5h,01h
-	db	0d4h,01h,0ddh,01h,0dch,01h,0e5h,01h
-	db	0e4h,01h,0f3h,01h,0f2h,01h,64h,02h
-	db	64h,02h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,20h,20h,50h,30h
-	db	20h,20h,50h,31h,20h,31h,31h,30h
-	db	20h,31h,35h,30h,20h,33h,30h,30h
-	db	20h,36h,30h,30h,31h,32h,30h,30h
-	db	32h,34h,30h,30h,34h,38h,30h,30h
-	db	39h,36h,30h,30h,20h,20h,20h,35h
-	db	20h,20h,20h,36h,20h,20h,20h,37h
-	db	20h,20h,20h,38h,4eh,4fh,4eh,45h
-	db	20h,4fh,44h,44h,3fh,3fh,3fh,3fh
-	db	45h,56h,45h,4eh,20h,20h,20h,31h
-	db	20h,20h,20h,32h,20h,06h,00h,00h
-	db	20h,06h,01h,00h,22h,06h,00h,00h
-	db	22h,06h,01h,00h,22h,06h,02h,00h
-	db	22h,06h,03h,00h,22h,06h,04h,00h
-	db	22h,06h,05h,00h,22h,06h,06h,00h
-	db	22h,06h,07h,00h,24h,06h,00h,00h
-	db	24h,06h,01h,00h,24h,06h,02h,00h
-	db	24h,06h,03h,00h,26h,06h,00h,00h
-	db	26h,06h,01h,00h,26h,06h,02h,00h
-	db	26h,06h,03h,00h,28h,06h,00h,00h
-	db	28h,06h,01h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,3fh,0dh,0ah,51h
-	db	75h,65h,73h,74h,69h,6fh,6eh,20h
-	db	6dh,61h,72h,6bh,20h,69h,73h,20h
-	db	75h,6eh,64h,65h,72h,20h,74h,68h
-	db	65h,20h,69h,6eh,76h,61h,6ch,69h
-	db	64h,20h,69h,64h,65h,6eh,74h,69h
-	db	66h,69h,65h,72h,20h,69h,6eh,20h
-	db	74h,68h,65h,20h,63h,6fh,6dh,6dh
-	db	61h,6eh,64h,20h,74h,61h,69h,6ch
-	db	2eh,0dh,0ah,0ah,41h,62h,73h,65h
-	db	6eh,63h,65h,20h,6fh,66h,20h,61h
-	db	20h,63h,6fh,6dh,6dh,61h,6eh,64h
-	db	20h,74h,61h,69h,6ch,20h,69h,6eh
-	db	76h,6fh,6bh,65h,73h,20h,74h,68h
-	db	65h,20h,73h,63h,72h,65h,65h,6eh
-	db	20h,6dh,6fh,64h,65h,2eh,0dh,0ah
-	db	49h,66h,20h,61h,20h,63h,6fh,6dh
-	db	6dh,61h,6eh,64h,20h,74h,61h,69h
-	db	6ch,20h,69h,73h,20h,70h,72h,65h
-	db	73h,65h,6eh,74h,2ch,20h,61h,6ch
-	db	6ch,20h,61h,72h,67h,75h,6dh,65h
-	db	6eh,74h,73h,20h,6dh,75h,73h,74h
-	db	20h,62h,65h,20h,73h,65h,70h,61h
-	db	72h,61h,74h,65h,64h,20h,62h,79h
-	db	20h,73h,70h,61h,63h,65h,73h,2eh
-	db	0dh,0ah,0ah,56h,61h,6ch,69h,64h
-	db	20h,70h,6fh,72h,74h,20h,69h,64h
-	db	65h,6eh,74h,69h,66h,69h,65h,72h
-	db	73h,20h,61h,72h,65h,3ah,20h,20h
-	db	20h,20h,20h,20h,20h,20h,20h,20h
-	db	50h,30h,20h,50h,31h,0dh,0ah,56h
-	db	61h,6ch,69h,64h,20h,73h,70h,65h
-	db	65h,64h,20h,69h,64h,65h,6eh,74h
-	db	69h,66h,69h,65h,72h,73h,20h,61h
-	db	72h,65h,3ah,20h,20h,20h,20h,20h
-	db	20h,20h,20h,20h,31h,31h,30h,20h
-	db	31h,35h,30h,20h,33h,30h,30h,20h
-	db	36h,30h,30h,20h,31h,32h,30h,30h
-	db	20h,32h,34h,30h,30h,20h,34h,38h
-	db	30h,30h,20h,39h,36h,30h,30h,0dh
-	db	0ah,56h,61h,6ch,69h,64h,20h,77h
-	db	6fh,72h,64h,20h,6ch,65h,6eh,67h
-	db	74h,68h,20h,69h,64h,65h,6eh,74h
-	db	69h,66h,69h,65h,72h,73h,20h,61h
-	db	72h,65h,3ah,20h,20h,20h,35h,20h
-	db	36h,20h,37h,20h,38h,0dh,0ah,56h
-	db	61h,6ch,69h,64h,20h,70h,61h,72h
-	db	69h,74h,79h,20h,69h,64h,65h,6eh
-	db	74h,69h,66h,69h,65h,72h,73h,20h
-	db	61h,72h,65h,3ah,20h,20h,20h,20h
-	db	20h,20h,20h,20h,4eh,4fh,4eh,45h
-	db	20h,4fh,44h,44h,20h,45h,56h,45h
-	db	4eh,0dh,0ah,56h,61h,6ch,69h,64h
-	db	20h,73h,74h,6fh,70h,20h,62h,69h
-	db	74h,20h,69h,64h,65h,6eh,74h,69h
-	db	66h,69h,65h,72h,73h,20h,61h,72h
-	db	65h,3ah,20h,20h,20h,20h,20h,20h
-	db	31h,20h,32h,0dh,0ah,0ah,54h,68h
-	db	65h,20h,66h,6fh,6ch,6ch,6fh,77h
-	db	69h,6eh,67h,20h,65h,78h,61h,6dh
-	db	70h,6ch,65h,20h,73h,65h,74h,73h
-	db	20h,53h,65h,72h,69h,61h,6ch,20h
-	db	50h,6fh,72h,74h,20h,30h,20h,74h
-	db	6fh,3ah,0dh,0ah,31h,32h,30h,30h
-	db	20h,62h,61h,75h,64h,2ch,20h,37h
-	db	20h,62h,69h,74h,20h,6fh,64h,64h
-	db	20h,70h,61h,72h,69h,74h,79h,2ch
-	db	20h,77h,69h,74h,68h,20h,32h,20h
-	db	73h,74h,6fh,70h,20h,62h,69h,74h
-	db	73h,2eh,0dh,0ah,0ah,43h,4fh,4eh
-	db	46h,49h,47h,20h,50h,30h,20h,31h
-	db	32h,30h,30h,20h,37h,20h,4fh,44h
-	db	44h,20h,32h,0dh,0ah,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h
+copyright:
+	db	'Copyright (C) 1983, Digital Research'
+
+;-----------------------------------------------------------------------------
+; Entry.  Discard anything typed ahead, find the XIOS serial table and count
+; the serial adapters; none ends the program.  A command tail selects the
+; command line mode, otherwise the screen is run.
+;-----------------------------------------------------------------------------
+begin:
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,0994h
+	cld
+	call	flushkb
+	mov	cl,31h
+	int	0e0h
+	mov	word ptr xiosseg,es
+	mov	ax,es:.xiosser
+	mov	xiosptr,ax
+	int	11h
+	and	ax,0e00h
+	jnz	serialok
+	mov	si,offset noportmsg
+	call	puts
+	jmp	terminate
+
+; ah is twice the adapter count: 02h is one adapter, anything else is two.
+serialok:
+	mov	byte ptr nports,01h
+	mov	word ptr nitems,05h
+	cmp	ah,02h
+	jz	chkarg
+	mov	byte ptr nports,02h
+	mov	word ptr nitems,0ah
+
+;-----------------------------------------------------------------------------
+; No command tail: draw the screen and read the settings from the XIOS, then
+; repeat: show the values, wait for a function key and run its handler.  Only
+; the exit entries leave the loop.
+;-----------------------------------------------------------------------------
+chkarg:
+	test	byte ptr .tailbuf,0ffh
+	jnz	cmdline
+	call	drawscreen
+	call	drawmenu
+	call	getsettings
+
+screenloop:
+	call	showvals
+	call	getchoice
+	call	word ptr fntable[bx]
+	jmp	screenloop
+
+;-----------------------------------------------------------------------------
+; Command line mode.  Read the current settings and end the tail with a space
+; and a NUL, so the last token ends like the others, then apply the tokens one
+; by one.  They change the values here only; nothing reaches the XIOS until
+; all of them have been accepted (argdone).
+;-----------------------------------------------------------------------------
+cmdline:
+	call	getsettings
+	mov	si,tailbuf
+	lodsb
+	mov	tailptr,si
+	mov	ah,00h
+	add	si,ax
+	mov	word ptr [si],20h
+
+argloop:
+	call	nexttoken
+	jc	argdone
+	call	applytoken
+	jmps	argloop
+
+; Every token was accepted: write the settings out and leave.
+argdone:
+	jmp	writeall
+
+; A token is not valid: echo the command tail, then as many spaces as the bad
+; token is far into it, and show the help text.  Its first character is a
+; question mark, which lands under the bad token.
+badarg:
+	mov	si,tailbuf+1
+	call	puts
+	mov	al,0dh
+	call	conout
+	mov	al,0ah
+	call	conout
+	mov	cx,tailptr
+	sub	cx,tailbuf
+	jz	showhelp
+
+padloop:
+	mov	al,20h
+	call	conout
+	loop	padloop
+
+showhelp:
+	mov	si,offset helpmsg
+	call	puts
+	jmp	terminate
+
+;-----------------------------------------------------------------------------
+; Handlers for the function keys.  F1 F3 F5 F7 set port 0 and F2 F4 F6 F8 set
+; port 1: the entry for the second port steps dx to 1 first, and cycle adds dx
+; to the address of the setting's two byte array.  si is that array and ah the
+; largest value the setting can take, so the stepped value wraps with and ah.
+;-----------------------------------------------------------------------------
+baud1:
+	inc	dx
+
+baud0:
+	mov	si,offset baudval
+	mov	ah,07h
+	jmps	cycle
+
+wlen1:
+	inc	dx
+
+wlen0:
+	mov	si,offset wlenval
+	mov	ah,03h
+	jmps	cycle
+
+par1:
+	inc	dx
+
+; Parity code 2 is not a parity (partxt shows it as ????): step past it.
+par0:
+	mov	si,offset parval
+	mov	ah,03h
+	call	cycle
+	cmp	al,02h
+	jz	cycleval
+	ret
+
+stop1:
+	inc	dx
+
+stop0:
+	mov	si,offset stopval
+	mov	ah,01h
+
+; Step the setting to its next value.  si is its array, dx the port.  Returns
+; the new value in al.  cycleval steps once more without adding the port again.
+cycle:
+	add	si,dx
+
+cycleval:
+	mov	al,[si]
+	inc	al
+	and	al,ah
+	mov	[si],al
+	ret
+
+;-----------------------------------------------------------------------------
+; Show the current value of every setting, one column per port: four rows of
+; four characters (baud rate, word length, parity, stop bits), in high
+; intensity.  The values index the text tables, four characters to an entry.
+;-----------------------------------------------------------------------------
+showvals:
+	mov	al,nports
+	mov	portsleft,al
+	mov	al,72h
+	call	escout
+	mov	dx,090eh
+	sub	bx,bx
+
+showport:
+	mov	si,offset baudtxt
+	mov	al,baudval[bx]
+	call	showone
+	mov	si,offset wlentxt
+	mov	al,wlenval[bx]
+	call	showone
+	mov	si,offset partxt
+	mov	al,parval[bx]
+	call	showone
+	mov	si,offset stoptxt
+	mov	al,stopval[bx]
+	call	showone
+	mov	dx,093dh
+	inc	bx
+	dec	byte ptr portsleft
+	jnz	showport
+	mov	al,75h
+	jmp	escout
+
+; Print the four characters of entry al of the table at si at position dx, then
+; move dx three rows down for the next setting.
+showone:
+	push	dx
+	mov	ah,00h
+	add	ax,ax
+	add	ax,ax
+	add	si,ax
+	call	gotoxy
+	mov	cx,04h
+
+showloop:
+	lodsb
+	call	conout
+	loop	showloop
+	pop	dx
+	add	dh,03h
+	ret
+
+;-----------------------------------------------------------------------------
+; F9 and F10, Configure and Exit: restore the screen and fall into writeall.
+;-----------------------------------------------------------------------------
+doexit:
+	mov	si,offset scrnrest
+	call	puts
+
+; Write the settings of both ports, then leave through a BDOS reset.  The
+; command line mode ends here as well.
+writeall:
+	sub	bx,bx
+	call	setport
+	inc	bx
+	call	setport
+
+terminate:
+	mov	cl,00h
+	mov	dl,00h
+	int	0e0h
+
+;-----------------------------------------------------------------------------
+; Read the settings from the XIOS.  Its table has one byte per port, in the
+; format of int 14h (baud in bits 7..5, parity 4..3, stop bit 2, length 1..0);
+; the word at xiosptr:xiosseg holds both, port 0 in the low byte.  unpack takes
+; one field from both ports into the two byte array at si, masks with ch, and
+; rotates the word right by cl to bring the next field down.
+;-----------------------------------------------------------------------------
+getsettings:
+	les	bx,dword ptr xiosptr
+	mov	ax,es:[bx]
+	mov	si,offset wlenval
+	mov	cx,0302h
+	call	unpack
+	mov	si,offset stopval
+	mov	cx,0101h
+	call	unpack
+	mov	si,offset parval
+	mov	cx,0302h
+	call	unpack
+	mov	si,offset baudval
+	mov	cx,0701h
+
+unpack:
+	push	ax
+	and	al,ch
+	and	ah,ch
+	mov	[si],ax
+	pop	ax
+	ror	ax,cl
+	ret
+
+; Set port bx: put its four settings together in the int 14h format, store the
+; byte in the XIOS table and initialize the port with it.
+setport:
+	mov	al,baudval[bx]
+	mov	cl,02h
+	shl	ax,cl
+	or	al,parval[bx]
+	shl	ax,1
+	or	al,stopval[bx]
+	mov	cl,02h
+	shl	ax,cl
+	or	al,wlenval[bx]
+	les	si,dword ptr xiosptr
+	mov	es:[bx+si],al
+	mov	ah,00h
+	mov	dx,bx
+	int	14h
+	ret
+
+;-----------------------------------------------------------------------------
+; Paint the screen: the frame as in DSKMAINT (three horizontal rules, two
+; sides, six corner glyphs), the title, the instruction line and a heading for
+; each port.  With one adapter it returns after the heading of port 0.
+;-----------------------------------------------------------------------------
+drawscreen:
+	mov	si,offset scrninit
+	call	puts
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	hline
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	hline
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	hline
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	vline
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	vline
+	mov	si,offset corners
+	mov	cx,06h
+
+cellloop:
+	mov	al,59h
+	call	escout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	call	conout
+	loop	cellloop
+	mov	si,offset titlestr
+	mov	dh,01h
+	call	putcent
+	mov	si,offset helpline
+	mov	dx,0416h
+	call	putat
+	mov	si,offset port0title
+	mov	dx,060eh
+	call	putat
+	cmp	byte ptr nports,01h
+	jnz	port1hdr
+	ret
+
+; A second adapter: heading for the second port.
+port1hdr:
+	mov	si,offset port1title
+	mov	dx,0634h
+	jmp	putat
+
+; Draw cx copies of bl going right from position dx.  cx is preserved.
+hline:
+	push	cx
+	call	gotoxy
+
+hlloop:
+	mov	al,bl
+	call	conout
+	loop	hlloop
+	pop	cx
+	ret
+
+; Draw cx copies of bl going down from position dx.  cx is preserved.
+vline:
+	push	cx
+
+vlloop:
+	push	dx
+	call	gotoxy
+	mov	al,bl
+	call	conout
+	pop	dx
+	inc	dh
+	loop	vlloop
+	pop	cx
+	ret
+
+;-----------------------------------------------------------------------------
+; Command line tokens, at most four characters.  nexttoken takes the next one
+; from the tail and puts it in tokbuf right-justified and blank padded, the way
+; the name tables hold them.  tailptr is the separator in front of it.  Returns
+; carry set at the end of the tail, and goes to badarg for a longer token.
+;-----------------------------------------------------------------------------
+nexttoken:
+	push	ds
+	pop	es
+	mov	si,tailptr
+
+skipsp:
+	inc	si
+	cmp	byte ptr [si],20h
+	jz	skipsp
+	cmp	byte ptr [si],00h
+	stc
+	jz	tokenret
+	mov	di,si
+	mov	al,20h
+	mov	cx,05h
+	repne	scasb
+	jz	padtoken
+	jmp	badarg
+
+; cx is what is left of the four characters, so that many blanks go in first.
+padtoken:
+	mov	dx,cx
+	mov	di,offset tokbuf
+	jcxz	copytoken
+	rep	stosb
+
+; Then the token itself; tokend is where it ended.
+copytoken:
+	mov	cx,04h
+	sub	cx,dx
+	rep	movsb
+	mov	tokend,si
+	clc
+
+tokenret:
+	ret
+
+;-----------------------------------------------------------------------------
+; Apply the token in tokbuf.  findtoken leaves si on its name in tokens; the
+; values follow in tokvals, four bytes to an entry like the names, which is the
+; 50h: the address of a variable and the value to give it.  P0 and P1 set
+; curport; every other setting is a two byte array, so the port is added.
+;-----------------------------------------------------------------------------
+applytoken:
+	mov	si,offset tokens
+	mov	cx,14h
+	call	findtoken
+	add	si,50h
+	lodsw
+	mov	bx,ax
+	lodsw
+	cmp	bx,offset curport
+	jz	storeval
+	add	bx,curport
+
+storeval:
+	mov	[bx],al
+	ret
+
+; Look for tokbuf among the cx names at si; none goes to badarg.  si is left on
+; the entry that matched.
+findtoken:
+	push	ds
+	pop	es
+
+findloop:
+	push	cx
+	push	si
+	mov	di,offset tokbuf
+	mov	cx,04h
+	repe	cmpsb
+	pop	si
+	pop	cx
+	jz	foundtoken
+	add	si,04h
+	loop	findloop
+	jmp	badarg
+
+; Accepted: the next token starts after this one.
+foundtoken:
+	mov	ax,tokend
+	mov	tailptr,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Draw nitems menu entries from menuitems.  An entry is row, column, a two
+; character key label shown in a small box, and either a text, which is
+; centred on its row, or a NUL when there is none (the second port's keys).
+;-----------------------------------------------------------------------------
+drawmenu:
+	mov	si,offset menuitems
+	mov	cx,nitems
+
+menuloop:
+	push	cx
+	lodsb
+	mov	dh,al
+	lodsb
+	mov	dl,al
+	push	dx
+	call	gotoxy
+	pop	dx
+	inc	dh
+	push	si
+	mov	si,offset itemfrm
+	call	puts
+	pop	si
+	lodsb
+	call	conout
+	lodsb
+	call	conout
+	lodsb
+	test	al,al
+	jz	menunext
+	dec	si
+	call	putcent
+
+menunext:
+	pop	cx
+	loop	menuloop
+	ret
+
+; Print the string at si centred on row dh.  scasb finds the NUL, which leaves
+; 79 - length in cx, and half of that is the column.
+putcent:
+	push	ds
+	pop	es
+	mov	di,si
+	mov	al,00h
+	mov	cx,50h
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+
+; Print the string at si at position dx (row in dh, column in dl).
+putat:
+	call	gotoxy
+
+; Print the NUL terminated string at si.
+puts:
+	lodsb
+
+putsloop:
+	call	conout
+	lodsb
+	test	al,al
+	jnz	putsloop
+	ret
+
+; VT52 ESC Y: row and column are biased by 20h.  Zero based; dx is destroyed.
+gotoxy:
+	mov	al,59h
+	call	escout
+	add	dx,2020h
+	mov	al,dh
+	call	conout
+	mov	al,dl
+	jmp	conout
+
+;-----------------------------------------------------------------------------
+; Wait for one of the first nitems function keys in keylist, beeping at any
+; other.  The scan code less 3ah is the key number.  Returns bx = the word
+; offset of its handler in fntable, which is indexed by key number, and dx = 0,
+; the port for the handlers; the ones for the second port step it to 1.
+;-----------------------------------------------------------------------------
+getchoice:
+	mov	di,offset keylist
+	mov	cx,nitems
+
+chooseloop:
+	push	cx
+	push	di
+	push	ds
+	pop	es
+	call	getraw
+	mov	al,ah
+	sub	al,3ah
+	repne	scasb
+	pop	di
+	pop	cx
+	jz	gotchoice
+	mov	al,07h
+	call	conout
+	jmps	chooseloop
+
+gotchoice:
+	mov	bl,al
+	mov	bh,00h
+	dec	bx
+	add	bx,bx
+	sub	dx,dx
+	ret
+
+; Discard anything already typed ahead.
+flushkb:
+	mov	cl,0bh
+	int	0e0h
+	test	al,al
+	jz	flushend
+	mov	cl,01h
+	int	0e0h
+	jmps	flushkb
+
+flushend:
+	ret
+
+; Send ESC then al.  Ends in conout.
+escout:
+	push	ax
+	mov	al,1bh
+	call	conout
+	pop	ax
+
+; Send al to the console through BDOS function 6.  Every register the string
+; and table loops depend on is preserved, and the direction flag is cleared.
+conout:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	es
+	mov	dl,al
+	mov	cl,06h
+	int	0e0h
+	cld
+	pop	es
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	ret
+
+; BIOS keyboard status.  Nothing calls it: dead code in the original binary.
+kbhit:
+	mov	ah,01h
+	int	16h
+	ret
+
+; BIOS keyboard read: al is the character, ah the scan code.
+getraw:
+	mov	ah,00h
+	int	16h
+	ret
+
+l049e:
 
 ; ---- data ----
+	dseg
+noportmsg	db	'No Serial Communication options instal','led.'
+	db	00h
+
+; Screen setup, sent at the start: clear (ESC E), text wrap off (w), cursor off
+; (n), and reverse video (q), blinking (t) and high intensity (u) all off.  The
+; restore at the end: clear, text wrap on (v), cursor on (m).
+scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+	db	00h
+scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
+
+; Frame corner glyphs: row, column, character.  Row and column are biased by
+; 20h on the way out, so they are stored unbiased here.
+corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
+titlestr	db	'CP/M-86 Serial Port Configuration for th'
+	db	'e IBM PC   version 1.0',00h
+helpline	db	1bh
+	db	'rPress function key to advance value.',1bh,75h
+	db	00h
+port0title	db	'Serial Port 0',00h
+port1title	db	'Serial Port 1',00h
+
+; Decoration of a menu entry: a 6 by 3 box with the key number in high
+; intensity inside it; the cursor is left to the right of the box.
+itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,46h,08h,08h,08h,0b3h,0ah,08h,0c0h
+	db	0c4h,0c4h,0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,00h
+
+; Menu entries: row, column, key label, text or NUL.  Port 0 in column 15h with
+; F1 F3 F5 F7 F9, port 1 in column 34h with F2 F4 F6 F8 F10.
+menuitems	db	08h,15h
+	db	'1 Baud Rate',00h
+	db	0bh,15h
+	db	'3 Word Length',00h
+	db	0eh,15h
+	db	'5 Parity',00h
+	db	11h,15h
+	db	'7 Stop Bits',00h
+	db	14h,15h
+	db	'9 Configure and Exit',00h
+	db	08h,34h,32h,20h,00h,0bh,34h,34h,20h,00h,0eh
+	db	34h,36h,20h,00h,11h,34h,38h,20h,00h,14h
+	db	34h,31h,30h,00h
+nports	db	00h	; serial adapters, 1 or 2
+portsleft	db	00h	; ports still to show
+nitems	dw	00h	; menu entries, 5 per port
+xiosptr	dw	00h	; offset of the settings in the XIOS
+xiosseg	dw	00h	; and its segment, from BDOS 31h
+; Function keys of the menu entries, in order: F1 F3 F5 F7 F9, then F2 F4 F6 F8 F10.
+keylist	db	01h,03h,05h,07h,09h,02h,04h,06h,08h,0ah
+
+; One handler per function key, F1 to F10.
+fntable	dw	baud0,baud1,wlen0,wlen1,par0,par1,stop0,stop1,doexit,doexit
+curport	dw	00h	; port the command line tokens apply to
+
+; The settings, one byte per port, in the order they are held in the XIOS byte.
+baudval	db	00h,00h	; 0..7, 110 to 9600 baud
+wlenval	db	00h,00h	; 0..3, 5 to 8 bits
+parval	db	00h,00h	; 0 none, 1 odd, 3 even; 2 is not used
+stopval	db	00h,00h	; 0 or 1, one or two stop bits
+
+; The names the command line accepts, four characters each and right
+; justified: 20 entries, the port names and then the four tables that follow,
+; which the screen shows as well.
+tokens	db	'  P0  P1'
+baudtxt	db	' 110 150 300 6001200240048009600'
+wlentxt	db	'   5   6   7   8'
+partxt	db	'NONE ODD????EVEN'
+stoptxt	db	'   1   2'
+; What each name does, in the same order: the address of a variable and the
+; value for it.  P0 and P1 set curport; the others are arrays, which
+; applytoken indexes by curport.
+tokvals	dw	offset curport,0,offset curport,1
+	dw	offset baudval,0,offset baudval,1,offset baudval,2,offset baudval,3
+	dw	offset baudval,4,offset baudval,5,offset baudval,6,offset baudval,7
+	dw	offset wlenval,0,offset wlenval,1,offset wlenval,2,offset wlenval,3
+	dw	offset parval,0,offset parval,1,offset parval,2,offset parval,3
+	dw	offset stopval,0,offset stopval,1
+tailptr	dw	00h	; separator in front of the next token
+tokend	dw	00h	; where the token just read ends
+tokbuf	db	00h,00h,00h,00h	; the token, right justified
+; Shown after a bad token; badarg has put the question mark under it.
+helpmsg	db	3fh,0dh,0ah
+	db	'Question mark is under the invalid identifier in the command tail.',0dh,0ah,0ah
+	db	'Absence of a command tail invokes the sc'
+	db	'reen mode.',0dh,0ah
+	db	'If a command tail is present, all argume'
+	db	'nts must be separated by spaces.',0dh,0ah,0ah
+	db	'Valid port identifiers are:          P','0 P1'
+	db	0dh,0ah
+	db	'Valid speed identifiers are:         110'
+	db	' 150 300 600 1200 2400 4800 9600',0dh,0ah
+	db	'Valid word length identifiers are:   5 6',' 7 8'
+	db	0dh,0ah
+	db	'Valid parity identifiers are:        NON'
+	db	'E ODD EVEN',0dh,0ah
+	db	'Valid stop bit identifiers are:      1 2',0dh
+	db	0ah,0ah
+	db	'The following example sets Serial Port 0',' to:'
+	db	0dh,0ah
+	db	'1200 baud, 7 bit odd parity, with 2 stop'
+	db	' bits.',0dh,0ah,0ah,'CONFIG P0 1200 7 ODD 2',0dh
+	db	0ah,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h
+
 	end

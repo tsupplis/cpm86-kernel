@@ -725,7 +725,7 @@ flushend:
 allocmem:
 	mov	word ptr buflen,0ffffh	; ask for everything
 	mov	cl,35h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	inc	al
 	jz	allocret
@@ -738,11 +738,11 @@ allocmem:
 	mov	ah,buflenhi
 	sub	ah,01h		; one 1000h unit is lost to the alignment
 	jna	allocret
-	mov	.0747h,ax
+	mov	word ptr buflen,ax
 	dec	ah		; and one for the track buffer itself
 	mov	ntrkbuf,ah
 	mov	cl,38h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	inc	al
 
@@ -753,7 +753,7 @@ allocret:
 freemem:
 	mov	byte ptr bufflag,00h
 	mov	cl,39h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	ret
 
