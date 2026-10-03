@@ -280,10 +280,36 @@ def t_decode_restores_on_failure():
     assert not os.path.exists(f + '.bak'), '.bak left behind'
 
 
+def t_datamap_known_tools():
+    root = finished()
+    for name, org, _, _, _ in KNOWN:
+        rc, out = tool(root, name, 'datamap', '../../base/%s.cmd' % name,
+                       org + '.a86')
+        assert rc == 0, out
+        m = re.search(r'existing data labels: (\d+); inside a classified '
+                      r'segment: (\d+)', out)
+        assert m and int(m.group(1)) > 20, out
+        assert int(m.group(2)) == 0, \
+            '%s: %s known data labels fall inside a classified segment' \
+            % (name, m.group(2))
+
+
+def t_datamap_embedded_code():
+    p = pipeline()
+    rc, out = tool(p['root'], 'dskmaint', 'datamap',
+                   '../../base/dskmaint.cmd', p['org'])
+    assert rc == 0, out
+    hits = [ln.split()[0] for ln in out.split('\n') if 'BIOS:' in ln]
+    assert hits == ['0a79..0acd', '0b0c..0d40'], \
+        'embedded boot images: expected exactly two, got %s' % hits
+    assert re.search(r'08ab\.\.08b5 table', out), 'jump table not found'
+
+
 TESTS = [t_compile, t_hex_literal_bounds, t_scaffold_assign,
          t_pipeline_dskmaint, t_holes_known_tools, t_boundary_known_tools,
          t_annotate_restrictive, t_relabel_noop, t_guard_and_revert,
-         t_decode_demotion, t_decode_restores_on_failure]
+         t_decode_demotion, t_decode_restores_on_failure,
+         t_datamap_known_tools, t_datamap_embedded_code]
 
 
 def main():

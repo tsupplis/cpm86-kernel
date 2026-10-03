@@ -11,6 +11,17 @@ binary is still byte-identical to the original.
       dump.  Runs `make check` once to prove the skeleton is byte-identical
       before any real reconstruction work starts.
 
+  a86tool.py typedata <bin> <a86> [--no-verify]
+      Type and label the data area from the datamap classification: variables
+      as db/dw with their initial value, strings quoted, zeros and binary as
+      db.  Only segments whose lines are still raw scaffold dumps are touched;
+      labels (dXXXX) only where something points.  Verified byte-identical.
+
+  a86tool.py datamap <bin> <a86>
+      Classify the data area (text, zero runs, evidenced tables, binary) and
+      show which addresses the code points at.  Flags binary blobs that hold
+      BIOS interrupt opcodes (embedded boot code).  Read-only.
+
   a86tool.py annotate <bin> <a86> [text|tables] [--no-verify]
       Quote strings and turn jump tables into dw, only where there is
       evidence: text of 8+ printable bytes on plain db lines, and tables that

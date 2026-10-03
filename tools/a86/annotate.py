@@ -30,11 +30,12 @@ def split_at(lines, addr, anchor, size):
     return lines
 
 
-def replace_range(lines, a, b, make, anchor, size):
+def replace_range(lines, a, b, make, anchor, size, accept=None):
     """lines with [a, b) swapped for make(existing label); None if it cannot be.
 
-    Only plain, contiguous db/dw lines are replaced.  A label already on the
-    first line is handed to make() so it is kept, not dropped.
+    Only plain, contiguous db/dw lines are replaced, and only if accept() (when
+    given) approves the lines about to go.  A label already on the first line
+    is handed to make() so it is kept, not dropped.
     """
     lines = split_at(split_at(lines, a, anchor, size), b, anchor, size)
     sel = [(i, ad, sz) for i, ad, sz in locate(lines, anchor, size)
@@ -43,6 +44,8 @@ def replace_range(lines, a, b, make, anchor, size):
         return None
     i0, i1 = sel[0][0], sel[-1][0] + 1
     if len(sel) != i1 - i0:
+        return None
+    if accept and not accept(lines[i0:i1]):
         return None
     m = re.match(r'^(\w+)\s*(?:db|dw)\s', lines[i0])
     return lines[:i0] + make(m.group(1) if m else None) + lines[i1:]

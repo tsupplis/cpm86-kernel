@@ -6,6 +6,7 @@ import sys
 from . import __doc__ as USAGE
 from .annotate import cmd_annotate
 from .boundary import cmd_boundary
+from .datamap import cmd_datamap
 from .decode import cmd_decode
 from .holes import cmd_holes
 from .commands import (cmd_data, cmd_gen, cmd_mklabel,
@@ -13,9 +14,10 @@ from .commands import (cmd_data, cmd_gen, cmd_mklabel,
                        cmd_patch, cmd_relabel, cmd_rename, cmd_unequ)
 from .scaffold import cmd_scaffold
 from .splice import cmd_labels
+from .typedata import cmd_typedata
 
 BIN_CMDS = {'boundary', 'gen', 'patch', 'data', 'mkvars', 'labels', 'decode',
-            'holes', 'annotate'}
+            'holes', 'annotate', 'datamap', 'typedata'}
 
 
 def opt(a, flag):
@@ -57,6 +59,10 @@ def main():
         cmd_decode(a[1], a[2], base)
     elif sub == 'holes':
         cmd_holes(a[1], a[2], base)
+    elif sub == 'datamap':
+        cmd_datamap(a[1], a[2], base)
+    elif sub == 'typedata':
+        cmd_typedata(a[1], a[2], base, verify)
     elif sub == 'annotate':
         what = a[3] if len(a) > 3 else None
         if what not in (None, 'text', 'tables'):
