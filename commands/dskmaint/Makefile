@@ -11,6 +11,16 @@ dskmaint.obj: dskmaint.a86 bootsect.inc loader.inc
 
 dskmorg.obj: dskmorg.a86
 
+# Boot Sector
+bootsect.bin: bootsect.h86
+
+bootsect.h86: bootsect.a86
+
+# Loader
+loader.bin: loader.h86
+
+loader.h86: loader.a86
+
 # dskmaint is an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
 %.cmd: %.obj
@@ -26,12 +36,17 @@ dskmorg.obj: dskmorg.a86
 	@grep -qE 'Number of errors: +0\.' $*.log || \
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
+%h86: %.a86
+	unix2dos $<
+	cpm86_asm86 $<
+
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/dskmaint.cmd
 
 check: dskmorg.cmd
 	cmp $< $(REF)
 	@echo "PASS: dskmaint.cmd is byte-identical to $(REF)"
+
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
