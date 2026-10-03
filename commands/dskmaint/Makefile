@@ -1,25 +1,39 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
+ASM86=cpm86_asm86
+H862BIN=python3 ../../tools/h862bin.py
 
 TOOLS=dskmaint.cmd dskmorg.cmd
 
-SNIPPETS=
+# The two images DSKMAINT writes to track 0, as flat binaries.
+IMAGES=bootsect.bin loader.bin
+
+SNIPPETS=$(IMAGES)
 
 all: $(TOOLS) $(SNIPPETS)
 
 dskmaint.obj: dskmaint.a86 bootsect.inc loader.inc
 
-dskmorg.obj: dskmorg.a86
+dskmorg.obj: dskmorg.a86 bootsect.inc loader.inc
 
-# Boot Sector
-bootsect.bin: bootsect.h86
-
+# bootsect and loader are assembled by themselves (ASM-86, not RASM-86):
+# BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
+# loaded into.  h862bin takes the exact image out of the hex file, and writes
+# it as a binary or as the include file DSKMAINT assembles into its data.
 bootsect.h86: bootsect.a86
-
-# Loader
-loader.bin: loader.h86
-
 loader.h86: loader.a86
+
+%.h86: %.a86
+	unix2dos $<
+	rm -f $@
+	$(ASM86) $*
+	@test -f $@ || { echo "*** $<: assembly errors"; exit 1; }
+
+%.bin: %.h86
+	$(H862BIN) $< $@
+
+%.inc: %.h86
+	$(H862BIN) $< $@
 
 # dskmaint is an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
@@ -36,10 +50,6 @@ loader.h86: loader.a86
 	@grep -qE 'Number of errors: +0\.' $*.log || \
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
-%h86: %.a86
-	unix2dos $<
-	cpm86_asm86 $<
-
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/dskmaint.cmd
 
@@ -50,4 +60,4 @@ check: dskmorg.cmd
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
-	rm -f *.loc *.mp? *.lnk *.log
+	rm -f *.loc *.mp? *.lnk *.log $(IMAGES)
