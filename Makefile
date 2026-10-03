@@ -21,6 +21,7 @@ ASSIGN   = $(CMDDIR)/assign/assign.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
 TESTSUB  = $(CMDDIR)/submit/testcpm.sub
+DATPFK   = $(CMDDIR)/function/data.pfk
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
 # take everything; the smaller formats take subsets.
@@ -31,15 +32,16 @@ BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
 DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 
 # Tools that are the same whichever kernel the image carries.
-SHARED     = base/setup.cmd base/dskmaint.cmd base/hdmaint.cmd \
-             base/config.cmd base/data.pfk base/print.cmd
+SHARED     = base/setup.cmd base/hdmaint.cmd \
+             base/config.cmd base/print.cmd 
 
 CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
              base/help.cmd base/assign.cmd base/mform.cmd base/mformq.cmd \
-             base/help.hlp \
+             base/help.hlp base/dskmaint.cmd base/data.pfk \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
-             $(MFORM) $(FUNCTION) $(SHARED) $(HLP) $(TESTSUB) 
+             $(MFORM) $(FUNCTION) $(SHARED) $(DSKMAINT) $(HLP) $(TESTSUB) \
+             $(DATAPFK) 
 EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS)

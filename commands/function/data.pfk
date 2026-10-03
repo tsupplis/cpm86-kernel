@@ -1,0 +1,11 @@
+Function key F1 ;DIR A:\0D\00
+Function key F2 <DIR B:\0D\00
+Function key F3 =STAT \0D\00
+Function key F4 >STAT \00
+Function key F5 ?STAT A:*.*\0D\00
+Function key F6 @STAT B:*.*\0D\00
+Function key F7 AASSIGN\0D\00 
+Function key F8 BCONFIG\0D\00
+Function key F9 CDSKMAINT\0D\00
+Function key F10 DFUNCTION\0D\00
+

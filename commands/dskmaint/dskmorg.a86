@@ -820,301 +820,200 @@ l0734:
 
 ; ---- data ----
 	dseg
-	db	00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,0cfh,02h,25h,02h,08h,2ah,0ffh
-	db	50h,0e5h,19h,04h,1bh,45h,1bh,77h
-	db	1bh,6eh,1bh,71h,1bh,74h,1bh,75h
-	db	00h,1bh,45h,1bh,76h,1bh,6dh,00h
-	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h
-	db	0c6h,02h,4fh,0b5h,17h,00h,0c0h,17h
-	db	4fh,0d9h,43h,50h,2fh,4dh,2dh,38h
-	db	36h,20h,44h,69h,73h,6bh,20h,4dh
-	db	61h,69h,6eh,74h,65h,6eh,61h,6eh
-	db	63h,65h,20h,50h,72h,6fh,67h,72h
-	db	61h,6dh,20h,66h,6fh,72h,20h,74h
-	db	68h,65h,20h,49h,42h,4dh,20h,50h
-	db	43h,20h,20h,20h,76h,65h,72h,73h
-	db	69h,6fh,6eh,20h,31h,2eh,32h,00h
-	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h
-	db	0b3h,08h,08h,08h,08h,08h,08h,0b3h
-	db	0ah,08h,0c0h,0c4h,0c4h,0c4h,0c4h,0d9h
-	db	1bh,41h,08h,08h,08h,08h,1bh,72h
-	db	46h,00h,1bh,75h,1bh,43h,20h,20h
-	db	0cdh,0cdh,10h,20h,20h,00h,4dh,61h
-	db	69h,6eh,20h,4dh,65h,6eh,75h,00h
-	db	08h,14h,31h,20h,56h,65h,72h,69h
-	db	66h,79h,20h,61h,20h,44h,69h,73h
-	db	6bh,65h,74h,74h,65h,00h,0bh,14h
-	db	33h,20h,43h,6fh,70h,79h,20h,66h
-	db	72h,6fh,6dh,20h,6fh,6eh,65h,20h
-	db	44h,69h,73h,6bh,65h,74h,74h,65h
-	db	20h,74h,6fh,20h,61h,6eh,6fh,74h
-	db	68h,65h,72h,00h,0eh,14h,35h,20h
-	db	46h,6fh,72h,6dh,61h,74h,20h,61h
-	db	20h,53h,69h,6eh,67h,6ch,65h,20h
-	db	53h,69h,64h,65h,64h,20h,44h,69h
-	db	73h,6bh,65h,74h,74h,65h,00h,11h
-	db	14h,37h,20h,46h,6fh,72h,6dh,61h
-	db	74h,20h,61h,20h,44h,6fh,75h,62h
-	db	6ch,65h,20h,53h,69h,64h,65h,64h
-	db	20h,44h,69h,73h,6bh,65h,74h,74h
-	db	65h,00h,14h,14h,39h,20h,45h,78h
-	db	69h,74h,20h,74h,68h,69h,73h,20h
-	db	50h,72h,6fh,67h,72h,61h,6dh,00h
-	db	53h,45h,4ch,45h,43h,54h,20h,46h
-	db	55h,4eh,43h,54h,49h,4fh,4eh,00h
-	db	01h,03h,05h,07h,09h
+d0734	dw	00h
+d0736	db	00h
+d0737	db	00h
+d0738	db	00h
+d0739	db	00h
+d073a	db	00h
+d073b	db	00h
+d073c	db	00h
+d073d	db	00h
+d073e	db	00h
+d073f	db	00h
+d0740	db	00h
+d0741	dw	00h
+d0743	dw	00h
+d0745	dw	00h
+d0747	db	00h
+d0748	db	00h
+d0749	db	00h
+d074a	dw	00h
+d074c	db	00h
+d074d	dw	00h
+d074f	db	00h,00h,00h,00h
+d0753	dw	00h
+d0755	dw	00h
+	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+d0762	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+	db	00h
+d076f	db	1bh,45h,1bh,76h,1bh,6dh,00h
+d0776	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
+d0788	db	'CP/M-86 Disk Maintenance Program for the'
+	db	' IBM PC   version 1.2',00h
+d07c6	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
+	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
+	db	72h,46h,00h
+d07e8	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
+d07f4	db	'Main Menu',00h
+d07fe	db	08h,14h,31h,20h
+d0802	db	'Verify a Diskette',00h
+	db	0bh,14h,33h,20h
+d0818	db	'Copy from one Diskette to another',00h
+	db	0eh,14h,35h,20h
+d083e	db	'Format a Single Sided Diskette',00h
+	db	11h,14h,37h,20h
+d0861	db	'Format a Double Sided Diskette',00h
+	db	14h,14h
+	db	'9 Exit this Program',00h
+d0896	db	'SELECT FUNCTION',00h
+d08a6	db	01h,03h,05h,07h,09h
 d08ab	dw	l0185,l01c3,l02da,l02e9,l03a6
-	db	53h
-	db	45h,4ch,45h,43h,54h,20h,44h,49h
-	db	53h,4bh,45h,54h,54h,45h,20h,54h
-	db	4fh,20h,56h,45h,52h,49h,46h,59h
-	db	00h,53h,45h,4ch,45h,43h,54h,20h
-	db	53h,4fh,55h,52h,43h,45h,20h,44h
-	db	49h,53h,4bh,45h,54h,54h,45h,00h
-	db	53h,45h,4ch,45h,43h,54h,20h,44h
-	db	45h,53h,54h,49h,4eh,41h,54h,49h
-	db	4fh,4eh,20h,44h,49h,53h,4bh,45h
-	db	54h,54h,45h,00h,53h,45h,4ch,45h
-	db	43h,54h,20h,44h,49h,53h,4bh,45h
-	db	54h,54h,45h,20h,54h,4fh,20h,46h
-	db	4fh,52h,4dh,41h,54h,00h,49h,4eh
-	db	53h,45h,52h,54h,20h,53h,4fh,55h
-	db	52h,43h,45h,20h,44h,49h,53h,4bh
-	db	2ch,20h,41h,4eh,44h,20h,54h,59h
-	db	50h,45h,20h,41h,4eh,59h,20h,4bh
-	db	45h,59h,00h,49h,4eh,53h,45h,52h
-	db	54h,20h,44h,45h,53h,54h,49h,4eh
-	db	41h,54h,49h,4fh,4eh,20h,44h,49h
-	db	53h,4bh,2ch,20h,41h,4eh,44h,20h
-	db	54h,59h,50h,45h,20h,41h,4eh,59h
-	db	20h,4bh,45h,59h,00h,54h,59h,50h
-	db	45h,20h,41h,4eh,59h,20h,4bh,45h
-	db	59h,20h,54h,4fh,20h,43h,4fh,4eh
-	db	54h,49h,4eh,55h,45h,00h,20h,56h
-	db	65h,72h,69h,66h,79h,69h,6eh,67h
-	db	00h,43h,6fh,70h,79h,69h,6eh,67h
-	db	20h,66h,72h,6fh,6dh,00h,74h,6fh
-	db	00h,46h,6fh,72h,6dh,61h,74h,74h
-	db	69h,6eh,67h,00h,20h,20h,20h,52h
-	db	65h,61h,64h,69h,6eh,67h,00h,20h
-	db	20h,20h,57h,72h,69h,74h,69h,6eh
-	db	67h,00h,20h,20h,43h,68h,65h,63h
-	db	6bh,69h,6eh,67h,00h,54h,68h,69h
-	db	73h,20h,6fh,70h,65h,72h,61h,74h
-	db	69h,6fh,6eh,20h,77h,69h,6ch,6ch
-	db	20h,44h,65h,73h,74h,72h,6fh,79h
-	db	20h,61h,6eh,79h,20h,64h,61h,74h
-	db	61h,20h,6fh,6eh,00h,49h,73h,20h
-	db	74h,68h,69h,73h,20h,77h,68h,61h
-	db	74h,20h,79h,6fh,75h,20h,77h,61h
-	db	6eh,74h,20h,74h,6fh,20h,64h,6fh
-	db	20h,28h,59h,20h,6fh,72h,20h,4eh
-	db	29h,20h,1bh,73h,3fh,1bh,74h,00h
-	db	14h,14h,31h,30h,20h,45h,78h,69h
-	db	74h,20h,74h,6fh,20h,4dh,61h,69h
-	db	6eh,20h,4dh,65h,6eh,75h,00h,08h
-	db	14h,32h,20h,20h,41h,3ah,00h,0bh
-	db	14h,34h,20h,20h,42h,3ah,00h,0eh
-	db	14h,36h,20h,20h,43h,3ah,00h,11h
-	db	14h,38h,20h,20h,44h,3ah,00h,0ah
-	db	02h,04h,06h,08h,20h,74h,68h,65h
-	db	20h,44h,69h,73h,6bh,65h,74h,74h
-	db	65h,20h,69h,6eh,20h,44h,72h,69h
-	db	76h,65h,20h,00h,20h,74h,72h,61h
-	db	63h,6bh,00h,0fah,8ch,0c8h,8eh,0d8h
-	db	8eh,0d0h,0bch,00h,7ch,0fbh,0cdh,12h
-	db	2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
-	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h
-	db	51h,7ch,0bah,00h,00h,0b9h,05h,00h
-	db	0bbh,00h,00h,0b8h,04h,02h,0cdh,13h
-	db	73h,09h,0feh,0eh,53h,7ch,75h,0e2h
-	db	0e9h,04h,00h,0ffh,2eh,4fh,7ch,0beh
-	db	54h,7ch,0fch,0ach,0b4h,0eh,2bh,0dbh
-	db	0cdh,10h,0ach,84h,0c0h,75h,0f5h,0fbh
-	db	0ebh,0fdh,00h,01h,00h,00h,04h,0dh
-	db	0ah,0ah,2ah,2ah,2ah,20h,45h,72h
-	db	72h,6fh,72h,20h,77h,68h,69h,6ch
-	db	65h,20h,72h,65h,61h,64h,69h,6eh
-	db	67h,20h,4ch,6fh,61h,64h,65h,72h
-	db	20h,2ah,2ah,2ah,0dh,0ah,54h,72h
-	db	79h,20h,61h,6eh,6fh,74h,68h,65h
-	db	72h,20h,64h,69h,73h,6bh,65h,74h
-	db	74h,65h,2eh,0dh,0ah,00h,8ch,0c8h
-	db	8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h
-	db	3ch,01h,0e8h,0bdh,00h,0c7h,06h,3ah
-	db	03h,8ch,03h,0c7h,06h,3ch,03h,0a6h
-	db	03h,0c7h,06h,34h,03h,00h,25h,0e8h
-	db	1bh,00h,0c7h,06h,3ah,03h,99h,03h
-	db	0c7h,06h,3ch,03h,0b7h,03h,0c7h,06h
-	db	34h,03h,00h,00h,0e8h,06h,00h,0beh
-	db	0c9h,03h,0e9h,4fh,01h,0e8h,0c3h,00h
-	db	74h,01h,0c3h,0e8h,19h,00h,0e8h,0bah
-	db	00h,75h,08h,0c6h,06h,40h,03h,02h
-	db	0e8h,4fh,00h,0e8h,2eh,01h,0feh,0eh
-	db	40h,03h,75h,0eah,0e9h,3dh,01h,8bh
-	db	36h,3ch,03h,0e8h,2ch,01h,0ffh,06h
-	db	3eh,03h,0e8h,96h,00h,74h,0eh,0e8h
-	db	12h,01h,0e8h,8eh,00h,74h,06h,0beh
-	db	0ah,04h,0e9h,0fh,01h,0e8h,04h,01h
-	db	8bh,3eh,41h,03h,8ah,45h,10h,0e8h
-	db	23h,01h,0e8h,0ddh,00h,0beh,80h,00h
-	db	0e8h,98h,00h,83h,2eh,45h,03h,08h
-	db	0bbh,11h,00h,0b9h,0fh,00h,0e8h,0ch
-	db	00h,0c3h,0b0h,2eh,0e8h,5dh,01h,0bbh
-	db	10h,00h,0b9h,10h,00h,03h,1eh,41h
-	db	03h,8ah,07h,84h,0c0h,75h,03h,0e9h
-	db	0e2h,00h,53h,51h,0e8h,0eeh,00h,2bh
-	db	0f6h,0e8h,67h,00h,59h,5bh,43h,0e2h
-	db	0e8h,0c3h,0c7h,06h,43h,03h,4eh,04h
-	db	0c6h,06h,4ah,03h,04h,0b0h,00h,0e8h
-	db	0d3h,00h,0bfh,4eh,04h,0b9h,40h,00h
-	db	0b8h,7fh,7fh,0fch,80h,25h,0f0h,21h
-	db	45h,09h,20h,45h,0bh,83h,0c7h,20h
-	db	0e2h,0f2h,0c7h,06h,43h,03h,4eh,0ch
-	db	0c6h,06h,4ah,03h,08h,0c6h,06h,49h
-	db	03h,0ffh,0c3h,1eh,07h,0c7h,06h,41h
-	db	03h,4eh,04h,0b9h,40h,00h,0fch,51h
-	db	8bh,36h,3ah,03h,8bh,3eh,41h,03h
-	db	8bh,0eh,3eh,03h,0f3h,0a6h,59h,74h
-	db	09h,83h,06h,41h,03h,20h,0e2h,0e7h
-	db	0ch,0ffh,0c3h,8bh,0eh,2eh,03h,2bh
-	db	0ceh,03h,36h,47h,03h,2bh,0ffh,8eh
-	db	06h,45h,03h,0fch,0f3h,0a4h,0a1h,30h
-	db	03h,01h,06h,45h,03h,0c3h,2bh,0c0h
-	db	8eh,0c0h,0b8h,00h,04h,26h,80h,3eh
-	db	0ffh,7dh,01h,75h,03h,0b8h,00h,08h
-	db	0a3h,2eh,03h,0b1h,04h,0d3h,0e8h,0a3h
-	db	30h,03h,0b1h,05h,0d3h,0e8h,0a2h,32h
-	db	03h,0c3h,8bh,1eh,47h,03h,8bh,47h
-	db	03h,0a3h,36h,03h,0a3h,45h,03h,80h
-	db	7fh,09h,00h,74h,03h,8bh,47h,0ch
-	db	0a3h,38h,03h,0c3h,8bh,36h,3ah,03h
-	db	0feh,44h,0ch,0c3h,0e8h,03h,00h,0fbh
-	db	0ebh,0fdh,0ach,0e8h,6eh,00h,0ach,84h
-	db	0c0h,75h,0f8h,0c3h,0e8h,6ch,00h,0a1h
-	db	38h,03h,8eh,0d8h,8eh,0c0h,0b2h,00h
-	db	2eh,0ffh,2eh,34h,03h,0c6h,06h,4bh
-	db	03h,05h,0f6h,26h,32h,03h,0f6h,36h
-	db	33h,03h,8ah,0ech,0b1h,00h,0d1h,0e1h
-	db	81h,0c1h,4eh,0ch,89h,0eh,47h,03h
-	db	3ah,06h,49h,03h,75h,01h,0c3h,0a2h
-	db	49h,03h,0b6h,00h,04h,01h,8ah,0e8h
-	db	3ch,28h,72h,06h,0b5h,4fh,2ah,0e8h
-	db	0b6h,01h,1eh,07h,0b1h,01h,8bh,1eh
-	db	43h,03h,0a0h,4ah,03h,0b4h,02h,0cdh
-	db	13h,72h,01h,0c3h,0b4h,00h,0cdh,13h
-	db	0feh,0eh,4bh,03h,75h,0ech,0beh,0ah
-	db	04h,0e9h,88h,0ffh,0b7h,00h,0b4h,0eh
-	db	0cdh,10h,0c3h,0b4h,01h,0cdh,16h,74h
-	db	1ah,0b4h,00h,0cdh,16h,3ch,3fh,75h
-	db	12h,0beh,4ch,03h,0b9h,40h,00h,0ach
-	db	32h,0c1h,0e8h,0dfh,0ffh,0e2h,0f8h,0f6h
-	db	0e4h,0e2h,0fch,0c3h,00h,00h,00h,00h
-	db	00h,08h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,0ch,00h,02h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,0ffh
-	db	00h,00h,4dh,35h,33h,37h,71h,4eh
-	db	59h,51h,18h,58h,50h,15h,40h,5bh
-	db	5bh,42h,10h,4ch,41h,49h,49h,0bh
-	db	43h,5ah,08h,45h,54h,4ah,51h,44h
-	db	4ah,55h,00h,6bh,71h,3dh,65h,74h
-	db	6fh,39h,7ah,6eh,38h,3bh,3ah,33h
-	db	15h,55h,75h,6eh,60h,2dh,4eh,6ah
-	db	66h,65h,69h,75h,62h,02h,09h,0eh
-	db	0fh,0bh,00h,43h,50h,4dh,20h,20h
-	db	20h,20h,20h,53h,59h,53h,00h,00h
-	db	43h,43h,50h,4dh,20h,20h,20h,20h
-	db	53h,59h,53h,00h,4ch,6fh,61h,64h
-	db	69h,6eh,67h,20h,43h,50h,4dh,2eh
-	db	53h,59h,53h,2eh,00h,4ch,6fh,61h
-	db	64h,69h,6eh,67h,20h,43h,43h,50h
-	db	4dh,2eh,53h,59h,53h,2eh,00h,2ah
-	db	2ah,2ah,20h,43h,61h,6eh,6eh,6fh
-	db	74h,20h,66h,69h,6eh,64h,20h,43h
-	db	50h,4dh,2eh,53h,59h,53h,20h,6fh
-	db	72h,20h,43h,43h,50h,4dh,2eh,53h
-	db	59h,53h,20h,2ah,2ah,2ah,0dh,0ah
-	db	54h,72h,79h,20h,61h,6eh,6fh,74h
-	db	68h,65h,72h,20h,64h,69h,73h,6bh
-	db	65h,74h,74h,65h,2eh,0dh,0ah,00h
-	db	0dh,0ah,0ah,2ah,2ah,2ah,20h,45h
-	db	72h,72h,6fh,72h,20h,77h,68h,69h
-	db	6ch,65h,20h,72h,65h,61h,64h,69h
-	db	6eh,67h,20h,53h,79h,73h,74h,65h
-	db	6dh,20h,46h,69h,6ch,65h,20h,2ah
-	db	2ah,2ah,0dh,0ah,54h,72h,79h,20h
-	db	61h,6eh,6fh,74h,68h,65h,72h,20h
-	db	64h,69h,73h,6bh,65h,74h,74h,65h
-	db	2eh,0dh,0ah,00h,0dh,0ah,4eh,6fh
-	db	74h,20h,65h,6eh,6fh,75h,67h,68h
-	db	20h,61h,76h,61h,69h,6ch,61h,62h
-	db	6ch,65h,20h,6dh,65h,6dh,6fh,72h
-	db	79h,2eh,0dh,0ah,00h,20h,4dh,65h
-	db	6dh,6fh,72h,79h,20h,6eh,6fh,74h
-	db	20h,61h,76h,61h,69h,6ch,61h,62h
-	db	6ch,65h,20h,66h,6fh,72h,20h,43h
-	db	6fh,70h,79h,69h,6eh,67h,20h,00h
-	db	20h,53h,6fh,75h,72h,63h,65h,20h
-	db	61h,6eh,64h,20h,44h,65h,73h,74h
-	db	69h,6eh,61h,74h,69h,6fh,6eh,20h
-	db	64h,61h,74h,61h,20h,64h,6fh,20h
-	db	6eh,6fh,74h,20h,6dh,61h,74h,63h
-	db	68h,20h,00h,80h,0e7h,0eh,40h,00h
-	db	0fh,20h,18h,0fh,10h,32h,0fh,09h
-	db	44h,0fh,08h,59h,0fh,04h,6dh,0fh
-	db	03h,80h,0fh,02h,9ah,0fh,01h,0b2h
-	db	0fh,20h,44h,72h,69h,76h,65h,20h
-	db	64h,6fh,65h,73h,20h,6eh,6fh,74h
-	db	20h,72h,65h,73h,70h,6fh,6eh,64h
-	db	20h,00h,20h,53h,65h,65h,6bh,20h
-	db	6fh,70h,65h,72h,61h,74h,69h,6fh
-	db	6eh,20h,66h,61h,69h,6ch,65h,64h
-	db	20h,00h,20h,44h,69h,73h,6bh,20h
-	db	43h,6fh,6eh,74h,72h,6fh,6ch,6ch
-	db	65h,72h,20h,66h,61h,69h,6ch,75h
-	db	72h,65h,20h,00h,20h,44h,69h,73h
-	db	6bh,20h,52h,65h,61h,64h,20h,45h
-	db	72h,72h,6fh,72h,20h,00h,20h,44h
-	db	4dh,41h,20h,42h,6fh,75h,6eh,64h
-	db	61h,72h,79h,20h,45h,72h,72h,6fh
-	db	72h,20h,00h,20h,44h,4dh,41h,20h
-	db	4fh,76h,65h,72h,72h,75h,6eh,20h
-	db	45h,72h,72h,6fh,72h,20h,00h,20h
-	db	53h,65h,63h,74h,6fh,72h,20h,6eh
-	db	6fh,74h,20h,66h,6fh,75h,6eh,64h
-	db	20h,00h,20h,44h,69h,73h,6bh,20h
-	db	69h,73h,20h,57h,72h,69h,74h,65h
-	db	20h,50h,72h,6fh,74h,65h,63h,74h
-	db	65h,64h,20h,00h,20h,44h,69h,73h
-	db	6bh,20h,69h,73h,20h,6eh,6fh,74h
-	db	20h,46h,6fh,72h,6dh,61h,74h,74h
-	db	65h,64h,20h,00h,20h,42h,61h,64h
-	db	20h,43h,6fh,6dh,6dh,61h,6eh,64h
-	db	20h,00h,20h,46h,61h,74h,61h,6ch
-	db	20h,44h,69h,73h,6bh,20h,45h,72h
-	db	72h,6fh,72h,20h,00h,00h,00h,00h
+	db	'SELECT DISKETTE TO VERIFY',00h
+	db	'SELECT SOURCE DISKETTE',00h
+	db	'SELECT DESTINATION DISKETTE',00h
+	db	'SELECT DISKETTE TO FORMAT',00h
+d091c	db	'INSERT SOURCE DISK, AND TYPE ANY KEY',00h
+d0941	db	'INSERT DESTINATION DISK, AND TYPE ANY',' KEY'
+	db	00h
+d096b	db	'TYPE ANY KEY TO CONTINUE',00h
+d0984	db	' Verifying',00h
+d098f	db	'Copying from',00h
+d099c	db	74h,6fh,00h
+d099f	db	'Formatting',00h
+d09aa	db	'   Reading',00h
+d09b5	db	'   Writing',00h
+d09c0	db	'  Checking',00h
+d09cb	db	'This operation will Destroy any data on',00h
+d09f3	db	'Is this what you want to do (Y or N) ',1bh
+	db	73h,3fh,1bh,74h,00h
+d0a1e	db	14h,14h
+	db	'10 Exit to Main Menu',00h
+	db	08h,14h
+	db	'2  A:',00h
+	db	0bh,14h
+	db	'4  B:',00h
+	db	0eh,14h
+	db	'6  C:',00h
+	db	11h,14h
+	db	'8  D:',00h
+d0a55	db	0ah,02h,04h,06h,08h
+d0a5a	db	' the Diskette in Drive ',00h
+d0a72	db	' track',00h
+; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
+d0a79	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
+	db	0cdh,12h,2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
+	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h,51h,7ch,0bah
+	db	00h,00h,0b9h,05h,00h,0bbh,00h,00h,0b8h,04h,02h
+	db	0cdh,13h,73h,09h,0feh,0eh,53h,7ch,75h,0e2h,0e9h
+	db	04h,00h,0ffh,2eh,4fh,7ch,0beh,54h,7ch,0fch,0ach
+	db	0b4h,0eh,2bh,0dbh,0cdh,10h,0ach,84h,0c0h,75h,0f5h
+	db	0fbh,0ebh,0fdh,00h,01h,00h,00h,04h
+	db	0dh,0ah,0ah,'*** Error while reading Loader ***'
+	db	0dh,0ah,'Try another diskette.',0dh,0ah,00h
+; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
+d0b0c	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
+	db	01h,0e8h,0bdh,00h,0c7h,06h,3ah,03h,8ch,03h,0c7h
+	db	06h,3ch,03h,0a6h,03h,0c7h,06h,34h,03h,00h,25h
+	db	0e8h,1bh,00h,0c7h,06h,3ah,03h,99h,03h,0c7h,06h
+	db	3ch,03h,0b7h,03h,0c7h,06h,34h,03h,00h,00h,0e8h
+	db	06h,00h,0beh,0c9h,03h,0e9h,4fh,01h,0e8h,0c3h,00h
+	db	74h,01h,0c3h,0e8h,19h,00h,0e8h,0bah,00h,75h,08h
+	db	0c6h,06h,40h,03h,02h,0e8h,4fh,00h,0e8h,2eh,01h
+	db	0feh,0eh,40h,03h,75h,0eah,0e9h,3dh,01h,8bh
+	db	36h,3ch,03h,0e8h,2ch,01h,0ffh,06h,3eh,03h,0e8h
+	db	96h,00h,74h,0eh,0e8h,12h,01h,0e8h,8eh,00h,74h,06h
+	db	0beh,0ah,04h,0e9h,0fh,01h,0e8h,04h,01h,8bh
+	db	3eh,41h,03h,8ah,45h,10h,0e8h,23h,01h,0e8h,0ddh
+	db	00h,0beh,80h,00h,0e8h,98h,00h,83h,2eh,45h,03h,08h
+	db	0bbh,11h,00h,0b9h,0fh,00h,0e8h,0ch,00h,0c3h,0b0h
+	db	2eh,0e8h,5dh,01h,0bbh,10h,00h,0b9h,10h,00h,03h
+	db	1eh,41h,03h,8ah,07h,84h,0c0h,75h,03h,0e9h,0e2h
+	db	00h,53h,51h,0e8h,0eeh,00h,2bh,0f6h,0e8h,67h,00h
+	db	59h,5bh,43h,0e2h,0e8h,0c3h,0c7h,06h,43h,03h,4eh
+	db	04h,0c6h,06h,4ah,03h,04h,0b0h,00h,0e8h,0d3h,00h
+	db	0bfh,4eh,04h,0b9h,40h,00h,0b8h,7fh,7fh,0fch,80h
+	db	25h,0f0h,21h,45h,09h,20h,45h,0bh,83h,0c7h,20h
+	db	0e2h,0f2h,0c7h,06h,43h,03h,4eh,0ch,0c6h,06h,4ah
+	db	03h,08h,0c6h,06h,49h,03h,0ffh,0c3h,1eh,07h,0c7h
+	db	06h,41h,03h,4eh,04h,0b9h,40h,00h,0fch,51h,8bh
+	db	36h,3ah,03h,8bh,3eh,41h,03h,8bh,0eh,3eh,03h,0f3h
+	db	0a6h,59h,74h,09h,83h,06h,41h,03h,20h,0e2h,0e7h
+	db	0ch,0ffh,0c3h,8bh,0eh,2eh,03h,2bh,0ceh,03h
+	db	36h,47h,03h,2bh,0ffh,8eh,06h,45h,03h,0fch,0f3h
+	db	0a4h,0a1h,30h,03h,01h,06h,45h,03h,0c3h,2bh,0c0h
+	db	8eh,0c0h,0b8h,00h,04h,26h,80h,3eh,0ffh,7dh,01h
+	db	75h,03h,0b8h,00h,08h,0a3h,2eh,03h,0b1h,04h,0d3h
+	db	0e8h,0a3h,30h,03h,0b1h,05h,0d3h,0e8h,0a2h,32h,03h
+	db	0c3h,8bh,1eh,47h,03h,8bh,47h,03h,0a3h,36h,03h
+	db	0a3h,45h,03h,80h,7fh,09h,00h,74h,03h,8bh,47h,0ch
+	db	0a3h,38h,03h,0c3h,8bh,36h,3ah,03h,0feh,44h,0ch
+	db	0c3h,0e8h,03h,00h,0fbh,0ebh,0fdh,0ach,0e8h,6eh
+	db	00h,0ach,84h,0c0h,75h,0f8h,0c3h,0e8h,6ch,00h,0a1h
+	db	38h,03h,8eh,0d8h,8eh,0c0h,0b2h,00h,2eh,0ffh
+	db	2eh,34h,03h,0c6h,06h,4bh,03h,05h,0f6h,26h,32h,03h
+	db	0f6h,36h,33h,03h,8ah,0ech,0b1h,00h,0d1h,0e1h,81h
+	db	0c1h,4eh,0ch,89h,0eh,47h,03h,3ah,06h,49h,03h,75h
+	db	01h,0c3h,0a2h,49h,03h,0b6h,00h,04h,01h,8ah,0e8h
+	db	3ch,28h,72h,06h,0b5h,4fh,2ah,0e8h,0b6h,01h,1eh
+	db	07h,0b1h,01h,8bh,1eh,43h,03h,0a0h,4ah,03h,0b4h
+	db	02h,0cdh,13h,72h,01h,0c3h,0b4h,00h,0cdh,13h,0feh
+	db	0eh,4bh,03h,75h,0ech,0beh,0ah,04h,0e9h,88h,0ffh
+	db	0b7h,00h,0b4h,0eh,0cdh,10h,0c3h,0b4h,01h,0cdh,16h
+	db	74h,1ah,0b4h,00h,0cdh,16h,3ch,3fh,75h,12h,0beh
+	db	4ch,03h,0b9h,40h,00h,0ach,32h,0c1h,0e8h,0dfh,0ffh
+	db	0e2h,0f8h,0f6h,0e4h,0e2h,0fch,0c3h,00h,00h,00h
+	db	00h,00h,08h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	0ch,00h,02h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
+	db	0ffh,00h,00h,'M537qNYQ',18h,58h,50h,15h
+	db	'@[[B',10h,'LAII',0bh,43h,5ah,08h,'ETJQDJU',00h
+	db	'kq=eto9zn8;:3',15h,'Uun`-Njfeiub',02h,09h,0eh
+	db	0fh,0bh,00h
+	db	'CPM     SYS',00h
+	db	00h
+	db	'CCPM    SYS',00h
+	db	'Loading CPM.SYS.',00h
+	db	'Loading CCPM.SYS.',00h
+	db	'*** Cannot find CPM.SYS or CCPM.SYS ***',0dh,0ah
+	db	'Try another diskette.',0dh,0ah,00h
+	db	0dh,0ah,0ah
+	db	'*** Error while reading System File ***',0dh,0ah
+	db	'Try another diskette.',0dh,0ah,00h
+d0e5a	db	0dh,0ah,'Not enough available memory.',0dh,0ah
+	db	00h
+d0e7b	db	' Memory not available for Copying ',00h
+d0e9e	db	' Source and Destination data do not ma','tch '
+	db	00h
+d0ec9	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
+	db	09h,44h,0fh,08h,59h,0fh,04h,6dh,0fh,03h,80h,0fh
+	db	02h,9ah,0fh,01h,0b2h,0fh
+	db	' Drive does not respond ',00h
+	db	' Seek operation failed ',00h
+	db	' Disk Controller failure ',00h
+	db	' Disk Read Error ',00h
+	db	' DMA Boundary Error ',00h
+	db	' DMA Overrun Error ',00h
+	db	' Sector not found ',00h
+	db	' Disk is Write Protected ',00h
+	db	' Disk is not Formatted ',00h
+	db	' Bad Command ',00h
+d0fc0	db	' Fatal Disk Error ',00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,0dbh,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h
+	db	0dbh
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 
 	end

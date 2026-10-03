@@ -1,5 +1,5 @@
 SUBDIRS=tod asm86 ddt86 submit pip ed gencmd help submit stat \
-    mform assign function
+    mform assign function dskmaint
 
 all clean:
 	for d in $(SUBDIRS); do \

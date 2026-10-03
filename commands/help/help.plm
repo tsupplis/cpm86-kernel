@@ -314,7 +314,10 @@ page$check:
            call print$console$buf(.(cr,lf,'Press RETURN to continue $'));
            line$cnt = 0;
            do while (line$cnt = 0);
-              line$cnt = direct$con$io(0FFH);
+              if low(version) >= 30H then
+                line$cnt = direct$con$io(0FFH);
+              else
+                line$cnt = direct$con$io(0FEH);
            end;
            call print$console$buf(.(cr,'                             ',
                                                                   cr,'$'));
