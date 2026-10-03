@@ -1,11 +1,30 @@
-;***********************************************************
-;  DSKMAINT.A86 - reconstructed from base/dskmaint.cmd
-;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
-;  the rest of the image is a raw db dump still to be decoded.
+;*****************************************************************************
 ;
-;  Build:   make
-;  Check:   make check
-;***********************************************************
+;	DSKMAINT - CP/M-86 diskette maintenance for the IBM PC
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the shipped binary; assembles byte-identical.
+;
+;	Build:	make
+;	Check:	make check
+;
+;	A menu on the function keys: F1 verify, F3 copy, F5 format single
+;	sided, F7 format double sided, F9 exit.  The screen is driven through
+;	VT52 escape sequences by BDOS, except for clearing the window (BIOS
+;	video), the keyboard (BIOS int 16h) and the diskette itself (BIOS
+;	int 13h).
+;
+;	The disk is handled one track at a time: eight sectors of 512 bytes,
+;	one 1000h byte buffer.  A diskette has 40 tracks, or 80 on two sides:
+;	tracks 0..39 are cylinders 0..39 on head 0 and tracks 40..79 are
+;	cylinders 39..0 on head 1.  The last byte of the boot sector tells
+;	whether the diskette is single or double sided.
+;
+;	Formatting installs its own 8 sector parameter table over the BIOS
+;	diskette vector (int 1Eh) for the duration, then writes the boot sector
+;	and loader kept in the data (bootimg, ldrimg).
+;
+;*****************************************************************************
 
 ; Bounds for tools/a86tool.py: where the data starts and the image ends.
 data_org	equ	0734h
@@ -24,6 +43,10 @@ start:
 copyright:
 	db	'Copyright (C) 1983, Digital Research'
 
+;-----------------------------------------------------------------------------
+; Entry.  Discard anything typed ahead, ask BDOS for a work buffer (quit if
+; there is none), draw the screen and remember the diskette parameter vector.
+;-----------------------------------------------------------------------------
 main:
 	mov	ax,cs
 	mov	ds,ax
@@ -41,6 +64,12 @@ memok:
 	call	cntdrives
 	call	initvec
 
+;-----------------------------------------------------------------------------
+; Main menu.  getchoice returns the function key number (1,3,5,7,9) in bx;
+; one less is the byte offset of its handler in fntable.  Every handler comes
+; back here through the menu, so an item repeats until F10 is pressed in the
+; drive menu.
+;-----------------------------------------------------------------------------
 mainmenu:
 	call	clrwin
 	mov	si,offset mainhdr
@@ -59,6 +88,10 @@ mainmenu:
 	mov	menusel,bx
 	jmp	word ptr fntable[bx]
 
+;-----------------------------------------------------------------------------
+; Control-C during disk I/O ends up here: reset the stack and segments, put the
+; BIOS diskette vector back and return to the main menu.
+;-----------------------------------------------------------------------------
 restart:
 	mov	ax,cs
 	mov	ds,ax
@@ -67,6 +100,11 @@ restart:
 	call	setoldvec
 	jmps	mainmenu
 
+;-----------------------------------------------------------------------------
+; F1: verify a diskette.  Pick the drive, then read every track with BIOS
+; function 4, which checks the sector CRCs without moving any data.  Runs the
+; same item again when it is done.
+;-----------------------------------------------------------------------------
 doverify:
 	mov	si,offset vfytxt
 	mov	word ptr promptptr,08b5h
@@ -76,6 +114,8 @@ doverify:
 	mov	dx,0516h
 	call	drvprompt
 
+; Verify the diskette in drive.  getsides decides 40 or 80 tracks.  Format
+; enters here with si = message once the new boot track is written.
 vfyall:
 	call	getsides
 	call	trkhdr
@@ -91,6 +131,13 @@ vfyloop:
 	mov	bx,menusel
 	jmp	word ptr fntable[bx]
 
+;-----------------------------------------------------------------------------
+; F3: copy a diskette.  Pick source and destination, then work in chunks of
+; ntrkbuf tracks: read from the source, write to the destination, read the
+; destination back and compare it with what was written.  One drive may serve
+; for both; askinsrc and askindst prompt for the swap.  Without room for even
+; one chunk beyond the track buffer, it gives up.
+;-----------------------------------------------------------------------------
 docopy:
 	test	byte ptr ntrkbuf,0ffh
 	jnz	copypick
@@ -124,6 +171,7 @@ copypick:
 	mov	al,trkcount
 	mov	trktotal,al
 
+; Next chunk: as many tracks as are left, but no more than the buffer holds.
 copynext:
 	mov	al,trktotal
 	sub	al,track
@@ -150,6 +198,8 @@ copyrd:
 	mov	si,offset checkmsg
 	call	trkhdr
 
+; Read one track back into trkbuf and compare all 1000h bytes with the copy
+; that was just written.  nextseg points es at the copy and steps on.
 cmploop:
 	call	showtrk
 	call	diskio
@@ -172,6 +222,8 @@ cmpnext:
 	jnz	cmploop
 	jmp	copynext
 
+; Copy finished: read track 0 of each diskette again (this also resets track)
+; and start the dialog over.
 copyend:
 	call	getsides
 	mov	al,srcdrive
@@ -179,6 +231,8 @@ copyend:
 	call	getsides
 	jmp	docopy
 
+; Move trkcount tracks between the disk and the copy buffer.  al is the BIOS
+; function (2 read, 3 write), ah the drive, si the heading.  track is kept.
 xfer:
 	push	word ptr track
 	mov	biosfunc,al
@@ -197,22 +251,31 @@ xferloop:
 	pop	word ptr track
 	ret
 
+; Point es at the current track buffer, then step curseg to the next one:
+; a track is 1000h bytes, 100h paragraphs.
 nextseg:
 	mov	es,word ptr curseg
 	add	word ptr curseg,0100h
 	ret
 
+;-----------------------------------------------------------------------------
+; F5: format a single sided diskette, 40 tracks.
+;-----------------------------------------------------------------------------
 fmt1:
 	mov	byte ptr sides,00h
 	mov	byte ptr trkcount,28h
 	mov	si,offset fmt1txt
 	jmps	fmtcommon
 
+;-----------------------------------------------------------------------------
+; F7: format a double sided diskette, 80 tracks.
+;-----------------------------------------------------------------------------
 fmt2:
 	mov	byte ptr sides,01h
 	mov	byte ptr trkcount,50h
 	mov	si,offset fmt2txt
 
+; Pick the drive and ask for confirmation.  N goes back to the menu.
 fmtcommon:
 	mov	word ptr promptptr,0902h
 	call	seldrive
@@ -225,6 +288,13 @@ fmtcommon:
 	mov	bx,menusel
 	jmp	word ptr fntable[bx]
 
+;-----------------------------------------------------------------------------
+; Format every track (BIOS function 5) with the 8 sector parameter table
+; installed over the diskette vector, then put the vector back.  Track 0 is
+; then written again with the boot sector and the loader, the rest of the
+; buffer left at 0e5h, and the last byte of the boot sector holds the sides
+; flag.  Finish with a verify of the whole diskette.
+;-----------------------------------------------------------------------------
 fmtgo:
 	call	setnewvec
 	mov	si,offset fmtingmsg
@@ -265,6 +335,8 @@ fmtloop:
 	mov	si,offset vfyingmsg
 	jmp	vfyall
 
+; Build the eight address fields BIOS function 5 expects for the current track
+; at the start of trkbuf: cylinder, head, sector 1..8, size code 2 (512 bytes).
 mkidtab:
 	mov	es,word ptr trkbuf
 	mov	di,00h
@@ -283,16 +355,22 @@ idloop:
 	loop	idloop
 	ret
 
+;-----------------------------------------------------------------------------
+; F9: free the buffer, restore the screen and leave through a BDOS reset.
+;-----------------------------------------------------------------------------
 doexit:
 	call	freemem
 	mov	si,offset scrnrest
 	call	puts
 
+; Also the way out when there is no memory.
 terminate:
 	mov	cl,00h
 	mov	dl,00h
 	int	0e0h
 
+; The equipment word of int 11h holds the number of diskette drives less one
+; in bits 6 and 7.
 cntdrives:
 	int	11h
 	mov	cl,06h
@@ -302,6 +380,11 @@ cntdrives:
 	mov	ndrives,ax
 	ret
 
+;-----------------------------------------------------------------------------
+; Paint the frame: three horizontal rules (top, under the title, bottom), two
+; sides, then the six corner glyphs and the title.  bl carries the character,
+; cx the length, dx the position.
+;-----------------------------------------------------------------------------
 drawframe:
 	mov	si,offset scrninit
 	call	puts
@@ -341,6 +424,7 @@ cellloop:
 	mov	dx,0100h
 	jmp	putcent
 
+; Draw cx copies of bl going right from position dx.  cx is preserved.
 hline:
 	push	cx
 	call	gotoxy
@@ -352,6 +436,7 @@ hlloop:
 	pop	cx
 	ret
 
+; Draw cx copies of bl going down from position dx.  cx is preserved.
 vline:
 	push	cx
 
@@ -366,6 +451,12 @@ vlloop:
 	pop	cx
 	ret
 
+;-----------------------------------------------------------------------------
+; Drive menu.  si is the heading and promptptr the text for the reverse video
+; line; the entries are F10 for the main menu and one function key per drive.
+; Returns the drive (0..3) in drive and bl.  F10 does not return: it drops
+; this routine's caller and goes back to the main menu.
+;-----------------------------------------------------------------------------
 seldrive:
 	call	clrwin
 	mov	dh,04h
@@ -392,6 +483,8 @@ selabort:
 	pop	ax
 	jmp	mainmenu
 
+; Print the message at si at position dx, then ' the Diskette in Drive X:'.
+; si is preserved.
 drvprompt:
 	push	si
 	call	putat
@@ -405,12 +498,15 @@ drvprompt:
 	pop	si
 	ret
 
+; Status line: the message at si and ' track', then fall into showtrk.
 trkhdr:
 	mov	dx,091dh
 	call	putat
 	mov	si,offset trkmsg
 	call	puts
 
+; Print track in decimal.  A single digit is followed by a blank, so that a
+; shorter number leaves nothing of the longer one behind.
 showtrk:
 	mov	dx,092eh
 	call	gotoxy
@@ -429,6 +525,8 @@ trkdigit:
 	pop	ax
 	jmp	conout
 
+; Draw cx menu entries from si.  An entry is row, column, a two character key
+; label shown in a small box, and the text, which ends at its NUL.
 drawmenu:
 	lodsb
 	mov	dh,al
@@ -451,6 +549,9 @@ drawmenu:
 	loop	drawmenu
 	ret
 
+; Prompt for the source or the destination diskette, but only when one drive
+; serves for both: askins returns at once otherwise.  When it does prompt it
+; beeps and falls into askwait.
 askinsrc:
 	mov	si,offset insrcmsg
 	jmps	askins
@@ -468,12 +569,14 @@ askbeep:
 	mov	al,07h
 	call	conout
 
+; Show the message at si on row 7, wait for any key, then clear the row.
 askwait:
 	mov	dh,07h
 	call	putrev
 	call	getraw
 	mov	dh,07h
 
+; Blank the 78 columns inside the frame on row dh.
 clrrow:
 	mov	dl,01h
 	call	gotoxy
@@ -485,6 +588,7 @@ clrloop:
 	loop	clrloop
 	ret
 
+; Print the string at si centred on row dh, in reverse video.
 putrev:
 	mov	al,72h
 	call	escout
@@ -492,6 +596,10 @@ putrev:
 	mov	al,75h
 	jmp	escout
 
+;-----------------------------------------------------------------------------
+; Warn that the diskette in drive will be destroyed and ask Y or N, beeping at
+; any other key.  Returns carry clear for Y, set for N.  si is preserved.
+;-----------------------------------------------------------------------------
 confirm:
 	push	si
 	mov	si,offset destroymsg
@@ -529,6 +637,8 @@ ynend:
 	pop	si
 	ret
 
+; Print the string at si centred on row dh.  scasb finds the NUL, which leaves
+; 80 - length in cx, and half of that is the column.
 putcent:
 	push	ds
 	pop	es
@@ -540,9 +650,11 @@ putcent:
 	shr	cx,1
 	mov	dl,cl
 
+; Print the string at si at position dx (row in dh, column in dl).
 putat:
 	call	gotoxy
 
+; Print the NUL terminated string at si.  si is left just past the NUL.
 puts:
 	cld
 	lodsb
@@ -554,6 +666,7 @@ putsloop:
 	jnz	putsloop
 	ret
 
+; VT52 ESC Y: row and column are biased by 20h.  Zero based; dx is destroyed.
 gotoxy:
 	mov	al,59h
 	call	escout
@@ -563,6 +676,9 @@ gotoxy:
 	mov	al,dl
 	jmp	conout
 
+; Wait for one of the cx function keys listed at di, beeping at anything else.
+; The scan code less 3ah is the key number, which comes back in bx.  Also
+; disarms autofmt, and blanks the prompt row on the way out.
 getchoice:
 	mov	byte ptr autofmt,0ffh
 	push	cx
@@ -586,6 +702,7 @@ gotchoice:
 	mov	dh,06h
 	jmp	clrrow
 
+; Discard anything already typed ahead.
 flushkb:
 	mov	cl,0bh
 	int	0e0h
@@ -598,8 +715,15 @@ flushkb:
 flushend:
 	ret
 
+;-----------------------------------------------------------------------------
+; Ask BDOS for the largest free block, then take from it one that starts on a
+; 1000h byte boundary, so that no track straddles a 64K DMA boundary.  trkbuf
+; is the first track, copyseg the rest, ntrkbuf how many whole tracks the rest
+; holds.  The memory parameter block is trkbuf, buflen, bufflag.  Returns ZF
+; clear if the memory was allocated.
+;-----------------------------------------------------------------------------
 allocmem:
-	mov	word ptr buflen,0ffffh
+	mov	word ptr buflen,0ffffh	; ask for everything
 	mov	cl,35h
 	mov	dx,0745h
 	int	0e0h
@@ -612,10 +736,10 @@ allocmem:
 	inc	ah
 	mov	copyseg,ax
 	mov	ah,buflenhi
-	sub	ah,01h
+	sub	ah,01h		; one 1000h unit is lost to the alignment
 	jna	allocret
 	mov	.0747h,ax
-	dec	ah
+	dec	ah		; and one for the track buffer itself
 	mov	ntrkbuf,ah
 	mov	cl,38h
 	mov	dx,0745h
@@ -625,6 +749,7 @@ allocmem:
 allocret:
 	ret
 
+; Give the block back to BDOS.
 freemem:
 	mov	byte ptr bufflag,00h
 	mov	cl,39h
@@ -632,6 +757,9 @@ freemem:
 	int	0e0h
 	ret
 
+; Save the BIOS diskette parameter pointer (vector 78h, int 1Eh) in oldvec and
+; build newvec, a far pointer to the 8 sector table that follows newvecseg in
+; the data (0757h).
 initvec:
 	mov	word ptr newvec,0757h
 	mov	word ptr newvecseg,ds
@@ -648,6 +776,8 @@ initvec:
 	pop	ds
 	ret
 
+; Install a diskette parameter pointer: si is newvec or oldvec.  The controller
+; is reset afterwards so that it picks up the new table.
 setnewvec:
 	mov	si,offset newvec
 	jmps	setvec
@@ -666,6 +796,9 @@ setvec:
 	int	13h
 	ret
 
+; Read track 0 of drive into the track buffer.  The last byte of the boot
+; sector is 1 on a double sided diskette; anything else counts as single sided.
+; Sets sides and trkcount (80 or 40), returns the flag in al, leaves track at 0.
 getsides:
 	mov	byte ptr track,00h
 	mov	byte ptr biosfunc,02h
@@ -681,6 +814,13 @@ gsdone:
 	mov	sides,al
 	ret
 
+;-----------------------------------------------------------------------------
+; Do BIOS function biosfunc on track `track` of drive: eight sectors, from or
+; to es:0.  diskio uses the track buffer, diskioes whatever es already points
+; at.  A waiting key is looked at first: Control-C leaves through restart, any
+; other key is thrown away.  Each track gets five attempts before the error is
+; reported.
+;-----------------------------------------------------------------------------
 diskio:
 	mov	es,word ptr trkbuf
 
@@ -693,6 +833,8 @@ diskioes:
 	jnz	tryio
 	jmp	restart
 
+; autofmt equals the function only after a write failed as unformatted: format
+; the track first (function 5, ids from mkidtab), then go on with the write.
 tryio:
 	call	iosetup
 	cmp	ah,autofmt
@@ -710,12 +852,17 @@ bios13:
 	jc	ioerror
 	ret
 
+; Status in ah, function in al.  Status 02 on a write is the BIOS reporting an
+; unformatted track; arm autofmt so that the next attempt formats it.
 ioerror:
 	mov	al,biosfunc
 	cmp	ax,0203h
 	jnz	retryio
 	mov	autofmt,al
 
+; Try again, up to five times in all.  After that the status in ah is looked up
+; in errtab, ten entries of a status byte and a message pointer; fatalmsg
+; stands in for a status that is not listed.
 retryio:
 	dec	byte ptr retries
 	jnz	tryio
@@ -736,6 +883,9 @@ errloop:
 errfound:
 	mov	si,[si]
 
+; Report an error: three beeps, the message at si on row 3 between ESC p and
+; ESC q, then wait for a key.  Does not return; it ends in restart.  The copy
+; errors come here as well.
 showerr:
 	mov	ax,ds
 	mov	es,ax
@@ -755,6 +905,8 @@ beeploop:
 	call	askwait
 	jmp	restart
 
+; Registers for int 13h: dl drive, cl first sector 1, bx zero, ah biosfunc, al 8
+; sectors.  Falls into calctrk.
 iosetup:
 	mov	dl,drive
 	mov	cl,01h
@@ -762,6 +914,8 @@ iosetup:
 	mov	ah,biosfunc
 	mov	al,08h
 
+; Cylinder in ch and head in dh for `track`: tracks 0..39 are head 0 with
+; cylinder = track, tracks 40..79 are head 1 with cylinder = 79 - track.
 calctrk:
 	mov	ch,track
 	mov	dh,00h

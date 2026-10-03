@@ -1,516 +1,1173 @@
-;***********************************************************
-;  DSKMAINT.A86 - reconstructed from base/dskmaint.cmd
-;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
-;  the rest of the image is a raw db dump still to be decoded.
+;*****************************************************************************
 ;
-;  Build:   make
-;  Check:   make check
-;***********************************************************
+;	DSKMAINT - CP/M-86 diskette maintenance for the IBM PC
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from the shipped binary; assembles byte-identical.
+;
+;	Build:	make
+;	Check:	make check
+;
+;	A menu on the function keys: F1 verify, F3 copy, F5 format single
+;	sided, F7 format double sided, F9 exit.  The screen is driven through
+;	VT52 escape sequences by BDOS, except for clearing the window (BIOS
+;	video), the keyboard (BIOS int 16h) and the diskette itself (BIOS
+;	int 13h).
+;
+;	The disk is handled one track at a time: eight sectors of 512 bytes,
+;	one 1000h byte buffer.  A diskette has 40 tracks, or 80 on two sides:
+;	tracks 0..39 are cylinders 0..39 on head 0 and tracks 40..79 are
+;	cylinders 39..0 on head 1.  The last byte of the boot sector tells
+;	whether the diskette is single or double sided.
+;
+;	Formatting installs its own 8 sector parameter table over the BIOS
+;	diskette vector (int 1Eh) for the duration, then writes the boot sector
+;	and loader kept in the data (bootimg, ldrimg).
+;
+;*****************************************************************************
 
 ; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	1060h
+data_org	equ	0734h
 image_end	equ	1060h
+
+; One group so the CMD has a single CODE descriptor (the 8080 model),
+; but the data keeps its own segment.
+cgroup	group	code,data
 
 	cseg
 	org	100h
 
 start:
-	jmps	l0126
-	db	43h,6fh,70h,79h,72h,69h,67h,68h
-	db	74h,20h,28h,43h,29h,20h,31h,39h
-	db	38h,33h,2ch,20h,44h,69h,67h,69h
-	db	74h,61h,6ch,20h,52h,65h,73h,65h
-	db	61h,72h,63h,68h
+	jmps	main
 
-l0126:
-	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,53h
-	db	10h,0e8h,79h,04h,0e8h,85h,04h,75h
-	db	09h,0beh,5ah,0eh,0e8h,2ah,04h,0e9h
-	db	6fh,02h,0e8h,80h,02h,0e8h,6fh,02h
-	db	0e8h,0bbh,04h,0e8h,0b4h,05h,0beh,0f4h
-	db	07h,0b6h,04h,0e8h,00h,04h,0beh,0feh
-	db	07h,0b9h,05h,00h,0e8h,59h,03h,0beh
-	db	96h,08h,0b6h,06h,0e8h,0a9h,03h,0bfh
-	db	0a6h,08h,0b9h,05h,00h,0e8h,17h,04h
-	db	4bh,89h,1eh,41h,07h,0ffh,0a7h,0abh
-	db	08h,8ch,0c8h,8eh,0d8h,8eh,0c0h,0bch
-	db	53h,10h,0e8h,0a2h,04h,0ebh,0c4h,0beh
-	db	02h,08h,0c7h,06h,43h,07h,0b5h,08h
-	db	0e8h,0aah,02h,0e8h,6ch,05h,0beh,84h
-	db	09h,0bah,16h,05h,0e8h,0d3h,02h,0e8h
-	db	97h,04h,0e8h,0e6h,02h,0c6h,06h,36h
-	db	07h,04h,0e8h,0eah,02h,0e8h,0aeh,04h
-	db	0feh,06h,38h,07h,0feh,0eh,39h,07h
-	db	75h,0f0h,0e8h,7ch,04h,8bh,1eh,41h
-	db	07h,0ffh,0a7h,0abh,08h,0f6h,06h,4ch
-	db	07h,0ffh,75h,06h,0beh,7bh,0eh,0e9h
-	db	0e9h,04h,0beh,18h,08h,0c7h,06h,43h
-	db	07h,0cfh,08h,0e8h,5fh,02h,88h,1eh
-	db	40h,07h,0e8h,54h,04h,0a2h,3eh,07h
-	db	0beh,18h,08h,0c7h,06h,43h,07h,0e6h
-	db	08h,0e8h,49h,02h,88h,1eh,3fh,07h
-	db	0e8h,07h,05h,0a0h,40h,07h,0a2h,37h
-	db	07h,0beh,8fh,09h,0bah,15h,04h,0e8h
-	db	68h,02h,0a0h,3fh,07h,0a2h,37h,07h
-	db	0beh,9ch,09h,0bah,1fh,05h,0e8h,59h
-	db	02h,0e8h,01h,03h,72h,0a7h,0a0h,39h
-	db	07h,0a2h,3ah,07h,0a0h,3ah,07h,2ah
-	db	06h,38h,07h,74h,69h,3ah,06h,4ch
-	db	07h,72h,03h,0a0h,4ch,07h,0a2h,39h
-	db	07h,0e8h,0a3h,02h,0b0h,02h,8ah,26h
-	db	40h,07h,0beh,0aah,09h,0e8h,5dh,00h
-	db	0e8h,99h,02h,0b0h,03h,8ah,26h,3fh
-	db	07h,0beh,0b5h,09h,0e8h,4eh,00h,0c6h
-	db	06h,36h,07h,02h,0a1h,4ah,07h,0a3h
-	db	4dh,07h,0beh,0c0h,09h,0e8h,23h,02h
-	db	0e8h,2ch,02h,0e8h,0f0h,03h,0e8h,60h
-	db	00h,1eh,8eh,1eh,45h,07h,2bh,0f6h
-	db	2bh,0ffh,0b9h,00h,10h,0fch,0f3h,0a6h
-	db	1fh,74h,06h,0beh,9eh,0eh,0e9h,32h
-	db	04h,0feh,06h,38h,07h,0feh,0eh,39h
-	db	07h,75h,0d5h,0e9h,8eh,0ffh,0e8h,0a0h
-	db	03h,0a0h,40h,07h,0a2h,37h,07h,0e8h
-	db	97h,03h,0e9h,20h,0ffh,0ffh,36h,38h
-	db	07h,0a2h,36h,07h,88h,26h,37h,07h
-	db	0a1h,4ah,07h,0a3h,4dh,07h,0e8h,0d2h
-	db	01h,0e8h,0dbh,01h,0e8h,12h,00h,0e8h
-	db	0a0h,03h,0feh,06h,38h,07h,0feh,0eh
-	db	39h,07h,75h,0edh,8fh,06h,38h,07h
-	db	0c3h,8eh,06h,4dh,07h,81h,06h,4dh
-	db	07h,00h,01h,0c3h,0c6h,06h,3dh,07h
-	db	00h,0c6h,06h,39h,07h,28h,0beh,3eh
-	db	08h,0ebh,0dh,0c6h,06h,3dh,07h,01h
-	db	0c6h,06h,39h,07h,50h,0beh,61h,08h
-	db	0c7h,06h,43h,07h,02h,09h,0e8h,3ch
-	db	01h,0e8h,0feh,03h,0beh,9fh,09h,0bah
-	db	16h,05h,0e8h,65h,01h,0e8h,0dh,02h
-	db	73h,08h,8bh,1eh,41h,07h,0ffh,0a7h
-	db	0abh,08h,0e8h,05h,03h,0beh,9fh,09h
-	db	0c6h,06h,38h,07h,00h,0e8h,63h,01h
-	db	0c6h,06h,36h,07h,05h,0e8h,67h,01h
-	db	0e8h,58h,00h,0e8h,28h,03h,0feh,06h
-	db	38h,07h,0feh,0eh,39h,07h,75h,0edh
-	db	0e8h,0e4h,02h,8eh,06h,45h,07h,0bfh
-	db	00h,00h,0b0h,0e5h,0b9h,00h,10h,0fch
-	db	0f3h,0aah,0beh,0b5h,09h,0c6h,06h,38h
-	db	07h,00h,0e8h,2eh,01h,0beh,79h,0ah
-	db	8eh,06h,45h,07h,2bh,0ffh,0a0h,3dh
-	db	07h,26h,0a2h,0ffh,01h,0b9h,93h,00h
-	db	0f3h,0a4h,0beh,0ch,0bh,0bfh,00h,09h
-	db	0b9h,4eh,03h,0f3h,0a4h,0c6h,06h,36h
-	db	07h,03h,0e8h,0d9h,02h,0beh,84h,09h
-	db	0e9h,14h,0feh,8eh,06h,45h,07h,0bfh
-	db	00h,00h,0e8h,5ah,03h,8ah,0d5h,0bbh
-	db	01h,02h,0b9h,08h,00h,0fch,8bh,0c2h
-	db	0abh,8bh,0c3h,0abh,43h,0e2h,0f7h,0c3h
-	db	0e8h,4eh,02h,0beh,6fh,07h,0e8h,0b8h
-	db	01h,0b1h,00h,0b2h,00h,0cdh,0e0h,0cdh
-	db	11h,0b1h,06h,0d3h,0e8h,25h,03h,00h
-	db	40h,0a3h,34h,07h,0c3h,0beh,62h,07h
-	db	0e8h,9eh,01h,0b9h,4eh,00h,0bah,01h
-	db	00h,0b3h,0c4h,0e8h,49h,00h,0bah,01h
-	db	02h,0b3h,0cdh,0e8h,41h,00h,0bah,01h
-	db	17h,0b3h,0c4h,0e8h,39h,00h,0b9h,16h
-	db	00h,0bah,00h,01h,0b3h,0b3h,0e8h,3bh
-	db	00h,0bah,4fh,01h,0b3h,0b3h,0e8h,33h
-	db	00h,0beh,76h,07h,0b9h,06h,00h,0b0h
-	db	59h,0e8h,0dh,03h,0ach,04h,20h,0e8h
-	db	1ah,03h,0ach,04h,20h,0e8h,14h,03h
-	db	0ach,0e8h,10h,03h,0e2h,0e9h,0beh,88h
-	db	07h,0bah,00h,01h,0e9h,37h,01h,51h
-	db	0e8h,51h,01h,8ah,0c3h,0e8h,0fch,02h
-	db	0e2h,0f9h,59h,0c3h,51h,52h,0e8h,43h
-	db	01h,8ah,0c3h,0e8h,0eeh,02h,5ah,0feh
-	db	0c6h,0e2h,0f2h,59h,0c3h,0e8h,0c2h,02h
-	db	0b6h,04h,0e8h,11h,01h,8bh,0eh,34h
-	db	07h,41h,51h,0beh,1eh,0ah,0e8h,67h
-	db	00h,8bh,36h,43h,07h,0b6h,06h,0e8h
-	db	0b6h,00h,0bfh,55h,0ah,59h,0e8h,26h
-	db	01h,83h,0fbh,0ah,74h,08h,0d1h,0ebh
-	db	4bh,88h,1eh,37h,07h,0c3h,58h,0e9h
-	db	0d9h,0fch,56h,0e8h,0f0h,00h,0beh,5ah
-	db	0ah,0e8h,0edh,00h,0a0h,37h,07h,04h
-	db	41h,0e8h,0a0h,02h,0b0h,3ah,0e8h,9bh
-	db	02h,5eh,0c3h,0bah,1dh,09h,0e8h,0d5h
-	db	00h,0beh,72h,0ah,0e8h,0d2h,00h,0bah
-	db	2eh,09h,0e8h,0d7h,00h,0a0h,38h,07h
-	db	0d4h,0ah,0dh,30h,30h,80h,0fch,30h
-	db	75h,04h,0b4h,20h,86h,0e0h,50h,8ah
-	db	0c4h,0e8h,70h,02h,58h,0e9h,6ch,02h
-	db	0ach,8ah,0f0h,0ach,8ah,0d0h,0e8h,0b3h
-	db	00h,56h,0beh,0c6h,07h,0e8h,0a1h,00h
-	db	5eh,0ach,0e8h,57h,02h,0ach,0e8h,53h
-	db	02h,56h,0beh,0e8h,07h,0e8h,91h,00h
-	db	5eh,0e8h,8dh,00h,0e2h,0dah,0c3h,0beh
-	db	1ch,09h,0ebh,03h,0beh,41h,09h,0a0h
-	db	40h,07h,3ah,06h,3fh,07h,74h,01h
-	db	0c3h,0b0h,07h,0e8h,2eh,02h,0b6h,07h
-	db	0e8h,15h,00h,0e8h,21h,02h,0b6h,07h
-	db	0b2h,01h,0e8h,6fh,00h,0b9h,4eh,00h
-	db	0b0h,20h,0e8h,17h,02h,0e2h,0f9h,0c3h
-	db	0b0h,72h,0e8h,0fch,01h,0e8h,3eh,00h
-	db	0b0h,75h,0e9h,0f4h,01h,56h,0beh,0cbh
-	db	09h,0bah,08h,07h,0e8h,4bh,0ffh,0beh
-	db	0f3h,09h,0bah,15h,09h,0e8h,36h,00h
-	db	0e8h,0ech,01h,24h,0dfh,3ch,59h,74h
-	db	0bh,3ch,4eh,74h,0ah,0b0h,07h,0e8h
-	db	0e2h,01h,0ebh,0ech,0f8h,0ebh,01h,0f9h
-	db	9ch,0b6h,07h,0e8h,0b2h,0ffh,0b6h,09h
-	db	0e8h,0adh,0ffh,9dh,5eh,0c3h,1eh,07h
-	db	8bh,0feh,0b0h,00h,0b9h,51h,00h,0fch
-	db	0f2h,0aeh,0d1h,0e9h,8ah,0d1h,0e8h,0bh
-	db	00h,0fch,0ach,0e8h,0b6h,01h,0ach,84h
-	db	0c0h,75h,0f8h,0c3h,0b0h,59h,0e8h,98h
-	db	01h,81h,0c2h,20h,20h,8ah,0c6h,0e8h
-	db	0a2h,01h,8ah,0c2h,0e9h,9dh,01h,0c6h
-	db	06h,3ch,07h,0ffh,51h,57h,0e8h,8eh
-	db	01h,1eh,07h,8ah,0c4h,2ch,3ah,0f2h
-	db	0aeh,5fh,59h,74h,07h,0b0h,07h,0e8h
-	db	82h,01h,0ebh,0e3h,8ah,0d8h,0b7h,00h
-	db	0b6h,06h,0e9h,53h,0ffh,0b1h,0bh,0cdh
-	db	0e0h,84h,0c0h,74h,06h,0b1h,01h,0cdh
-	db	0e0h,0ebh,0f2h,0c3h,0c7h,06h,47h,07h
-	db	0ffh,0ffh,0b1h,35h,0bah,45h,07h,0cdh
-	db	0e0h,0feh,0c0h,74h,2bh,0a1h,45h,07h
-	db	05h,0ffh,00h,0b0h,00h,0a3h,45h,07h
-	db	0feh,0c4h,0a3h,4ah,07h,8ah,26h,48h
-	db	07h,80h,0ech,01h,76h,12h,0a3h,47h
-	db	07h,0feh,0cch,88h,26h,4ch,07h,0b1h
-	db	38h,0bah,45h,07h,0cdh,0e0h,0feh,0c0h
-	db	0c3h,0c6h,06h,49h,07h,00h,0b1h,39h
-	db	0bah,45h,07h,0cdh,0e0h,0c3h,0c7h,06h
-	db	53h,07h,57h,07h,8ch,1eh,55h,07h
-	db	1eh,07h,2bh,0c0h,8eh,0d8h,0beh,78h
-	db	00h,0bfh,4fh,07h,0fch,0a5h,0a5h,06h
-	db	1fh,0c3h,0beh,53h,07h,0ebh,03h,0beh
-	db	4fh,07h,2bh,0c0h,8eh,0c0h,0bfh,78h
-	db	00h,0fch,0a5h,0a5h,0b4h,00h,0cdh,13h
-	db	0c3h,0c6h,06h,38h,07h,00h,0c6h,06h
-	db	36h,07h,02h,0e8h,18h,00h,26h,0a0h
-	db	0ffh,01h,0c6h,06h,39h,07h,50h,3ch
-	db	01h,74h,07h,0c6h,06h,39h,07h,28h
-	db	0b0h,00h,0a2h,3dh,07h,0c3h,8eh,06h
-	db	45h,07h,0c6h,06h,3bh,07h,05h,0e8h
-	db	0b0h,00h,74h,0ah,0e8h,0b0h,00h,3ch
-	db	03h,75h,03h,0e9h,03h,0fbh,0e8h,68h
-	db	00h,3ah,26h,3ch,07h,75h,0fh,06h
-	db	0e8h,08h,0fdh,0e8h,5bh,00h,0b4h,05h
-	db	0cdh,13h,0e8h,54h,00h,07h,0cdh,13h
-	db	72h,01h,0c3h,0a0h,36h,07h,3dh,03h
-	db	02h,75h,03h,0a2h,3ch,07h,0feh,0eh
-	db	3bh,07h,75h,0d2h,0beh,0c9h,0eh,0b9h
-	db	0ah,00h,0fch,0ach,3ah,0c4h,74h,09h
-	db	46h,46h,0e2h,0f6h,0beh,0c0h,0fh,0ebh
-	db	02h,8bh,34h,8ch,0d8h,8eh,0c0h,0b9h
-	db	03h,00h,0b0h,07h,0e8h,5dh,00h,0e2h
-	db	0f9h,0b0h,70h,0e8h,43h,00h,0b6h,03h
-	db	0e8h,83h,0feh,0b0h,71h,0e8h,39h,00h
-	db	0beh,6bh,09h,0e8h,18h,0feh,0e9h,98h
-	db	0fah,8ah,16h,37h,07h,0b1h,01h,2bh
-	db	0dbh,8ah,26h,36h,07h,0b0h,08h,8ah
-	db	2eh,38h,07h,0b6h,00h,80h,0fdh,28h
-	db	72h,07h,0f6h,0ddh,80h,0c5h,4fh,0b6h
-	db	01h,0c3h,0b9h,01h,03h,0bah,4eh,16h
-	db	0bbh,07h,00h,0b8h,00h,07h,0cdh,10h
-	db	0c3h,50h,0b0h,1bh,0e8h,0dh,00h,58h
-	db	0ebh,0ah,0b4h,01h,0cdh,16h,0c3h,0b4h
-	db	00h,0cdh,16h,0c3h,53h,51h,52h,56h
-	db	57h,8ah,0d0h,0b1h,06h,0cdh,0e0h,5fh
-	db	5eh,5ah,59h,5bh,0fch,0c3h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,0cfh,02h,25h,02h,08h,2ah,0ffh
-	db	50h,0e5h,19h,04h,1bh,45h,1bh,77h
-	db	1bh,6eh,1bh,71h,1bh,74h,1bh,75h
-	db	00h,1bh,45h,1bh,76h,1bh,6dh,00h
-	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h
-	db	0c6h,02h,4fh,0b5h,17h,00h,0c0h,17h
-	db	4fh,0d9h,43h,50h,2fh,4dh,2dh,38h
-	db	36h,20h,44h,69h,73h,6bh,20h,4dh
-	db	61h,69h,6eh,74h,65h,6eh,61h,6eh
-	db	63h,65h,20h,50h,72h,6fh,67h,72h
-	db	61h,6dh,20h,66h,6fh,72h,20h,74h
-	db	68h,65h,20h,49h,42h,4dh,20h,50h
-	db	43h,20h,20h,20h,76h,65h,72h,73h
-	db	69h,6fh,6eh,20h,31h,2eh,32h,00h
-	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h
-	db	0b3h,08h,08h,08h,08h,08h,08h,0b3h
-	db	0ah,08h,0c0h,0c4h,0c4h,0c4h,0c4h,0d9h
-	db	1bh,41h,08h,08h,08h,08h,1bh,72h
-	db	46h,00h,1bh,75h,1bh,43h,20h,20h
-	db	0cdh,0cdh,10h,20h,20h,00h,4dh,61h
-	db	69h,6eh,20h,4dh,65h,6eh,75h,00h
-	db	08h,14h,31h,20h,56h,65h,72h,69h
-	db	66h,79h,20h,61h,20h,44h,69h,73h
-	db	6bh,65h,74h,74h,65h,00h,0bh,14h
-	db	33h,20h,43h,6fh,70h,79h,20h,66h
-	db	72h,6fh,6dh,20h,6fh,6eh,65h,20h
-	db	44h,69h,73h,6bh,65h,74h,74h,65h
-	db	20h,74h,6fh,20h,61h,6eh,6fh,74h
-	db	68h,65h,72h,00h,0eh,14h,35h,20h
-	db	46h,6fh,72h,6dh,61h,74h,20h,61h
-	db	20h,53h,69h,6eh,67h,6ch,65h,20h
-	db	53h,69h,64h,65h,64h,20h,44h,69h
-	db	73h,6bh,65h,74h,74h,65h,00h,11h
-	db	14h,37h,20h,46h,6fh,72h,6dh,61h
-	db	74h,20h,61h,20h,44h,6fh,75h,62h
-	db	6ch,65h,20h,53h,69h,64h,65h,64h
-	db	20h,44h,69h,73h,6bh,65h,74h,74h
-	db	65h,00h,14h,14h,39h,20h,45h,78h
-	db	69h,74h,20h,74h,68h,69h,73h,20h
-	db	50h,72h,6fh,67h,72h,61h,6dh,00h
-	db	53h,45h,4ch,45h,43h,54h,20h,46h
-	db	55h,4eh,43h,54h,49h,4fh,4eh,00h
-	db	01h,03h,05h,07h,09h,85h,01h,0c3h
-	db	01h,0dah,02h,0e9h,02h,0a6h,03h,53h
-	db	45h,4ch,45h,43h,54h,20h,44h,49h
-	db	53h,4bh,45h,54h,54h,45h,20h,54h
-	db	4fh,20h,56h,45h,52h,49h,46h,59h
-	db	00h,53h,45h,4ch,45h,43h,54h,20h
-	db	53h,4fh,55h,52h,43h,45h,20h,44h
-	db	49h,53h,4bh,45h,54h,54h,45h,00h
-	db	53h,45h,4ch,45h,43h,54h,20h,44h
-	db	45h,53h,54h,49h,4eh,41h,54h,49h
-	db	4fh,4eh,20h,44h,49h,53h,4bh,45h
-	db	54h,54h,45h,00h,53h,45h,4ch,45h
-	db	43h,54h,20h,44h,49h,53h,4bh,45h
-	db	54h,54h,45h,20h,54h,4fh,20h,46h
-	db	4fh,52h,4dh,41h,54h,00h,49h,4eh
-	db	53h,45h,52h,54h,20h,53h,4fh,55h
-	db	52h,43h,45h,20h,44h,49h,53h,4bh
-	db	2ch,20h,41h,4eh,44h,20h,54h,59h
-	db	50h,45h,20h,41h,4eh,59h,20h,4bh
-	db	45h,59h,00h,49h,4eh,53h,45h,52h
-	db	54h,20h,44h,45h,53h,54h,49h,4eh
-	db	41h,54h,49h,4fh,4eh,20h,44h,49h
-	db	53h,4bh,2ch,20h,41h,4eh,44h,20h
-	db	54h,59h,50h,45h,20h,41h,4eh,59h
-	db	20h,4bh,45h,59h,00h,54h,59h,50h
-	db	45h,20h,41h,4eh,59h,20h,4bh,45h
-	db	59h,20h,54h,4fh,20h,43h,4fh,4eh
-	db	54h,49h,4eh,55h,45h,00h,20h,56h
-	db	65h,72h,69h,66h,79h,69h,6eh,67h
-	db	00h,43h,6fh,70h,79h,69h,6eh,67h
-	db	20h,66h,72h,6fh,6dh,00h,74h,6fh
-	db	00h,46h,6fh,72h,6dh,61h,74h,74h
-	db	69h,6eh,67h,00h,20h,20h,20h,52h
-	db	65h,61h,64h,69h,6eh,67h,00h,20h
-	db	20h,20h,57h,72h,69h,74h,69h,6eh
-	db	67h,00h,20h,20h,43h,68h,65h,63h
-	db	6bh,69h,6eh,67h,00h,54h,68h,69h
-	db	73h,20h,6fh,70h,65h,72h,61h,74h
-	db	69h,6fh,6eh,20h,77h,69h,6ch,6ch
-	db	20h,44h,65h,73h,74h,72h,6fh,79h
-	db	20h,61h,6eh,79h,20h,64h,61h,74h
-	db	61h,20h,6fh,6eh,00h,49h,73h,20h
-	db	74h,68h,69h,73h,20h,77h,68h,61h
-	db	74h,20h,79h,6fh,75h,20h,77h,61h
-	db	6eh,74h,20h,74h,6fh,20h,64h,6fh
-	db	20h,28h,59h,20h,6fh,72h,20h,4eh
-	db	29h,20h,1bh,73h,3fh,1bh,74h,00h
-	db	14h,14h,31h,30h,20h,45h,78h,69h
-	db	74h,20h,74h,6fh,20h,4dh,61h,69h
-	db	6eh,20h,4dh,65h,6eh,75h,00h,08h
-	db	14h,32h,20h,20h,41h,3ah,00h,0bh
-	db	14h,34h,20h,20h,42h,3ah,00h,0eh
-	db	14h,36h,20h,20h,43h,3ah,00h,11h
-	db	14h,38h,20h,20h,44h,3ah,00h,0ah
-	db	02h,04h,06h,08h,20h,74h,68h,65h
-	db	20h,44h,69h,73h,6bh,65h,74h,74h
-	db	65h,20h,69h,6eh,20h,44h,72h,69h
-	db	76h,65h,20h,00h,20h,74h,72h,61h
-	db	63h,6bh,00h,0fah,8ch,0c8h,8eh,0d8h
-	db	8eh,0d0h,0bch,00h,7ch,0fbh,0cdh,12h
-	db	2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
-	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h
-	db	51h,7ch,0bah,00h,00h,0b9h,05h,00h
-	db	0bbh,00h,00h,0b8h,04h,02h,0cdh,13h
-	db	73h,09h,0feh,0eh,53h,7ch,75h,0e2h
-	db	0e9h,04h,00h,0ffh,2eh,4fh,7ch,0beh
-	db	54h,7ch,0fch,0ach,0b4h,0eh,2bh,0dbh
-	db	0cdh,10h,0ach,84h,0c0h,75h,0f5h,0fbh
-	db	0ebh,0fdh,00h,01h,00h,00h,04h,0dh
-	db	0ah,0ah,2ah,2ah,2ah,20h,45h,72h
-	db	72h,6fh,72h,20h,77h,68h,69h,6ch
-	db	65h,20h,72h,65h,61h,64h,69h,6eh
-	db	67h,20h,4ch,6fh,61h,64h,65h,72h
-	db	20h,2ah,2ah,2ah,0dh,0ah,54h,72h
-	db	79h,20h,61h,6eh,6fh,74h,68h,65h
-	db	72h,20h,64h,69h,73h,6bh,65h,74h
-	db	74h,65h,2eh,0dh,0ah,00h,8ch,0c8h
-	db	8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h
-	db	3ch,01h,0e8h,0bdh,00h,0c7h,06h,3ah
-	db	03h,8ch,03h,0c7h,06h,3ch,03h,0a6h
-	db	03h,0c7h,06h,34h,03h,00h,25h,0e8h
-	db	1bh,00h,0c7h,06h,3ah,03h,99h,03h
-	db	0c7h,06h,3ch,03h,0b7h,03h,0c7h,06h
-	db	34h,03h,00h,00h,0e8h,06h,00h,0beh
-	db	0c9h,03h,0e9h,4fh,01h,0e8h,0c3h,00h
-	db	74h,01h,0c3h,0e8h,19h,00h,0e8h,0bah
-	db	00h,75h,08h,0c6h,06h,40h,03h,02h
-	db	0e8h,4fh,00h,0e8h,2eh,01h,0feh,0eh
-	db	40h,03h,75h,0eah,0e9h,3dh,01h,8bh
-	db	36h,3ch,03h,0e8h,2ch,01h,0ffh,06h
-	db	3eh,03h,0e8h,96h,00h,74h,0eh,0e8h
-	db	12h,01h,0e8h,8eh,00h,74h,06h,0beh
-	db	0ah,04h,0e9h,0fh,01h,0e8h,04h,01h
-	db	8bh,3eh,41h,03h,8ah,45h,10h,0e8h
-	db	23h,01h,0e8h,0ddh,00h,0beh,80h,00h
-	db	0e8h,98h,00h,83h,2eh,45h,03h,08h
-	db	0bbh,11h,00h,0b9h,0fh,00h,0e8h,0ch
-	db	00h,0c3h,0b0h,2eh,0e8h,5dh,01h,0bbh
-	db	10h,00h,0b9h,10h,00h,03h,1eh,41h
-	db	03h,8ah,07h,84h,0c0h,75h,03h,0e9h
-	db	0e2h,00h,53h,51h,0e8h,0eeh,00h,2bh
-	db	0f6h,0e8h,67h,00h,59h,5bh,43h,0e2h
-	db	0e8h,0c3h,0c7h,06h,43h,03h,4eh,04h
-	db	0c6h,06h,4ah,03h,04h,0b0h,00h,0e8h
-	db	0d3h,00h,0bfh,4eh,04h,0b9h,40h,00h
-	db	0b8h,7fh,7fh,0fch,80h,25h,0f0h,21h
-	db	45h,09h,20h,45h,0bh,83h,0c7h,20h
-	db	0e2h,0f2h,0c7h,06h,43h,03h,4eh,0ch
-	db	0c6h,06h,4ah,03h,08h,0c6h,06h,49h
-	db	03h,0ffh,0c3h,1eh,07h,0c7h,06h,41h
-	db	03h,4eh,04h,0b9h,40h,00h,0fch,51h
-	db	8bh,36h,3ah,03h,8bh,3eh,41h,03h
-	db	8bh,0eh,3eh,03h,0f3h,0a6h,59h,74h
-	db	09h,83h,06h,41h,03h,20h,0e2h,0e7h
-	db	0ch,0ffh,0c3h,8bh,0eh,2eh,03h,2bh
-	db	0ceh,03h,36h,47h,03h,2bh,0ffh,8eh
-	db	06h,45h,03h,0fch,0f3h,0a4h,0a1h,30h
-	db	03h,01h,06h,45h,03h,0c3h,2bh,0c0h
-	db	8eh,0c0h,0b8h,00h,04h,26h,80h,3eh
-	db	0ffh,7dh,01h,75h,03h,0b8h,00h,08h
-	db	0a3h,2eh,03h,0b1h,04h,0d3h,0e8h,0a3h
-	db	30h,03h,0b1h,05h,0d3h,0e8h,0a2h,32h
-	db	03h,0c3h,8bh,1eh,47h,03h,8bh,47h
-	db	03h,0a3h,36h,03h,0a3h,45h,03h,80h
-	db	7fh,09h,00h,74h,03h,8bh,47h,0ch
-	db	0a3h,38h,03h,0c3h,8bh,36h,3ah,03h
-	db	0feh,44h,0ch,0c3h,0e8h,03h,00h,0fbh
-	db	0ebh,0fdh,0ach,0e8h,6eh,00h,0ach,84h
-	db	0c0h,75h,0f8h,0c3h,0e8h,6ch,00h,0a1h
-	db	38h,03h,8eh,0d8h,8eh,0c0h,0b2h,00h
-	db	2eh,0ffh,2eh,34h,03h,0c6h,06h,4bh
-	db	03h,05h,0f6h,26h,32h,03h,0f6h,36h
-	db	33h,03h,8ah,0ech,0b1h,00h,0d1h,0e1h
-	db	81h,0c1h,4eh,0ch,89h,0eh,47h,03h
-	db	3ah,06h,49h,03h,75h,01h,0c3h,0a2h
-	db	49h,03h,0b6h,00h,04h,01h,8ah,0e8h
-	db	3ch,28h,72h,06h,0b5h,4fh,2ah,0e8h
-	db	0b6h,01h,1eh,07h,0b1h,01h,8bh,1eh
-	db	43h,03h,0a0h,4ah,03h,0b4h,02h,0cdh
-	db	13h,72h,01h,0c3h,0b4h,00h,0cdh,13h
-	db	0feh,0eh,4bh,03h,75h,0ech,0beh,0ah
-	db	04h,0e9h,88h,0ffh,0b7h,00h,0b4h,0eh
-	db	0cdh,10h,0c3h,0b4h,01h,0cdh,16h,74h
-	db	1ah,0b4h,00h,0cdh,16h,3ch,3fh,75h
-	db	12h,0beh,4ch,03h,0b9h,40h,00h,0ach
-	db	32h,0c1h,0e8h,0dfh,0ffh,0e2h,0f8h,0f6h
-	db	0e4h,0e2h,0fch,0c3h,00h,00h,00h,00h
-	db	00h,08h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,0ch,00h,02h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,0ffh
-	db	00h,00h,4dh,35h,33h,37h,71h,4eh
-	db	59h,51h,18h,58h,50h,15h,40h,5bh
-	db	5bh,42h,10h,4ch,41h,49h,49h,0bh
-	db	43h,5ah,08h,45h,54h,4ah,51h,44h
-	db	4ah,55h,00h,6bh,71h,3dh,65h,74h
-	db	6fh,39h,7ah,6eh,38h,3bh,3ah,33h
-	db	15h,55h,75h,6eh,60h,2dh,4eh,6ah
-	db	66h,65h,69h,75h,62h,02h,09h,0eh
-	db	0fh,0bh,00h,43h,50h,4dh,20h,20h
-	db	20h,20h,20h,53h,59h,53h,00h,00h
-	db	43h,43h,50h,4dh,20h,20h,20h,20h
-	db	53h,59h,53h,00h,4ch,6fh,61h,64h
-	db	69h,6eh,67h,20h,43h,50h,4dh,2eh
-	db	53h,59h,53h,2eh,00h,4ch,6fh,61h
-	db	64h,69h,6eh,67h,20h,43h,43h,50h
-	db	4dh,2eh,53h,59h,53h,2eh,00h,2ah
-	db	2ah,2ah,20h,43h,61h,6eh,6eh,6fh
-	db	74h,20h,66h,69h,6eh,64h,20h,43h
-	db	50h,4dh,2eh,53h,59h,53h,20h,6fh
-	db	72h,20h,43h,43h,50h,4dh,2eh,53h
-	db	59h,53h,20h,2ah,2ah,2ah,0dh,0ah
-	db	54h,72h,79h,20h,61h,6eh,6fh,74h
-	db	68h,65h,72h,20h,64h,69h,73h,6bh
-	db	65h,74h,74h,65h,2eh,0dh,0ah,00h
-	db	0dh,0ah,0ah,2ah,2ah,2ah,20h,45h
-	db	72h,72h,6fh,72h,20h,77h,68h,69h
-	db	6ch,65h,20h,72h,65h,61h,64h,69h
-	db	6eh,67h,20h,53h,79h,73h,74h,65h
-	db	6dh,20h,46h,69h,6ch,65h,20h,2ah
-	db	2ah,2ah,0dh,0ah,54h,72h,79h,20h
-	db	61h,6eh,6fh,74h,68h,65h,72h,20h
-	db	64h,69h,73h,6bh,65h,74h,74h,65h
-	db	2eh,0dh,0ah,00h,0dh,0ah,4eh,6fh
-	db	74h,20h,65h,6eh,6fh,75h,67h,68h
-	db	20h,61h,76h,61h,69h,6ch,61h,62h
-	db	6ch,65h,20h,6dh,65h,6dh,6fh,72h
-	db	79h,2eh,0dh,0ah,00h,20h,4dh,65h
-	db	6dh,6fh,72h,79h,20h,6eh,6fh,74h
-	db	20h,61h,76h,61h,69h,6ch,61h,62h
-	db	6ch,65h,20h,66h,6fh,72h,20h,43h
-	db	6fh,70h,79h,69h,6eh,67h,20h,00h
-	db	20h,53h,6fh,75h,72h,63h,65h,20h
-	db	61h,6eh,64h,20h,44h,65h,73h,74h
-	db	69h,6eh,61h,74h,69h,6fh,6eh,20h
-	db	64h,61h,74h,61h,20h,64h,6fh,20h
-	db	6eh,6fh,74h,20h,6dh,61h,74h,63h
-	db	68h,20h,00h,80h,0e7h,0eh,40h,00h
-	db	0fh,20h,18h,0fh,10h,32h,0fh,09h
-	db	44h,0fh,08h,59h,0fh,04h,6dh,0fh
-	db	03h,80h,0fh,02h,9ah,0fh,01h,0b2h
-	db	0fh,20h,44h,72h,69h,76h,65h,20h
-	db	64h,6fh,65h,73h,20h,6eh,6fh,74h
-	db	20h,72h,65h,73h,70h,6fh,6eh,64h
-	db	20h,00h,20h,53h,65h,65h,6bh,20h
-	db	6fh,70h,65h,72h,61h,74h,69h,6fh
-	db	6eh,20h,66h,61h,69h,6ch,65h,64h
-	db	20h,00h,20h,44h,69h,73h,6bh,20h
-	db	43h,6fh,6eh,74h,72h,6fh,6ch,6ch
-	db	65h,72h,20h,66h,61h,69h,6ch,75h
-	db	72h,65h,20h,00h,20h,44h,69h,73h
-	db	6bh,20h,52h,65h,61h,64h,20h,45h
-	db	72h,72h,6fh,72h,20h,00h,20h,44h
-	db	4dh,41h,20h,42h,6fh,75h,6eh,64h
-	db	61h,72h,79h,20h,45h,72h,72h,6fh
-	db	72h,20h,00h,20h,44h,4dh,41h,20h
-	db	4fh,76h,65h,72h,72h,75h,6eh,20h
-	db	45h,72h,72h,6fh,72h,20h,00h,20h
-	db	53h,65h,63h,74h,6fh,72h,20h,6eh
-	db	6fh,74h,20h,66h,6fh,75h,6eh,64h
-	db	20h,00h,20h,44h,69h,73h,6bh,20h
-	db	69h,73h,20h,57h,72h,69h,74h,65h
-	db	20h,50h,72h,6fh,74h,65h,63h,74h
-	db	65h,64h,20h,00h,20h,44h,69h,73h
-	db	6bh,20h,69h,73h,20h,6eh,6fh,74h
-	db	20h,46h,6fh,72h,6dh,61h,74h,74h
-	db	65h,64h,20h,00h,20h,42h,61h,64h
-	db	20h,43h,6fh,6dh,6dh,61h,6eh,64h
-	db	20h,00h,20h,46h,61h,74h,61h,6ch
-	db	20h,44h,69h,73h,6bh,20h,45h,72h
-	db	72h,6fh,72h,20h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,0dbh,00h,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h
+copyright:
+	db	'Copyright (C) 1983, Digital Research'
+
+;-----------------------------------------------------------------------------
+; Entry.  Discard anything typed ahead, ask BDOS for a work buffer (quit if
+; there is none), draw the screen and remember the diskette parameter vector.
+;-----------------------------------------------------------------------------
+main:
+	mov	ax,cs
+	mov	ds,ax
+	mov	ss,ax
+	mov	sp,1053h
+	call	flushkb
+	call	allocmem
+	jnz	memok
+	mov	si,offset nomemmsg
+	call	puts
+	jmp	terminate
+
+memok:
+	call	drawframe
+	call	cntdrives
+	call	initvec
+
+;-----------------------------------------------------------------------------
+; Main menu.  getchoice returns the function key number (1,3,5,7,9) in bx;
+; one less is the byte offset of its handler in fntable.  Every handler comes
+; back here through the menu, so an item repeats until F10 is pressed in the
+; drive menu.
+;-----------------------------------------------------------------------------
+mainmenu:
+	call	clrwin
+	mov	si,offset mainhdr
+	mov	dh,04h
+	call	putcent
+	mov	si,offset menuitems
+	mov	cx,05h
+	call	drawmenu
+	mov	si,offset selfunc
+	mov	dh,06h
+	call	putrev
+	mov	di,offset mainkeys
+	mov	cx,05h
+	call	getchoice
+	dec	bx
+	mov	menusel,bx
+	jmp	word ptr fntable[bx]
+
+;-----------------------------------------------------------------------------
+; Control-C during disk I/O ends up here: reset the stack and segments, put the
+; BIOS diskette vector back and return to the main menu.
+;-----------------------------------------------------------------------------
+restart:
+	mov	ax,cs
+	mov	ds,ax
+	mov	es,ax
+	mov	sp,1053h
+	call	setoldvec
+	jmps	mainmenu
+
+;-----------------------------------------------------------------------------
+; F1: verify a diskette.  Pick the drive, then read every track with BIOS
+; function 4, which checks the sector CRCs without moving any data.  Runs the
+; same item again when it is done.
+;-----------------------------------------------------------------------------
+doverify:
+	mov	si,offset vfytxt
+	mov	word ptr promptptr,08b5h
+	call	seldrive
+	call	clrwin
+	mov	si,offset vfyingmsg
+	mov	dx,0516h
+	call	drvprompt
+
+; Verify the diskette in drive.  getsides decides 40 or 80 tracks.  Format
+; enters here with si = message once the new boot track is written.
+vfyall:
+	call	getsides
+	call	trkhdr
+	mov	byte ptr biosfunc,04h
+
+vfyloop:
+	call	showtrk
+	call	diskio
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	vfyloop
+	call	getsides
+	mov	bx,menusel
+	jmp	word ptr fntable[bx]
+
+;-----------------------------------------------------------------------------
+; F3: copy a diskette.  Pick source and destination, then work in chunks of
+; ntrkbuf tracks: read from the source, write to the destination, read the
+; destination back and compare it with what was written.  One drive may serve
+; for both; askinsrc and askindst prompt for the swap.  Without room for even
+; one chunk beyond the track buffer, it gives up.
+;-----------------------------------------------------------------------------
+docopy:
+	test	byte ptr ntrkbuf,0ffh
+	jnz	copypick
+	mov	si,offset copymemmsg
+	jmp	showerr
+
+copypick:
+	mov	si,offset copytxt
+	mov	word ptr promptptr,08cfh
+	call	seldrive
+	mov	srcdrive,bl
+	call	getsides
+	mov	srcsides,al
+	mov	si,offset copytxt
+	mov	word ptr promptptr,08e6h
+	call	seldrive
+	mov	dstdrive,bl
+	call	clrwin
+	mov	al,srcdrive
+	mov	drive,al
+	mov	si,offset copyingmsg
+	mov	dx,0415h
+	call	drvprompt
+	mov	al,dstdrive
+	mov	drive,al
+	mov	si,offset tomsg
+	mov	dx,051fh
+	call	drvprompt
+	call	confirm
+	jc	docopy
+	mov	al,trkcount
+	mov	trktotal,al
+
+; Next chunk: as many tracks as are left, but no more than the buffer holds.
+copynext:
+	mov	al,trktotal
+	sub	al,track
+	jz	copyend
+	cmp	al,ntrkbuf
+	jc	copyrd
+	mov	al,ntrkbuf
+
+copyrd:
+	mov	trkcount,al
+	call	askinsrc
+	mov	al,02h
+	mov	ah,srcdrive
+	mov	si,offset readmsg
+	call	xfer
+	call	askindst
+	mov	al,03h
+	mov	ah,dstdrive
+	mov	si,offset writemsg
+	call	xfer
+	mov	byte ptr biosfunc,02h
+	mov	ax,copyseg
+	mov	curseg,ax
+	mov	si,offset checkmsg
+	call	trkhdr
+
+; Read one track back into trkbuf and compare all 1000h bytes with the copy
+; that was just written.  nextseg points es at the copy and steps on.
+cmploop:
+	call	showtrk
+	call	diskio
+	call	nextseg
+	push	ds
+	mov	ds,word ptr trkbuf
+	sub	si,si
+	sub	di,di
+	mov	cx,1000h
+	cld
+	repe	cmpsb
+	pop	ds
+	jz	cmpnext
+	mov	si,offset mismatmsg
+	jmp	showerr
+
+cmpnext:
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	cmploop
+	jmp	copynext
+
+; Copy finished: read track 0 of each diskette again (this also resets track)
+; and start the dialog over.
+copyend:
+	call	getsides
+	mov	al,srcdrive
+	mov	drive,al
+	call	getsides
+	jmp	docopy
+
+; Move trkcount tracks between the disk and the copy buffer.  al is the BIOS
+; function (2 read, 3 write), ah the drive, si the heading.  track is kept.
+xfer:
+	push	word ptr track
+	mov	biosfunc,al
+	mov	drive,ah
+	mov	ax,copyseg
+	mov	curseg,ax
+	call	trkhdr
+
+xferloop:
+	call	showtrk
+	call	nextseg
+	call	diskioes
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	xferloop
+	pop	word ptr track
+	ret
+
+; Point es at the current track buffer, then step curseg to the next one:
+; a track is 1000h bytes, 100h paragraphs.
+nextseg:
+	mov	es,word ptr curseg
+	add	word ptr curseg,0100h
+	ret
+
+;-----------------------------------------------------------------------------
+; F5: format a single sided diskette, 40 tracks.
+;-----------------------------------------------------------------------------
+fmt1:
+	mov	byte ptr sides,00h
+	mov	byte ptr trkcount,28h
+	mov	si,offset fmt1txt
+	jmps	fmtcommon
+
+;-----------------------------------------------------------------------------
+; F7: format a double sided diskette, 80 tracks.
+;-----------------------------------------------------------------------------
+fmt2:
+	mov	byte ptr sides,01h
+	mov	byte ptr trkcount,50h
+	mov	si,offset fmt2txt
+
+; Pick the drive and ask for confirmation.  N goes back to the menu.
+fmtcommon:
+	mov	word ptr promptptr,0902h
+	call	seldrive
+	call	clrwin
+	mov	si,offset fmtingmsg
+	mov	dx,0516h
+	call	drvprompt
+	call	confirm
+	jnc	fmtgo
+	mov	bx,menusel
+	jmp	word ptr fntable[bx]
+
+;-----------------------------------------------------------------------------
+; Format every track (BIOS function 5) with the 8 sector parameter table
+; installed over the diskette vector, then put the vector back.  Track 0 is
+; then written again with the boot sector and the loader, the rest of the
+; buffer left at 0e5h, and the last byte of the boot sector holds the sides
+; flag.  Finish with a verify of the whole diskette.
+;-----------------------------------------------------------------------------
+fmtgo:
+	call	setnewvec
+	mov	si,offset fmtingmsg
+	mov	byte ptr track,00h
+	call	trkhdr
+	mov	byte ptr biosfunc,05h
+
+fmtloop:
+	call	showtrk
+	call	mkidtab
+	call	diskio
+	inc	byte ptr track
+	dec	byte ptr trkcount
+	jnz	fmtloop
+	call	setoldvec
+	mov	es,word ptr trkbuf
+	mov	di,00h
+	mov	al,0e5h
+	mov	cx,1000h
+	cld
+	rep	stosb
+	mov	si,offset writemsg
+	mov	byte ptr track,00h
+	call	trkhdr
+	mov	si,offset bootimg
+	mov	es,word ptr trkbuf
+	sub	di,di
+	mov	al,sides
+	mov	es:.01ffh,al
+	mov	cx,93h
+	rep	movsb
+	mov	si,offset ldrimg
+	mov	di,0900h
+	mov	cx,034eh
+	rep	movsb
+	mov	byte ptr biosfunc,03h
+	call	diskio
+	mov	si,offset vfyingmsg
+	jmp	vfyall
+
+; Build the eight address fields BIOS function 5 expects for the current track
+; at the start of trkbuf: cylinder, head, sector 1..8, size code 2 (512 bytes).
+mkidtab:
+	mov	es,word ptr trkbuf
+	mov	di,00h
+	call	calctrk
+	mov	dl,ch
+	mov	bx,0201h
+	mov	cx,08h
+	cld
+
+idloop:
+	mov	ax,dx
+	stosw
+	mov	ax,bx
+	stosw
+	inc	bx
+	loop	idloop
+	ret
+
+;-----------------------------------------------------------------------------
+; F9: free the buffer, restore the screen and leave through a BDOS reset.
+;-----------------------------------------------------------------------------
+doexit:
+	call	freemem
+	mov	si,offset scrnrest
+	call	puts
+
+; Also the way out when there is no memory.
+terminate:
+	mov	cl,00h
+	mov	dl,00h
+	int	0e0h
+
+; The equipment word of int 11h holds the number of diskette drives less one
+; in bits 6 and 7.
+cntdrives:
+	int	11h
+	mov	cl,06h
+	shr	ax,cl
+	and	ax,03h
+	inc	ax
+	mov	ndrives,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Paint the frame: three horizontal rules (top, under the title, bottom), two
+; sides, then the six corner glyphs and the title.  bl carries the character,
+; cx the length, dx the position.
+;-----------------------------------------------------------------------------
+drawframe:
+	mov	si,offset scrninit
+	call	puts
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h
+	call	hline
+	mov	dx,0201h
+	mov	bl,0cdh
+	call	hline
+	mov	dx,1701h
+	mov	bl,0c4h
+	call	hline
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h
+	call	vline
+	mov	dx,014fh
+	mov	bl,0b3h
+	call	vline
+	mov	si,offset corners
+	mov	cx,06h
+
+cellloop:
+	mov	al,59h
+	call	escout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	add	al,20h
+	call	conout
+	lodsb
+	call	conout
+	loop	cellloop
+	mov	si,offset titlestr
+	mov	dx,0100h
+	jmp	putcent
+
+; Draw cx copies of bl going right from position dx.  cx is preserved.
+hline:
+	push	cx
+	call	gotoxy
+
+hlloop:
+	mov	al,bl
+	call	conout
+	loop	hlloop
+	pop	cx
+	ret
+
+; Draw cx copies of bl going down from position dx.  cx is preserved.
+vline:
+	push	cx
+
+vlloop:
+	push	dx
+	call	gotoxy
+	mov	al,bl
+	call	conout
+	pop	dx
+	inc	dh
+	loop	vlloop
+	pop	cx
+	ret
+
+;-----------------------------------------------------------------------------
+; Drive menu.  si is the heading and promptptr the text for the reverse video
+; line; the entries are F10 for the main menu and one function key per drive.
+; Returns the drive (0..3) in drive and bl.  F10 does not return: it drops
+; this routine's caller and goes back to the main menu.
+;-----------------------------------------------------------------------------
+seldrive:
+	call	clrwin
+	mov	dh,04h
+	call	putcent
+	mov	cx,ndrives
+	inc	cx
+	push	cx
+	mov	si,offset drvmenu
+	call	drawmenu
+	mov	si,promptptr
+	mov	dh,06h
+	call	putrev
+	mov	di,offset drvkeys
+	pop	cx
+	call	getchoice
+	cmp	bx,0ah
+	jz	selabort
+	shr	bx,1
+	dec	bx
+	mov	drive,bl
+	ret
+
+selabort:
+	pop	ax
+	jmp	mainmenu
+
+; Print the message at si at position dx, then ' the Diskette in Drive X:'.
+; si is preserved.
+drvprompt:
+	push	si
+	call	putat
+	mov	si,offset indrvmsg
+	call	puts
+	mov	al,drive
+	add	al,41h
+	call	conout
+	mov	al,3ah
+	call	conout
+	pop	si
+	ret
+
+; Status line: the message at si and ' track', then fall into showtrk.
+trkhdr:
+	mov	dx,091dh
+	call	putat
+	mov	si,offset trkmsg
+	call	puts
+
+; Print track in decimal.  A single digit is followed by a blank, so that a
+; shorter number leaves nothing of the longer one behind.
+showtrk:
+	mov	dx,092eh
+	call	gotoxy
+	mov	al,track
+	aam
+	or	ax,3030h
+	cmp	ah,30h
+	jnz	trkdigit
+	mov	ah,20h
+	xchg	ah,al
+
+trkdigit:
+	push	ax
+	mov	al,ah
+	call	conout
+	pop	ax
+	jmp	conout
+
+; Draw cx menu entries from si.  An entry is row, column, a two character key
+; label shown in a small box, and the text, which ends at its NUL.
+drawmenu:
+	lodsb
+	mov	dh,al
+	lodsb
+	mov	dl,al
+	call	gotoxy
+	push	si
+	mov	si,offset itemfrm
+	call	puts
+	pop	si
+	lodsb
+	call	conout
+	lodsb
+	call	conout
+	push	si
+	mov	si,offset itemend
+	call	puts
+	pop	si
+	call	puts
+	loop	drawmenu
+	ret
+
+; Prompt for the source or the destination diskette, but only when one drive
+; serves for both: askins returns at once otherwise.  When it does prompt it
+; beeps and falls into askwait.
+askinsrc:
+	mov	si,offset insrcmsg
+	jmps	askins
+
+askindst:
+	mov	si,offset indstmsg
+
+askins:
+	mov	al,srcdrive
+	cmp	al,dstdrive
+	jz	askbeep
+	ret
+
+askbeep:
+	mov	al,07h
+	call	conout
+
+; Show the message at si on row 7, wait for any key, then clear the row.
+askwait:
+	mov	dh,07h
+	call	putrev
+	call	getraw
+	mov	dh,07h
+
+; Blank the 78 columns inside the frame on row dh.
+clrrow:
+	mov	dl,01h
+	call	gotoxy
+	mov	cx,4eh
+
+clrloop:
+	mov	al,20h
+	call	conout
+	loop	clrloop
+	ret
+
+; Print the string at si centred on row dh, in reverse video.
+putrev:
+	mov	al,72h
+	call	escout
+	call	putcent
+	mov	al,75h
+	jmp	escout
+
+;-----------------------------------------------------------------------------
+; Warn that the diskette in drive will be destroyed and ask Y or N, beeping at
+; any other key.  Returns carry clear for Y, set for N.  si is preserved.
+;-----------------------------------------------------------------------------
+confirm:
+	push	si
+	mov	si,offset destroymsg
+	mov	dx,0708h
+	call	drvprompt
+	mov	si,offset askmsg
+	mov	dx,0915h
+	call	putat
+
+ynkey:
+	call	getraw
+	and	al,0dfh
+	cmp	al,59h
+	jz	yesans
+	cmp	al,4eh
+	jz	noans
+	mov	al,07h
+	call	conout
+	jmps	ynkey
+
+yesans:
+	clc
+	jmps	ynend
+
+noans:
+	stc
+
+ynend:
+	pushf
+	mov	dh,07h
+	call	clrrow
+	mov	dh,09h
+	call	clrrow
+	popf
+	pop	si
+	ret
+
+; Print the string at si centred on row dh.  scasb finds the NUL, which leaves
+; 80 - length in cx, and half of that is the column.
+putcent:
+	push	ds
+	pop	es
+	mov	di,si
+	mov	al,00h
+	mov	cx,51h
+	cld
+	repne	scasb
+	shr	cx,1
+	mov	dl,cl
+
+; Print the string at si at position dx (row in dh, column in dl).
+putat:
+	call	gotoxy
+
+; Print the NUL terminated string at si.  si is left just past the NUL.
+puts:
+	cld
+	lodsb
+
+putsloop:
+	call	conout
+	lodsb
+	test	al,al
+	jnz	putsloop
+	ret
+
+; VT52 ESC Y: row and column are biased by 20h.  Zero based; dx is destroyed.
+gotoxy:
+	mov	al,59h
+	call	escout
+	add	dx,2020h
+	mov	al,dh
+	call	conout
+	mov	al,dl
+	jmp	conout
+
+; Wait for one of the cx function keys listed at di, beeping at anything else.
+; The scan code less 3ah is the key number, which comes back in bx.  Also
+; disarms autofmt, and blanks the prompt row on the way out.
+getchoice:
+	mov	byte ptr autofmt,0ffh
+	push	cx
+	push	di
+	call	getraw
+	push	ds
+	pop	es
+	mov	al,ah
+	sub	al,3ah
+	repne	scasb
+	pop	di
+	pop	cx
+	jz	gotchoice
+	mov	al,07h
+	call	conout
+	jmps	getchoice
+
+gotchoice:
+	mov	bl,al
+	mov	bh,00h
+	mov	dh,06h
+	jmp	clrrow
+
+; Discard anything already typed ahead.
+flushkb:
+	mov	cl,0bh
+	int	0e0h
+	test	al,al
+	jz	flushend
+	mov	cl,01h
+	int	0e0h
+	jmps	flushkb
+
+flushend:
+	ret
+
+;-----------------------------------------------------------------------------
+; Ask BDOS for the largest free block, then take from it one that starts on a
+; 1000h byte boundary, so that no track straddles a 64K DMA boundary.  trkbuf
+; is the first track, copyseg the rest, ntrkbuf how many whole tracks the rest
+; holds.  The memory parameter block is trkbuf, buflen, bufflag.  Returns ZF
+; clear if the memory was allocated.
+;-----------------------------------------------------------------------------
+allocmem:
+	mov	word ptr buflen,0ffffh	; ask for everything
+	mov	cl,35h
+	mov	dx,0745h
+	int	0e0h
+	inc	al
+	jz	allocret
+	mov	ax,trkbuf
+	add	ax,0ffh
+	mov	al,00h
+	mov	trkbuf,ax
+	inc	ah
+	mov	copyseg,ax
+	mov	ah,buflenhi
+	sub	ah,01h		; one 1000h unit is lost to the alignment
+	jna	allocret
+	mov	.0747h,ax
+	dec	ah		; and one for the track buffer itself
+	mov	ntrkbuf,ah
+	mov	cl,38h
+	mov	dx,0745h
+	int	0e0h
+	inc	al
+
+allocret:
+	ret
+
+; Give the block back to BDOS.
+freemem:
+	mov	byte ptr bufflag,00h
+	mov	cl,39h
+	mov	dx,0745h
+	int	0e0h
+	ret
+
+; Save the BIOS diskette parameter pointer (vector 78h, int 1Eh) in oldvec and
+; build newvec, a far pointer to the 8 sector table that follows newvecseg in
+; the data (0757h).
+initvec:
+	mov	word ptr newvec,0757h
+	mov	word ptr newvecseg,ds
+	push	ds
+	pop	es
+	sub	ax,ax
+	mov	ds,ax
+	mov	si,78h
+	mov	di,offset oldvec
+	cld
+	movsw
+	movsw
+	push	es
+	pop	ds
+	ret
+
+; Install a diskette parameter pointer: si is newvec or oldvec.  The controller
+; is reset afterwards so that it picks up the new table.
+setnewvec:
+	mov	si,offset newvec
+	jmps	setvec
+
+setoldvec:
+	mov	si,offset oldvec
+
+setvec:
+	sub	ax,ax
+	mov	es,ax
+	mov	di,78h
+	cld
+	movsw
+	movsw
+	mov	ah,00h
+	int	13h
+	ret
+
+; Read track 0 of drive into the track buffer.  The last byte of the boot
+; sector is 1 on a double sided diskette; anything else counts as single sided.
+; Sets sides and trkcount (80 or 40), returns the flag in al, leaves track at 0.
+getsides:
+	mov	byte ptr track,00h
+	mov	byte ptr biosfunc,02h
+	call	diskio
+	mov	al,es:.01ffh
+	mov	byte ptr trkcount,50h
+	cmp	al,01h
+	jz	gsdone
+	mov	byte ptr trkcount,28h
+	mov	al,00h
+
+gsdone:
+	mov	sides,al
+	ret
+
+;-----------------------------------------------------------------------------
+; Do BIOS function biosfunc on track `track` of drive: eight sectors, from or
+; to es:0.  diskio uses the track buffer, diskioes whatever es already points
+; at.  A waiting key is looked at first: Control-C leaves through restart, any
+; other key is thrown away.  Each track gets five attempts before the error is
+; reported.
+;-----------------------------------------------------------------------------
+diskio:
+	mov	es,word ptr trkbuf
+
+diskioes:
+	mov	byte ptr retries,05h
+	call	kbhit
+	jz	tryio
+	call	getraw
+	cmp	al,03h
+	jnz	tryio
+	jmp	restart
+
+; autofmt equals the function only after a write failed as unformatted: format
+; the track first (function 5, ids from mkidtab), then go on with the write.
+tryio:
+	call	iosetup
+	cmp	ah,autofmt
+	jnz	bios13
+	push	es
+	call	mkidtab
+	call	iosetup
+	mov	ah,05h
+	int	13h
+	call	iosetup
+	pop	es
+
+bios13:
+	int	13h
+	jc	ioerror
+	ret
+
+; Status in ah, function in al.  Status 02 on a write is the BIOS reporting an
+; unformatted track; arm autofmt so that the next attempt formats it.
+ioerror:
+	mov	al,biosfunc
+	cmp	ax,0203h
+	jnz	retryio
+	mov	autofmt,al
+
+; Try again, up to five times in all.  After that the status in ah is looked up
+; in errtab, ten entries of a status byte and a message pointer; fatalmsg
+; stands in for a status that is not listed.
+retryio:
+	dec	byte ptr retries
+	jnz	tryio
+	mov	si,offset errtab
+	mov	cx,0ah
+
+errloop:
+	cld
+	lodsb
+	cmp	al,ah
+	jz	errfound
+	inc	si
+	inc	si
+	loop	errloop
+	mov	si,offset fatalmsg
+	jmps	showerr
+
+errfound:
+	mov	si,[si]
+
+; Report an error: three beeps, the message at si on row 3 between ESC p and
+; ESC q, then wait for a key.  Does not return; it ends in restart.  The copy
+; errors come here as well.
+showerr:
+	mov	ax,ds
+	mov	es,ax
+	mov	cx,03h
+
+beeploop:
+	mov	al,07h
+	call	conout
+	loop	beeploop
+	mov	al,70h
+	call	escout
+	mov	dh,03h
+	call	putcent
+	mov	al,71h
+	call	escout
+	mov	si,offset anykeymsg
+	call	askwait
+	jmp	restart
+
+; Registers for int 13h: dl drive, cl first sector 1, bx zero, ah biosfunc, al 8
+; sectors.  Falls into calctrk.
+iosetup:
+	mov	dl,drive
+	mov	cl,01h
+	sub	bx,bx
+	mov	ah,biosfunc
+	mov	al,08h
+
+; Cylinder in ch and head in dh for `track`: tracks 0..39 are head 0 with
+; cylinder = track, tracks 40..79 are head 1 with cylinder = 79 - track.
+calctrk:
+	mov	ch,track
+	mov	dh,00h
+	cmp	ch,28h
+	jc	calcret
+	neg	ch
+	add	ch,4fh
+	mov	dh,01h
+
+calcret:
+	ret
+
+clrwin:
+	mov	cx,0301h
+	mov	dx,164eh
+	mov	bx,07h
+	mov	ax,0700h
+	int	10h
+	ret
+
+escout:
+	push	ax
+	mov	al,1bh
+	call	conout
+	pop	ax
+	jmps	conout
+
+kbhit:
+	mov	ah,01h
+	int	16h
+	ret
+
+getraw:
+	mov	ah,00h
+	int	16h
+	ret
+
+conout:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	mov	dl,al
+	mov	cl,06h
+	int	0e0h
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+l0734:
 
 ; ---- data ----
+	dseg
+ndrives	dw	00h
+biosfunc	db	00h
+drive	db	00h
+track	db	00h
+trkcount	db	00h
+trktotal	db	00h
+retries	db	00h
+autofmt	db	00h
+sides	db	00h
+srcsides	db	00h
+dstdrive	db	00h
+srcdrive	db	00h
+menusel	dw	00h
+promptptr	dw	00h
+trkbuf	dw	00h
+buflen	db	00h
+buflenhi	db	00h
+bufflag	db	00h
+copyseg	dw	00h
+ntrkbuf	db	00h
+curseg	dw	00h
+oldvec	db	00h,00h,00h,00h
+newvec	dw	00h
+newvecseg	dw	00h
+	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+scrninit	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
+	db	00h
+scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
+corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
+	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
+titlestr	db	'CP/M-86 Disk Maintenance Program for the'
+	db	' IBM PC   version 1.2',00h
+itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
+	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
+	db	72h,46h,00h
+itemend	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
+mainhdr	db	'Main Menu',00h
+menuitems	db	08h,14h,31h,20h
+vfytxt	db	'Verify a Diskette',00h
+	db	0bh,14h,33h,20h
+copytxt	db	'Copy from one Diskette to another',00h
+	db	0eh,14h,35h,20h
+fmt1txt	db	'Format a Single Sided Diskette',00h
+	db	11h,14h,37h,20h
+fmt2txt	db	'Format a Double Sided Diskette',00h
+	db	14h,14h
+	db	'9 Exit this Program',00h
+selfunc	db	'SELECT FUNCTION',00h
+mainkeys	db	01h,03h,05h,07h,09h
+fntable	dw	doverify,docopy,fmt1,fmt2,doexit
+	db	'SELECT DISKETTE TO VERIFY',00h
+	db	'SELECT SOURCE DISKETTE',00h
+	db	'SELECT DESTINATION DISKETTE',00h
+	db	'SELECT DISKETTE TO FORMAT',00h
+insrcmsg	db	'INSERT SOURCE DISK, AND TYPE ANY KEY',00h
+indstmsg	db	'INSERT DESTINATION DISK, AND TYPE ANY',' KEY'
+	db	00h
+anykeymsg	db	'TYPE ANY KEY TO CONTINUE',00h
+vfyingmsg	db	' Verifying',00h
+copyingmsg	db	'Copying from',00h
+tomsg	db	74h,6fh,00h
+fmtingmsg	db	'Formatting',00h
+readmsg	db	'   Reading',00h
+writemsg	db	'   Writing',00h
+checkmsg	db	'  Checking',00h
+destroymsg	db	'This operation will Destroy any data on',00h
+askmsg	db	'Is this what you want to do (Y or N) ',1bh
+	db	73h,3fh,1bh,74h,00h
+drvmenu	db	14h,14h
+	db	'10 Exit to Main Menu',00h
+	db	08h,14h
+	db	'2  A:',00h
+	db	0bh,14h
+	db	'4  B:',00h
+	db	0eh,14h
+	db	'6  C:',00h
+	db	11h,14h
+	db	'8  D:',00h
+drvkeys	db	0ah,02h,04h,06h,08h
+indrvmsg	db	' the Diskette in Drive ',00h
+trkmsg	db	' track',00h
+; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
+bootimg	db	0fah,8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,7ch,0fbh
+	db	0cdh,12h,2dh,08h,00h,0b1h,06h,0d3h,0e0h,0a3h
+	db	51h,7ch,0b4h,00h,0cdh,13h,8eh,06h,51h,7ch,0bah
+	db	00h,00h,0b9h,05h,00h,0bbh,00h,00h,0b8h,04h,02h
+	db	0cdh,13h,73h,09h,0feh,0eh,53h,7ch,75h,0e2h,0e9h
+	db	04h,00h,0ffh,2eh,4fh,7ch,0beh,54h,7ch,0fch,0ach
+	db	0b4h,0eh,2bh,0dbh,0cdh,10h,0ach,84h,0c0h,75h,0f5h
+	db	0fbh,0ebh,0fdh,00h,01h,00h,00h,04h
+	db	0dh,0ah,0ah,'*** Error while reading Loader ***'
+	db	0dh,0ah,'Try another diskette.',0dh,0ah,00h
+; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
+ldrimg	db	8ch,0c8h,8eh,0d8h,8eh,0d0h,0bch,00h,01h,0e8h,3ch
+	db	01h,0e8h,0bdh,00h,0c7h,06h,3ah,03h,8ch,03h,0c7h
+	db	06h,3ch,03h,0a6h,03h,0c7h,06h,34h,03h,00h,25h
+	db	0e8h,1bh,00h,0c7h,06h,3ah,03h,99h,03h,0c7h,06h
+	db	3ch,03h,0b7h,03h,0c7h,06h,34h,03h,00h,00h,0e8h
+	db	06h,00h,0beh,0c9h,03h,0e9h,4fh,01h,0e8h,0c3h,00h
+	db	74h,01h,0c3h,0e8h,19h,00h,0e8h,0bah,00h,75h,08h
+	db	0c6h,06h,40h,03h,02h,0e8h,4fh,00h,0e8h,2eh,01h
+	db	0feh,0eh,40h,03h,75h,0eah,0e9h,3dh,01h,8bh
+	db	36h,3ch,03h,0e8h,2ch,01h,0ffh,06h,3eh,03h,0e8h
+	db	96h,00h,74h,0eh,0e8h,12h,01h,0e8h,8eh,00h,74h,06h
+	db	0beh,0ah,04h,0e9h,0fh,01h,0e8h,04h,01h,8bh
+	db	3eh,41h,03h,8ah,45h,10h,0e8h,23h,01h,0e8h,0ddh
+	db	00h,0beh,80h,00h,0e8h,98h,00h,83h,2eh,45h,03h,08h
+	db	0bbh,11h,00h,0b9h,0fh,00h,0e8h,0ch,00h,0c3h,0b0h
+	db	2eh,0e8h,5dh,01h,0bbh,10h,00h,0b9h,10h,00h,03h
+	db	1eh,41h,03h,8ah,07h,84h,0c0h,75h,03h,0e9h,0e2h
+	db	00h,53h,51h,0e8h,0eeh,00h,2bh,0f6h,0e8h,67h,00h
+	db	59h,5bh,43h,0e2h,0e8h,0c3h,0c7h,06h,43h,03h,4eh
+	db	04h,0c6h,06h,4ah,03h,04h,0b0h,00h,0e8h,0d3h,00h
+	db	0bfh,4eh,04h,0b9h,40h,00h,0b8h,7fh,7fh,0fch,80h
+	db	25h,0f0h,21h,45h,09h,20h,45h,0bh,83h,0c7h,20h
+	db	0e2h,0f2h,0c7h,06h,43h,03h,4eh,0ch,0c6h,06h,4ah
+	db	03h,08h,0c6h,06h,49h,03h,0ffh,0c3h,1eh,07h,0c7h
+	db	06h,41h,03h,4eh,04h,0b9h,40h,00h,0fch,51h,8bh
+	db	36h,3ah,03h,8bh,3eh,41h,03h,8bh,0eh,3eh,03h,0f3h
+	db	0a6h,59h,74h,09h,83h,06h,41h,03h,20h,0e2h,0e7h
+	db	0ch,0ffh,0c3h,8bh,0eh,2eh,03h,2bh,0ceh,03h
+	db	36h,47h,03h,2bh,0ffh,8eh,06h,45h,03h,0fch,0f3h
+	db	0a4h,0a1h,30h,03h,01h,06h,45h,03h,0c3h,2bh,0c0h
+	db	8eh,0c0h,0b8h,00h,04h,26h,80h,3eh,0ffh,7dh,01h
+	db	75h,03h,0b8h,00h,08h,0a3h,2eh,03h,0b1h,04h,0d3h
+	db	0e8h,0a3h,30h,03h,0b1h,05h,0d3h,0e8h,0a2h,32h,03h
+	db	0c3h,8bh,1eh,47h,03h,8bh,47h,03h,0a3h,36h,03h
+	db	0a3h,45h,03h,80h,7fh,09h,00h,74h,03h,8bh,47h,0ch
+	db	0a3h,38h,03h,0c3h,8bh,36h,3ah,03h,0feh,44h,0ch
+	db	0c3h,0e8h,03h,00h,0fbh,0ebh,0fdh,0ach,0e8h,6eh
+	db	00h,0ach,84h,0c0h,75h,0f8h,0c3h,0e8h,6ch,00h,0a1h
+	db	38h,03h,8eh,0d8h,8eh,0c0h,0b2h,00h,2eh,0ffh
+	db	2eh,34h,03h,0c6h,06h,4bh,03h,05h,0f6h,26h,32h,03h
+	db	0f6h,36h,33h,03h,8ah,0ech,0b1h,00h,0d1h,0e1h,81h
+	db	0c1h,4eh,0ch,89h,0eh,47h,03h,3ah,06h,49h,03h,75h
+	db	01h,0c3h,0a2h,49h,03h,0b6h,00h,04h,01h,8ah,0e8h
+	db	3ch,28h,72h,06h,0b5h,4fh,2ah,0e8h,0b6h,01h,1eh
+	db	07h,0b1h,01h,8bh,1eh,43h,03h,0a0h,4ah,03h,0b4h
+	db	02h,0cdh,13h,72h,01h,0c3h,0b4h,00h,0cdh,13h,0feh
+	db	0eh,4bh,03h,75h,0ech,0beh,0ah,04h,0e9h,88h,0ffh
+	db	0b7h,00h,0b4h,0eh,0cdh,10h,0c3h,0b4h,01h,0cdh,16h
+	db	74h,1ah,0b4h,00h,0cdh,16h,3ch,3fh,75h,12h,0beh
+	db	4ch,03h,0b9h,40h,00h,0ach,32h,0c1h,0e8h,0dfh,0ffh
+	db	0e2h,0f8h,0f6h,0e4h,0e2h,0fch,0c3h,00h,00h,00h
+	db	00h,00h,08h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	0ch,00h,02h
+	db	00h,00h,00h,00h,00h,00h,00h,00h
+	db	0ffh,00h,00h,'M537qNYQ',18h,58h,50h,15h
+	db	'@[[B',10h,'LAII',0bh,43h,5ah,08h,'ETJQDJU',00h
+	db	'kq=eto9zn8;:3',15h,'Uun`-Njfeiub',02h,09h,0eh
+	db	0fh,0bh,00h
+	db	'CPM     SYS',00h
+	db	00h
+	db	'CCPM    SYS',00h
+	db	'Loading CPM.SYS.',00h
+	db	'Loading CCPM.SYS.',00h
+	db	'*** Cannot find CPM.SYS or CCPM.SYS ***',0dh,0ah
+	db	'Try another diskette.',0dh,0ah,00h
+	db	0dh,0ah,0ah
+	db	'*** Error while reading System File ***',0dh,0ah
+	db	'Try another diskette.',0dh,0ah,00h
+nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
+	db	00h
+copymemmsg	db	' Memory not available for Copying ',00h
+mismatmsg	db	' Source and Destination data do not ma','tch '
+	db	00h
+errtab	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
+	db	09h,44h,0fh,08h,59h,0fh,04h,6dh,0fh,03h,80h,0fh
+	db	02h,9ah,0fh,01h,0b2h,0fh
+	db	' Drive does not respond ',00h
+	db	' Seek operation failed ',00h
+	db	' Disk Controller failure ',00h
+	db	' Disk Read Error ',00h
+	db	' DMA Boundary Error ',00h
+	db	' DMA Overrun Error ',00h
+	db	' Sector not found ',00h
+	db	' Disk is Write Protected ',00h
+	db	' Disk is not Formatted ',00h
+	db	' Bad Command ',00h
+fatalmsg	db	' Fatal Disk Error ',00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h
+	db	0dbh
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
 	end
