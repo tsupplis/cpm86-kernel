@@ -6,6 +6,11 @@
 
 
                 code cseg  
+                cli
+                mov     ax,ds
+                mov     ss,ax
+                mov     sp,offset stk + 128
+                sti
 
                 mov     cx,ds
                 mov     es,cx
@@ -25,31 +30,22 @@
                 call    cpm_set_time
                 cmp     ax,0
                 jnz     wrg_fmt
-just_show:
-                lea     si, msg_banner
-                call    print_str
+just_show:  
                 call    clear_keys
 just_show_time:
                 call    cpm_show_time
                 mov     cl, byte ptr disp_loop
                 or      cl, 0
                 jz      loop_just_show
-                call    quit
-loop_just_show:
+ 	            call    quit
+loop_just_show:  
                 call    wait_key
                 or      ax, 0
                 jnz     loop_show_done
-                lea     si, msg_cur_hide
-                call    print_str
 	            lea	    si, msg_back
                 call	print_str
-                call    cpm_show_time
-                lea     si, msg_cur_show
-                call    print_str
-                jmp     loop_just_show
+                jmp     just_show_time
 loop_show_done:
-                lea     si, msg_cur_show
-                call    print_str
                 call    clear_keys
                 call    quit
 wrg_os:
@@ -430,9 +426,6 @@ include baselib.a86
 
                 data dseg
 month_siz       db      0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
-msg_banner      db      13,10,'CP/M-86 TOD VER 1.0N (10.2026)',13,10,13,10,0
-msg_cur_hide    db      1Bh,'n',0
-msg_cur_show    db      1Bh,'m',0
 msg_wrg_os      db      'Requires CP/M-86 1.1',13,10,0
 msg_wrg_fmt     db      'Invalid Date & Time Format',13,10
                 db      'Please retry using:',13,10
@@ -446,6 +439,7 @@ tmz_sep         db      9
 tmz_time        db      '01:01:01'
                 db      0
 tm_buffer       rs      256
+stk         rw      64              ; 128 bytes program stack
                 db      0
 
                 end
