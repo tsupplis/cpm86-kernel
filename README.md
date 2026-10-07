@@ -211,7 +211,7 @@ unmodified:
 | `cbas86.cmd` | CBAS86 CBASIC Compiler | 1.4 | 1981-1983 | Digital Research |
 | `crun86.cmd` | CRUN86 CBASIC Runtime | 1.4 | 1981-1983 | Digital Research |
 | `pbasic.cmd` | Personal BASIC | 1.2 | 1983-1985 | Digital Research |
-| `mbasic86.cmd` | BASIC-86 (CP/M-86 patched) | Rev. 5.22 | 5-Mar-82 | Microsoft |
+| `mbasic86.cmd` | BASIC-86 (Reconstructed) | Rev. 5.50 | 2026 | Microsoft |
 
 ### 3. Tool reconstruction from source
 
