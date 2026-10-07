@@ -1314,13 +1314,18 @@ CMDPTR	dw	0,0
 	dseg
 	org	800h
 ;
+;  MENUSIG/SUBNAM: signature checked by menu.cmd (os.asm ccpseg) before it
+;  writes MDSUBE (0805h) or reads CMBUFF (0009h): 'CMD' must stay at 0800h
+;  and '$$$' at 0807h. Moving this data area breaks menu.cmd's $$$.SUB
+;  hand-over (it then safely does nothing).
+MENUSIG:
 CODCMD:				;transient command type
 	db	'CMD'
 ;
 DDMASG	dw	0		;base page segment
 MDSUBE	db	0		;submit mode
 SUBFCB	db	0		;FCB for submit file
-	db	'$$$     SUB',0,0,0,0
+SUBNAM	db	'$$$     SUB',0,0,0,0
 	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 ;
 WKFCB	db	0		;FCB for work
