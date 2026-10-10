@@ -72,7 +72,7 @@ f16.mod: instr.obj dline.obj global.obj cm.obj cm2.obj
 	$(INTEL_PLM86) $^ debug 'optimize(2)' xref
 
 clean:
-	rm -f *.sys *.cmd *.obj *.sym *.lin *.lst *.mod *.mp1 *.mp2 *.loc
+	rm -f *.sys *.cmd *.obj *.sym *.lin *.lst *.mod *.mp1 *.mp2 *.loc *.h86
 
 .PHONY: all clean test
 
