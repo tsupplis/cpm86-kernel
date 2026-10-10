@@ -30,6 +30,8 @@ commands/**/*.mod
 commands/**/*.prn
 commands/dskmaint/*.bin
 commands/dskmaint/*.inc
+commands/asm80/*.hex
+commands/asm80/*.com
 extra/*.bin
 extra/*.obj
 extra/*.com
