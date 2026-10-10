@@ -321,8 +321,8 @@ clean-images:
 
 dist: disks.tar.gz
 
-disks.tar.gz: $(DIST_DISKS)
-	tar zcf $@ $(DIST_DISKS)
+disks.tar.gz: $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
+	tar zcf $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
     
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.
