@@ -32,6 +32,13 @@ DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
 BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
 DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 
+DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
+    cpm86-160-4.img \
+    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
+    cpm86-1440-at.img \
+	cpm86-exp-160-1.img cpm86-exp-160-1-at.img cpm86-exp-1440-at.img \
+	cpm86-720-at.img cpm86-exp-720-at.img
+
 # Tools that are the same whichever kernel the image carries.
 SHARED     = base/setup.cmd base/hdmaint.cmd \
              base/config.cmd base/print.cmd 
@@ -312,10 +319,11 @@ clean-images:
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img 
 
-dist: cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img \
-    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img cpm86-1440-at.img \
-	cpm86-exp-160-1.img cpm86-exp-160-1-at.img cpm86-exp-1440-at.img \
-	cpm86-720-at.img cpm86-exp-720-at.img
+dist: disks.tar.gz
+
+disks.tar.gz: $(DIST_DISKS)
+	tar zcf $@ $(DIST_DISKS)
+    
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.
 # Run after any change to pcbios.a86 to confirm parity with pcbioorg.a86.
