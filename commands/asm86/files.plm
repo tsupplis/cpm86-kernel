@@ -153,6 +153,7 @@ inbyte: proc (ptr) byte;
     i=0;
     call disk$select(x.disk);
     do while i < length(x.buffer);
+      call fill(end$of$file, 128, .x.buffer(i));
       call SET$DMA$ADDRESS (.x.buffer(i));
       IF (CH := READ$RECORD (.X.FCBBLOCK)) <> 0 THEN$DO
         IF CH = 1 THEN$DO
@@ -220,6 +221,7 @@ open$input: proc (ptr);
       x based ptr file$i$structure;
 
   x.bufptr=length(x.buffer);
+  call fill(end$of$file, length(x.buffer), .x.buffer);
   call disk$select(x.disk);
   IF LOW (VERSION) >= 30H THEN$DO
     IF OPEN$RO$FILE (.X.FCBBLOCK) <> 0FFH THEN RETURN;
@@ -316,6 +318,7 @@ end close$source;
 rewindsource: proc public;
   sourcefile.fcbblock(nr)=0;
   sourcefile.bufptr=length(sourcefile.buffer);
+  call fill(end$of$file, length(sourcefile.buffer), .sourcefile.buffer);
   if sourcefile.fcbblock(ex) <> 0 then$do
     sourcefile.fcbblock(ex)=0;
     sourcefile.fcbblock(s2)=0;

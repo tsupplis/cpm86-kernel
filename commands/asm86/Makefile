@@ -71,7 +71,12 @@ f16.mod: instr.obj dline.obj global.obj cm.obj cm2.obj
 %.obj: %.plm
 	$(INTEL_PLM86) $^ debug 'optimize(2)' xref
 
+test: $(TOOLS)
+	python3 test/test_line_eof.py
+
 clean:
 	rm -f *.sys *.cmd *.obj *.sym *.lin *.lst *.mod *.mp1 *.mp2 *.loc
+
+.PHONY: all clean test
 
 

@@ -26,6 +26,7 @@ dcl
 eoffound        byte,   /* true if end-of-file is found */
 lowercase       byte,   /* false if stringinput, otherwise true */
 crfound         byte,   /* true if previous input was CR */
+prevwascr       byte,   /* true if raw previous char was CR */
 printready      byte,   /* true if output line to be printed */
 stacksave       addr;   /* save of stack pointer */
 
@@ -52,27 +53,25 @@ end putprintchar;
 
 read$input: proc byte;
   dcl ch byte;
-  if eoffound then call exit;  /* unnormal exit */
+  if eoffound then return end$of$file;
                                /* read byte from file */
   if include$on then ch=inincludebyte; else ch=insourcebyte;
-  if ch=end$of$file then$do   /* test for end-of-file */
+  if (ch=end$of$file) or (ch=0) then$do   /* test for end-of-file */
+    prevwascr=false;
     eoffound=true;
+    ch=end$of$file;
   else$do
-    if crfound and ch=lf then$do /* ignore LF after CR */
+    if prevwascr and (ch=lf) then$do /* ignore LF after CR */
+      prevwascr=false;
       ch=space;
     else$do;
-      if ch=cr then$do    /* test for CR */
+      prevwascr=(ch=cr);
+      if (ch=cr) or (ch=lf) then$do    /* test for CR or bare LF */
         crfound=true;
+        ch=cr;
       else$do;
-        /* PATCH: treat bare LF (\n) as a line terminator, same as CR */
-        if ch=lf then$do
-          crfound=true;
-          ch=cr;
-        else$do;
-        /* END PATCH */
-          crfound=false;
-          call putprintchar(ch);
-        end$if;
+        crfound=false;
+        call putprintchar(ch);
       end$if;
     end$if;
   end$if;
@@ -132,7 +131,7 @@ stringr: proc;
   cont=true;
   do while cont;
     nextch=readinput;
-    do while nextch <> '''' and nextch <> cr;
+    do while (nextch <> '''') and (nextch <> cr) and not eoffound;
       call putaccum(nextch);
       nextch=read$input;
     end$while;
@@ -234,7 +233,7 @@ end identr;
         /* PUBLIC subroutines : */
 
 scaninit: proc public;
-  eofset,eoffound,crfound,lowercase,printready=false;
+  eofset,eoffound,crfound,prevwascr,lowercase,printready=false;
   CALL FILL (SPACE, SIZE (PREFIX), .PREFIX);
   CALL FILL (SPACE, LENGTH (ABSADDR), .ABSADDR);
   sourceptr,prefixptr=0;
@@ -280,9 +279,13 @@ scan: proc public;
       token.type=spec;
       if nextch='!' then accum(0) = cr;
       IF NEXTCH = ';' THEN$DO
-        DO WHILE ACCUM (0) <> CR;
+        DO WHILE (ACCUM (0) <> CR) AND NOT EOFFOUND;
           ACCUM (0) = READINPUT;
         END$WHILE;
+        IF ACCUM (0) <> CR THEN$DO
+          ACCUM (0) = CR;
+          CRFOUND = TRUE;
+        END$IF;
       END$IF;
       nextch=space;
       if crfound then$do
