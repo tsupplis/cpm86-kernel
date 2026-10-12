@@ -319,10 +319,10 @@ clean-images:
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img 
 
-dist: disks.tar.gz
+dist: disks.zip
 
-disks.tar.gz: $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
-	tar zcf $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
+disks.zip: $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
+	zip $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
     
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.
