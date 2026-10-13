@@ -909,6 +909,7 @@ getfile: procedure;
         k address,     /* " */
         m address,     /* " */
         kb byte,       /* byte counter */
+        n byte,        /* attribute names printed */
         lb byte,       /* byte counter */
         mb byte,       /* byte counter */
         (b,f) byte,    /* counters */
@@ -956,40 +957,87 @@ getfile: procedure;
         end multi16;
 
     declare
-        scase byte; /* status case # */
+        scase byte, /* 255 = display, 0 = option error, else set attributes */
+        amask byte; /* attributes to set: 1=ro 2=rw 4=sys 8=dir */
 
-
-    /* check for R/O or R/W in command buffer for 
-       compatibility with earilier STATs   */
-    check$slash: procedure;
-       dcl i byte;
-
-       i=0;
-          do while tbuff(i:=i+1) <> 0;
-          if tbuff(i)='R' then
-              if tbuff(i+1)='/' then
-                  accum(1) = tbuff(i+2);
-          end;
-        end check$slash;
-
+    /* parse the options in the command tail: [ro], [sys,ro], [size], 
+       $dir, $R/O ...  The CCP stops file names at ',', so the tail is
+       parsed here rather than taken from the second default FCB. */
     setfilestatus: procedure byte;
-            /* eventually, scase set r/o=0,r/w=1,dat=2,sys=3 */
         declare
             fstat(*) byte data('RO  RW  SYS DIR ');
-        if doll = ' ' then return false;
-        if doll = '$' then 
-            call move(4,.parm+1,.accum); /* $???? */
-        else
-            call move(4,.parm,.accum);   /* [???? */
-        if accum(0) = 'S' and accum(1) = 'I' then
-            return not (sizeset := true);
-        if accum(0) = 'R' then
-            call check$slash;
-        /* must be a parameter */
-        if (scase := match(.fstat,4)) = 0 then do;
+        declare (p, j, n, more) byte;
+
+        /* options are the second blank separated item of the tail */
+        p = 1;
+            do while tbuff(p) = ' ';
+            p = p + 1;
+            end;
+            do while tbuff(p) <> ' ' and tbuff(p) <> 0;
+            p = p + 1;
+            end;
+            do while tbuff(p) = ' ';
+            p = p + 1;
+            end;
+        if tbuff(p) = 0 then return false;
+        if tbuff(p) = '$' or tbuff(p) = '[' then p = p + 1;
+        amask,n = 0;
+        more = true;
+            do while more;
+                do while tbuff(p) = ',' or tbuff(p) = ' ';
+                p = p + 1;
+                end;
+            if tbuff(p) = 0 or tbuff(p) = ']' then more = false; else
+                do;
+                n = n + 1;
+                    do j = 0 to 3;
+                    accum(j) = ' ';
+                    end;
+                j = 0;
+                    do while tbuff(p) > ' ' and tbuff(p) <> ','
+                        and tbuff(p) <> ']';
+                    if j < 4 then
+                        do;
+                        accum(j) = tbuff(p);
+                        j = j + 1;
+                        end;
+                    p = p + 1;
+                    end;
+                if accum(0) = 'S' and accum(1) = 'I' then
+                    sizeset = true; else
+                    do;
+                    /* R/O and R/W for compatibility with earlier STATs */
+                    if accum(0) = 'R' and accum(1) = '/' then
+                        do;
+                        accum(1) = accum(2);
+                        accum(2) = ' ';
+                        end;
+                    if (j := match(.fstat,4)) = 0 then
+                        do;
+                        call print(.('Use [size] ',0));
+                        call printx(.attributes);
+                        scase = 0;
+                        return true;
+                        end;
+                    amask = amask or shl(1,j-1);
+                    end;
+                end;
+            end;
+        if n = 0 then
+            do;
             call print(.('Use [size] ',0));
             call printx(.attributes);
+            scase = 0;
+            return true;
             end;
+        if (amask and 3) = 3 or (amask and 12) = 12 then
+            do;
+            call print(.('Conflicting attributes',0));
+            scase = 0;
+            return true;
+            end;
+        if amask = 0 then return false; /* [size] only: list files */
+        scase = 1;
         return true;
         end setfilestatus;
 
@@ -1252,25 +1300,35 @@ getfile: procedure;
             call multi16;
             call crlf;
             call printfn;
-                do case scase;
-                /* set to r/o */
-                fcbv(rofile) = fcbv(rofile) or 80h;
-                /* set to r/w */
-                fcbv(rofile) = fcbv(rofile) and 7fh;
-                /* set to sys */
-                fcbv(infile) = fcbv(infile) or 80h;
-                /* set to dir */
-                fcbv(infile) = fcbv(infile) and 7fh;
-                end;
+                if (amask and 1) <> 0 then /* set to r/o */
+                    fcbv(rofile) = fcbv(rofile) or 80h;
+                if (amask and 2) <> 0 then /* set to r/w */
+                    fcbv(rofile) = fcbv(rofile) and 7fh;
+                if (amask and 4) <> 0 then /* set to sys */
+                    fcbv(infile) = fcbv(infile) or 80h;
+                if (amask and 8) <> 0 then /* set to dir */
+                    fcbv(infile) = fcbv(infile) and 7fh;
             /* place name into default fcb location */
             call move(16,fcbsa,fcba);
             fcb(0) = 0; /* in case matched user# > 0 */
             call setind; /* indicators set */
             call printx(.(' set to ',0));
-                do case scase;
-                call printx(.readonly);
-                call printx(.readwrite);
-                call printx(.system);
+            n = 0;
+            if (amask and 1) <> 0 then
+                do; call printx(.readonly); n = 1; end;
+            if (amask and 2) <> 0 then
+                do;
+                if n <> 0 then call printx(.(', ',0));
+                call printx(.readwrite); n = 1;
+                end;
+            if (amask and 4) <> 0 then
+                do;
+                if n <> 0 then call printx(.(', ',0));
+                call printx(.system); n = 1;
+                end;
+            if (amask and 8) <> 0 then
+                do;
+                if n <> 0 then call printx(.(', ',0));
                 call printx(.directory);
                 end;
             l = l + 1;
