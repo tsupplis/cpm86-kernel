@@ -35,6 +35,47 @@ Two further BIOSes target the V20 MBC, sharing the same CCP and BDOS:
 | `cpmv20.sys` | V20 MBC, 8088 mode (`mbcv20.a86`) |
 | `cpm816.sys` | V20 MBC, mixed 8080/8088 mode with CP/M-80 compatibility (`mbc816.a86`) |
 
+#### Kernel patches
+
+Patches were recovered by comparing the sources with the notes in `patching/`: `patch-drcpm86.txt` (Digital Research patches 01–15), `annotations.txt` (annotated IBM PC/XT 1.1 `cpm.h86`, which lists the patches present in the release), `at-patch.txt` and `y2k-patch.txt`. Local changes are marked `Ts:` in the sources, and addresses are listed in `mapping.md`. All patched code sits in the patch areas (`0A00h`–`0A7Fh` in BDOS, `09FAh`/`0A40h` in CCP) or in place, so the layout of the rest of the kernel is unchanged.
+
+**Digital Research BDOS patches** (`bdosorg.a86`, shared by `bdos.a86` and `bdosexp.a86`)
+
+| Patch | Function | Where | What it does |
+| --- | --- | --- | --- |
+| 01 | 47 Chain | `MCHAIN` | Copy loop stops on the terminating 0 (`STOSB` / `OR AL,AL` / `JZ`), and the length is stored in the CCP buffer after `POP DS`. |
+| 06 | 17, 18 Search | `DRCOPY` | Directory record is copied to the user DMA address using `DMASEG` (`MOV ES,DMASEG`). |
+| 07 | 12 Version | `BDOSB` | `XOR AX,AX` clears the result, so `BH` is 0 on return. |
+| 08 | 59 Load | `MLOADP`, `MLOADK` (`0A20h`) | `PUSH ES` and the FCB offset saved in `UFCBOF`; stub restores `INSTOF` and `ES`. Fixes loads with a drive in the FCB overwriting memory. |
+| 10 | all | `BDOSBC` (`0A50h`) | Out-of-range function code returns `0FFFFh` in `AX`/`BX`. |
+| 11 | 59 Load | `MLOADQ` (`0A30h`) | Failed (absolute memory denied) load returns `0FFFFh` in `AX`. |
+| 13 | internal calls | `PATCH13` (`0A00h`), hooked at `BDOSIS` | Internal BDOS call saves and restores `AFWFCB` and `FLOMOD`, so a Function 59 load no longer overwrites memory. |
+| 15 | 59 Load | `PATCH15` (`0A60h`), hooked at `STLDBL` | Data group with an absolute base (EXTRA/STACK segments) uses that base instead of `AX`. |
+
+Patch 15 is not in the PC/XT release; patches 08, 10 and 11 are installed there at different addresses. The sources use the layout of the Digital Research notes.
+
+**Digital Research patches outside the kernel**: 03 `gendef`, 04 and 05 `ed`, 09 `pip` and 12 `submit` are applied to the tools (see Tools). 02 (`LDCOPY`) and 14 (sample BIOS `TRACK.A86`) are not part of this kernel.
+
+**CCP** (`ccporg.a86`)
+
+| Patch | Where | What it does |
+| --- | --- | --- |
+| Short-line `DIR` (`DIRPAT`, `0A40h`) | `DIROUD` → `DIRPAT` | On screens narrower than 60 columns (`CONWID`) `DIR` shows two columns instead of four. Present in the PC/XT release; not a numbered Digital Research patch. |
+| Submit out of home (`09FAh`) | `PATCHSUBMITSELDSK`, called from `RDCOMN` and `DELSUS` | The submit file is accessed on the current drive instead of switching to drive A. Present in the PC/XT release. |
+| No submit interrupt | `RDCOMN`, after `CHKCIT` | `JZ RDCOMD` becomes `JMPS RDCOMD`: a key press no longer cancels a running submit file. Local. |
+
+**Other kernel changes**
+
+| Patch | Where | What it does |
+| --- | --- | --- |
+| Reference alignment | `IDCODE` (`ccporg.a86`), user ID bytes at `0B00h` (`bdosorg.a86`) | OEM code, version and serial bytes set to the values of the reference `cpm.sys`. Local. |
+| Console abort order | `CONSTA` | `MRSDSY` is called before the `CNUMCB` test, as in the original XT code. Local. |
+| User 0 system-file match (CP/M interop) | `SRDRNZ` in `bdos.a86`, `bdosexp.a86`, `bdosorg.a86` | When searching user 0 for a `SYS` file from another user area, BDOS also required the S1 byte (`BC=S1`) of the FCB to be zero, so system commands in user 0 were not found and CP/M-80-style programs could not run them. This is a kernel bug. The S1 test (`inc bx` / `cmp byte ptr [bx],0` / `jnz SRDRNT`) is removed and replaced by `nop`s, so the code size and all following addresses are unchanged. Local. |
+
+**BIOS** (`pcbioorg.a86`): the AT patch (the two interrupt vector clearing loops use `INC DI` instead of `STOSW`), the year 2000 patch (`BCENT` is `'20'`), and a local patch that falls back to 80-column colour text instead of 40-column text.
+
+The PC/XT release also contains a patch at `0A3Ah` for Functions 56–58 (free memory), listed in `annotations.txt`. It is not present in these sources.
+
 ### 2. Tools
 
 The CP/M-86 command set is available both as patched/original binaries (`base/`) and as reconstructed source builds (`commands/`). The table below shows the status of each tool in both dimensions.
