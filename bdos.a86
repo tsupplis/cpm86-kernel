@@ -2890,9 +2890,17 @@ SRDRNF:				;not found end
 SRDRNZ:				;user 0 miss match file
 	sahf
 	jnz	SRDRNT			;extent miss match
-	inc	bx
-	cmp	byte ptr [bx],0
-	jnz	SRDRNT			;miss match
+    ; Ts: disable checking Bc=S1
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
+	;inc	bx
+	;cmp	byte ptr [bx],0
+	;jnz	SRDRNT			;miss match
+    ; Ts: end of patch
 	mov	si,DIRCNT
 	mov	SYSCNT,si		;save matched directory count
 SRDRNT:
