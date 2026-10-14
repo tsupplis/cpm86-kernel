@@ -94,6 +94,9 @@ dpb$word: procedure (dpbindex) address external;
   declare dpbindex byte;
 end dpb$word;
 
+count$free: procedure address external;
+end count$free;
+
 dpb$byte: procedure (dpbindex) byte external;
   declare dpbindex byte;
 end dpb$byte;
@@ -269,28 +272,20 @@ getfilesize: procedure(fcb);
 
 
 getfreesp: procedure(d);
-    /* Count free blocks from the allocation vector (fn 27).  MP/M's fn 46
-       returns free space directly, but it is not implemented by the CP/M-86
-       1.1 BDOS: it falls in the 41-46 dispatch gap and lands on write random
-       with zero fill, which would write to disk using the drive number as an
-       FCB address.  Both fn 27 and the DPB refer to the currently selected
-       drive, which the caller has already selected via select$disk. */
+    /* Free blocks of the selected drive, counted by count$free in dpb86
+       (compact model: fn 27 returns the allocation vector as ES:BX, which a
+       small model POINTER cannot hold).  MP/M's fn 46 returns free space
+       directly, but it is not implemented by the CP/M-86 1.1 BDOS: it falls
+       in the 41-46 dispatch gap and lands on write random with zero fill,
+       which would write to disk using the drive number as an FCB address.
+       The caller has already selected the drive via select$disk. */
     declare d byte;
-    declare allocp pointer;
-    declare alloc based allocp (1) byte;
-    declare (i,nfree) address;
     declare b3a address,
             b3 based b3a structure (lword address, hbyte byte);
 
-    allocp = mon4(27,0);
-    nfree = 0;
-    do i = 0 to dpb$word(blkmax$w);   /* a zero bit is a free block */
-        if (rol(alloc(shr(i,3)),(i and 111b)+1) and 1) = 0 then
-            nfree = nfree + 1;
-        end;
     b3a = .buff;
     b3.hbyte = 0;
-    b3.lword = nfree;
+    b3.lword = count$free;
     end getfreesp;
 
 declare
@@ -807,6 +802,20 @@ prcount: procedure(fixed);
     call printchar('k');
     end prcount;
 
+prtotal: procedure;
+    /* print the capacity of the selected drive in kbytes */
+    declare b3a address,
+            b3 based b3a structure (lword address, hbyte byte);
+
+    b3a = .buff;
+    b3.hbyte = 0;
+    b3.lword = dpb$word(blkmax$w) + 1;   /* = # blocks */
+    call shl3byte(buffa);       /* blocks * records/block */
+    call shr3byte(buffa);       /* divide by 8 */
+    call p3byte(buffa,true);   /* padded to align with the free space */
+    call printchar('k');
+    end prtotal;
+
 pralloc: procedure;
     /* print allocation for current disk */
     call crlf;
@@ -837,8 +846,10 @@ prstatus: procedure;
             if low(rodisk) then
                 call printchar('O'); else
                 call printchar('W');
-            call printx(.(', Space: ',0));
+            call printx(.(', Free Space: ',0));
             call prcount(true);
+            call printx(.(' of',0));
+            call prtotal;
             end;
         login = shr(login,1); rodisk = shr(rodisk,1);
         d = d + 1;

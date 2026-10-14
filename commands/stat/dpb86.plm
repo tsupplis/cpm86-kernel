@@ -47,5 +47,20 @@ base$dpb: procedure public;
     k$per$block = shr(dpb$byte(blkmsk$b)+1 ,3);
 end base$dpb;
 
+/* count the free blocks of the selected drive from its allocation vector */
+count$free: procedure address public;
+    declare allocp pointer;
+    declare alloc based allocp (1) byte;
+    declare (i,nfree) address;
+
+    allocp = mon4(27,0);
+    nfree = 0;
+    do i = 0 to dpb$word(blkmax$w);   /* a zero bit is a free block */
+        if (rol(alloc(shr(i,3)),(i and 111b)+1) and 1) = 0 then
+            nfree = nfree + 1;
+        end;
+    return nfree;
+    end count$free;
+
 end dpb86;
 
