@@ -414,7 +414,7 @@ main (int argc, char **argv)
   if (NULL == image)
     fatal_load ("OUT OF MEMORY", TPA);
 
-  (void)printf ("CP/M 8080 HEXCOM\tVER 3.0N\n");
+  (void)printf ("CP/M 8080 HEXCOM VER 3.0N\n");
 
   (void)fflush (stdout);
   (void)fflush (stderr);
