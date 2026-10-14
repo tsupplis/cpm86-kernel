@@ -25,22 +25,21 @@ distinction is purely an assembler convention for separating code from data.
 | `0000h` | CCP image | `ccpexp.a86` | Loaded separately; label `CCP` defined here in `pcbioexp.a86` for WBOOT jump |
 | `0000h` | TOP | `ccpexp.a86` | Jump table: `CCPCLD` / `CCPABE` / `CCPHOT` |
 | `0009h` | CMBUFF | `ccpexp.a86` | 127-byte command input buffer |
-| `~0050h` | CCP code body | `ccpexp.a86` | Parser, built-in commands |
+| `008Bh` | CCP code body (`ENBDOS`) | `ccpexp.a86` | Parser, built-in commands |
 | `0800h` | CCP data (DSEG) | `ccpexp.a86` | Variables, FCBs, stack, tables |
 | `00DAh` | CCP helper | `ccpexp.a86` | `SUBMITSELDRV`, falls through to `SELDRV` |
 | `051Fh` | CCP inline code | `ccpexp.a86` | `DIRPAT` (TS patch), falls through to `DIROUP` |
 | `09C0h` | CCP patch area | `ccpexp.a86` | Reserved for future patches |
-| `0A00h` | BDOS patch area | `bdosexp.a86` | `PATCH13`, packed `MLOADQ`/`MLOADK`, `BDOSBC`, `PATCH15` (`0A00h`–`0A7Fh`) |
+| `0A00h` | BDOS patch area | `bdosexp.a86` | `PATCH13`, packed `MLOADQ`/`MLOADK`, `BDOSBC`, `PATCH15` (used `0A00h`–`0A53h`) |
 | `0A80h` | IXMAIN | `bdosexp.a86` | BDOS function dispatch table |
 | `0B00h` | BDOS image | `bdosexp.a86` | User ID bytes + official BDOS entry |
 | `0B06h` | BDOSEN | `bdosexp.a86` | Interrupt handler / BDOS dispatcher |
-| `~0B20h` | BDOS code body | `bdosexp.a86` | All 60 BDOS functions |
 | `2200h` | BDOS data (DSEG) | `bdosexp.a86` | Variables, buffers, system stack |
-| `24FFh` | End of BDOS | `bdosexp.a86` | — |
-| `2500h` | BIOS jump vector | `pcbioexp.a86` | 20 × JMP + config data + copyright |
-| `~2560h` | BIOS code body | `pcbioexp.a86` | Char I/O, disk I/O, interrupts |
-| `????h` | BIOS data (DSEG) | `pcbioexp.a86` | I/O vectors, drive tables, DPHs, disk parameters, stacks, buffers (`data_offset`) |
-| `????h` | INIT / once-only | `pcbioexp.a86` | Cold-start code + data overlaid on the disk sector buffer; freed after first boot (CSEG + DSEG at DSKBUF) (`DSKBUF` / `data_offst2`) |
+| `24F4h` | End of BDOS data | `bdosexp.a86` | Final `db 0`; `24F5h`–`24FFh` unused |
+| `2500h` | BIOS jump vector | `pcbioexp.a86` | 21 × JMP (`2500h`–`253Ch`), `rs 15` reserved, 6 config pointers (`254Eh`–`2559h`), copyright (`255Ah`–`257Dh`) |
+| `257Eh` | BIOS code body (`WBOOT`) | `pcbioexp.a86` | Char I/O, disk I/O, interrupts |
+| `32C5h` | BIOS data (DSEG) | `pcbioexp.a86` | I/O vectors, drive tables, DPHs, disk parameters, stacks, buffers (`data_offset` / `BIOS_DATA_RSV`) |
+| `3BE2h` | INIT / once-only | `pcbioexp.a86` | Cold-start code (`3BE2h`–`4062h`) overlaid on the disk sector buffer; freed after first boot (`DSKBUF` / `data_offst2`) |
 | `4980h` | HDDBUF | `pcbioexp.a86` | HDD sector buffer (512 bytes) |
 | `4BE2h` | DIRBUF | `pcbioexp.a86` | Directory scratch buffer (128 bytes) |
 | `4C62h` | CSV14+ | `pcbioexp.a86` | Allocation vectors, grow upward |
@@ -61,25 +60,30 @@ distinction is purely an assembler convention for separating code from data.
 
 ```
 0800h  CODCMD     'CMD' transient-type tag (3 bytes)
-0803h  DDMASG     base-page segment
+0803h  DDMASG     base-page segment (dw)
 0805h  MDSUBE     submit mode flag       ← referenced by BDOS as MDSUBE EQU 0805h
-0806h  SUBFCB     submit file FCB (36 bytes)
-082Ah  WKFCB      work FCB (36 bytes)
-084Eh  RWBUFF     128-byte sector read buffer + 2 spare bytes
-08D0h  BSDIRC     directory bias
-08D1h  USRCOD     user code
-08D2h  TRCMOD     transient command mode
-        RS 96
-0935h  STACK      CCP system stack
-0936h  WKBIOS     BIOS direct-call work block (9 bytes)
-093Fh  PNTCMD     command buffer pointer
-0941h  TPNCMD     temporary command buffer pointer
-0943h  CURDRV     current drive
-0944h  TDRVNU     temporary drive mode
-        indexed data, error strings, user-ID bytes …
-        MODIRE, MODDIR
-        IXRSRT     resident command routine index
+0806h  SUBFCB     submit file FCB (1 byte, then SUBNAM)
+0807h  SUBNAM     '$$$     SUB' + 4 zero bytes
+0816h  (zero fill, to 0827h)
+0827h  WKFCB      work FCB (36 bytes, to 084Ah)
+084Bh  RWBUFF     one-sector read buffer (128 bytes, to 08CAh)
+08CBh  (2 bytes, unused)
+08CDh  BSDIRC     bias of directory
+08CEh  USRCOD     user code
+08CFh  TRCMOD     transient command mode
+08D0h  (rs 96, to 092Fh)
+0930h  STACK      CCP system stack; WKBIOS at 0930h (9 = select disk, then dw 0, dw 1)
+0935h  PNTCMD     command buffer pointer (dw)
+0937h  TPNCMD     temporary command buffer pointer (dw)
+0939h  CURDRV     current drive
+093Ah  TDRVNU     temporary drive mode
+093Bh  IXTERM     index label (used by the CCP dispatch code)
+...    indexed data, error strings, user-ID bytes
+09AAh  IXRSRT    resident command routine index
+09B8h  MODIRE    other-side file exist mode
+09B9h  MODDIR    directory mode (0 non-system, 1 system file)
 ```
+
 
 ---
 
@@ -118,12 +122,13 @@ distinction is purely an assembler convention for separating code from data.
          TBUMCB (40B)                  used MCB buffer
          CNUMCB/PNUMCB/SYSMOD …       MCB management
          CERROR … CRODSK               error message strings
-         WKFCB (36B) + RS 164
+         WKFCB (36B) at 23C6h          working FCB or mcb (`org 23C6h`)
          STACK                         BDOS system stack
          INSTSG/INSTOF/FLINSD          entry stack save
          INPARA/OTPARA/INDSEG          call parameters
          DMAADD/DMASEG/CURDSK …       system data area
-         CONWID/PRNWID/CONCOL/PRNCOL  console/printer widths
+         CONWID/PRNWID/CONCOL/PRNCOL  console/printer widths (24E0h–24E3h)
+         rs 16, final db 0 at 24F4h
 ```
 
 ### BDOS error-message area
@@ -157,20 +162,21 @@ distinction is purely an assembler convention for separating code from data.
 
 | ORG value | Symbol | Description |
 |-----------|--------|-------------|
-| `249Ah` | `USRCOD` | Current user number |
-| `24A4h` | `MODABT` | BDOS abort mode flag |
-| `24ACh` | `CURDRV` | Current default drive |
-| `24D5h` | `CONWID` … `PRNCOL` | Console/printer widths and cursor positions |
+| `24A5h` | `USRCOD` | Current user number |
+| `24AFh` | `MODABT` | BDOS abort mode flag |
+| `24B7h` | `CURDRV` | Current default drive |
+| `24BDh` | `DHOUR` / `DMINUTE` / `DSECOND` | Clock block (hours, minutes, seconds) |
+| `24E0h` | `CONWID` … `PRNCOL` | Console/printer widths and cursor positions (`24E0h`–`24E3h`) |
 
 ### BIOS load-segment ORGs (CSEG / DSEG, load segment)
 
 | ORG value | Segment | First symbol | Description |
 |-----------|---------|--------------|-------------|
 | `0000h` (CCP_OFFSET) | CSEG | `CCP` | Label-only forward ref; no code emitted |
-| `2500h` (BIOS_CODE) | CSEG | *(jmp INIT)* | BIOS jump vector + code start |
-| `data_offset` ($) | DSEG | `BIOS_DATA_RSV` | Main BIOS data area, contiguous with code |
-| `DSKBUF` ($) | CSEG | `INIT` | Once-only cold-start code, overlays disk buffer |
-| `data_offst2` ($) | DSEG | `SIGNON` | INIT data area, also overlays disk buffer |
+| `2500h` (BIOS_CODE) | CSEG | `INIT` jmp (`2500h`) | BIOS jump vector; code body starts at `WBOOT` `257Eh` |
+| `32C5h` (data_offset) | DSEG | `BIOS_DATA_RSV` | Main BIOS data area, contiguous with code (`rs 75` reserved first) |
+| `3BE2h` (DSKBUF) | CSEG | `INIT` | Once-only cold-start code, overlays disk buffer |
+| `4063h` (data_offst2) | DSEG | `SIGNON` | INIT data area, also overlays disk buffer |
 | `4980h` | DSEG | `HDDBUF` | HDD sector buffer (512 bytes, fixed address) |
 | `4BE2h` | DSEG | `DIRBUF` | Directory scratch buffer (128 bytes) |
 | `4C62h` | DSEG | `CSV14` | Allocation vector for drive 4 (grows upward) |
@@ -194,7 +200,8 @@ distinction is purely an assembler convention for separating code from data.
 | Region | Start | Last byte | Next ORG | Slot (dec) | Used (dec) | Free (dec) | Hole range | Last symbol |
 |--------|-------|-----------|----------|------------|------------|------------|------------|-------------|
 | BDOS code (CSEG) | `0B00h` | `21F8h` | `2200h` | 5888 | 5881 | 7 | `21F9h`–`21FFh` | `MFLUSH` `RET` @ `21F8h` |
-| BDOS data (DSEG) | `2200h` | `24E9h` | `2500h` | 768 | 746 | 22 | `24EAh`–`24FFh` | final `DB 0` @ `24E9h` |
+| BDOS data (DSEG) | `2200h` | `24F4h` | `2500h` | 768 | 757 | 11 | `24F5h`–`24FFh` | final `DB 0` @ `24F4h` |
+| BDOS data hole (before `WKFCB`) | `23BBh` | `23C5h` | `23C6h` | 11 | 0 | 11 | `23BBh`–`23C5h` | `CRODSK` `R/O$` @ `23B7h` |
 
 ### Packed patch areas — `09C0h`–`0A7Fh`
 
@@ -212,7 +219,7 @@ The BDOS patch area begins at `0A00h` and ends before `IXMAIN` at `0A80h`.
 
 Notes:
 - **`SUBMITSELDRV`** is a 3-byte helper at `00DAh` that falls through to `SELDRV` at `00DDh`; its two callers resolve to `00DAh`.
-- **`DIRPAT`** is now inlined at `051Fh`–`0526h` and falls through to `DIROUP`; its former separate jump and upper-code placement are gone.
+- **`DIRPAT`** is inlined at `051Fh`–`0527h` and falls through to `DIROUP` at `0528h`.
 - The upper CCP patch area begins at `09C0h` and currently has 64 bytes free through `09FFh`.
 - **`PATCH13`** and the packed `MLOADQ`/`MLOADK`/`BDOSBC` block are full. `PATCH15` occupies `0A40h`–`0A53h`, leaving 44 bytes free at `0A54h`–`0A7Fh`.
 - **`IXMAIN`** contains 54 DW dispatch entries (`0A80h`–`0AEBh`, 108 bytes) + `MRTVNO` (5 bytes @ `0AECh`) + `MGTSAD` (6 bytes @ `0AF1h`) = 119 bytes used.
@@ -222,10 +229,10 @@ Notes:
 
 | Symbol | Start | End+1 | Next ORG | Gap (dec) | Gap (hex) | Hole range | Notes |
 |--------|-------|-------|----------|-----------|-----------|------------|-------|
-| `CFG_PFKTBL` | `47F0h` | `4980h` | `4980h` | 0 | — | — | RS 400, ends exactly at `HDDBUF` |
+| `CFGPFKTBL` | `47F0h` | `4980h` | `4980h` | 0 | — | — | RS 400, ends exactly at `HDDBUF` |
 | `HDDBUF` | `4980h` | `4B80h` | `4BE2h` | 98 | `62h` | `4B80h`–`4BE1h` | Reserved padding — original DRI layout |
 | `DIRBUF` | `4BE2h` | `4C62h` | `4C62h` | 0 | — | — | RS 128, ends exactly at `CSV14` |
 
 - The **98-byte gap** (`4B80h`–`4BE1h`) is present in the original Digital Research binary, confirmed unreferenced in all `.lst` files, and must not be used.
-- `DSKBUF`/`INIT` overlay: INIT code+data spans `3BE2h`–`4062h` (**481 bytes**), placed in the disk-buffer area and reclaimed after first boot.
+- `DSKBUF`/`INIT` overlay: INIT code+data spans `3BE2h`–`4062h` (**1153 bytes**, `481h`), placed in the disk-buffer area and reclaimed after first boot.
 
