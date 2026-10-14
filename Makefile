@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys
+all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys commands
 
 # 320K disks store side 1 in reverse cylinder order (pcbios.a86 SETUP_INTREG),
 # so cpmtools has to work on an untwisted copy that is twisted back at the end.

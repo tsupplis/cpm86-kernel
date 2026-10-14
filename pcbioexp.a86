@@ -2630,7 +2630,7 @@ PRNBOS:
 	cbw
 	xchg	ax,cx			;  into CX
 	mov	dx,1800h		; Cursor position [Row:24,Col:00]
-	mov	bx,000Ch		; Display page 0, char attrib 0Ch (bright red)
+	mov	bx,000Eh		; Display page 0, char attrib 0Eh (bright yellow)
 ;
 PRNBOS1:
 	lodsb				; Get character
