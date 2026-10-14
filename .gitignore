@@ -33,6 +33,8 @@ commands/dskmaint/*.bin
 commands/dskmaint/*.inc
 commands/asm80/*.hex
 commands/asm80/*.com
+commands/hexcom/*.hex
+commands/hexcom/*.com
 extra/*.bin
 extra/*.obj
 extra/*.com

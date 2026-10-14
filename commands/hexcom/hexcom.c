@@ -19,7 +19,11 @@
  *
  * Reads base.hex and writes base.com. Absolute memory image from the lowest
  * to the highest loaded address, padded up to a CP/M record boundary with
- * 0x00, and prints the same report and the same diagnostics as the original.
+ * 0x1A, and prints the same report and the same diagnostics as the original.
+ *
+ * The image is built one 4K window at a time: base.hex is parsed once to
+ * validate it and find the address range, then once more per window. This
+ * keeps memory use fixed regardless of the load address range.
  */
 
 /******************************************************************************/
@@ -33,11 +37,12 @@
 #define TPA 0x100        /* CP/M transient program area base address */
 #define RECSZ 128        /* CP/M record (sector) size                */
 #define ADDRSP 0x10000UL /* 64K address space                        */
+#define WINSZ 0x1000UL   /* conversion window: 4K of image at a time */
 
 /******************************************************************************/
 
-static unsigned char *image;
-static size_t imagesz;
+static unsigned char *image;  /* WINSZ-byte window of the load image */
+static unsigned long win_base; /* absolute address of image [0]       */
 
 /******************************************************************************/
 
@@ -262,113 +267,21 @@ static char srcname [300];
 static char dstname [300];
 static unsigned char data [256];
 
-int
-main (int argc, char **argv)
+/*
+ * Parse the whole HEX file from its start (the caller opens it fresh).
+ * With store == 0 the file is validated and the first/last address and byte
+ * count are gathered. With store != 0 only the bytes that fall inside the
+ * current window are copied into image.
+ */
+
+static void
+scan_hex (FILE *src, int store)
 {
-  char *dot;
-  const char *hnp;
-  FILE *src;
-  FILE *out;
-  unsigned long span, records;
-  unsigned long try_size;
-
-  memset(data,0,sizeof(data));
-  image = NULL;
-  imagesz = 0;
-
-  try_size = ADDRSP;
-
-#ifndef __CPM__
-# ifndef __VBCC__
-  /* Flawfinder: ignore */ /* False positive CWE-807/CWE-20 */
-  hnp = getenv ("HEXCOM_NO_PAD");
-# else
-  hnp = "1";
-# endif
-#endif
+  unsigned addr;
+  int c, ok, ll, tt, i, sum, cc;
 
   for (;;)
     {
-      if ((unsigned long)(size_t)try_size == try_size)
-        {
-          imagesz = (size_t)try_size;
-          image = (unsigned char *)calloc (1, imagesz);
-
-          if (NULL != image)
-            break;
-        }
-
-      if (ADDRSP == try_size)
-        try_size = 0xFFFFUL;
-      else if (try_size > 0x1000UL)
-        try_size -= 0x400UL;
-      else
-        break;
-    }
-
-  if (NULL == image)
-    fatal_load ("OUT OF MEMORY", TPA);
-
-
-  (void)printf ("HEXCOM\tVERS: 3.00\n");
-
-  (void)fflush (stdout);
-  (void)fflush (stderr);
-
-  if (argc < 2 || strlen (argv [1]) >= sizeof (base))
-    {
-      (void)fprintf (stderr,
-        "Copyright (c) 2026 Jeffrey H. Johnson <johnsonjh.dev@gmail.com>\n"
-        "\n"
-        "Usage:\n"
-        "  hexcom <basename>  (Reads basename.hex, writes basename.com)\n"
-#ifndef __CPM__
-# ifndef __VBCC__
-        "\n"
-        "Set 'HEXCOM_NO_PAD=1' in the environment to disable record padding.\n"
-# endif
-#endif
-        "\n");
-
-      /*LINTED E_CONSTANT_CONDITION*/
-      FREE (image);
-
-      return 1;
-    }
-
-  (void)strncpy (base, argv [1], sizeof (base) - 1);
-  base [sizeof (base) - 1] = '\0';
-  dot = strrchr (base, '.');
-
-  if (NULL != dot && (0 == strcmp (dot, ".hex") || 0 == strcmp (dot, ".HEX")))
-    *dot = '\0';
-
-  (void)xstrcpy(srcname, base, sizeof (srcname));
-  (void)xstrcat(srcname, ".hex", sizeof (srcname));
-
-  (void)xstrcpy(dstname, base, sizeof (dstname));
-  (void)xstrcat(dstname, ".com", sizeof (dstname));
-
-  src = fopen (srcname, "rb");
-
-  if (NULL == src)
-    fatal_load ("CANNOT OPEN SOURCE FILE", TPA);
-
-  /*
-   * The original creates the output file before reading, so a malformed HEX
-   * leaves an empty .com behind; opening it here reproduces that behavior!
-   */
-
-  out = fopen (dstname, "wb");
-
-  if (NULL == out)
-    fatal_load ("DIRECTORY FULL", TPA);
-
-  for (;;)
-    {
-      unsigned addr;
-      int c, ok, ll, tt, i, sum, cc;
-
       do
         c = fgetc (src);
       while (':' != c && EOF != c && 0x1A != c);
@@ -417,7 +330,7 @@ main (int argc, char **argv)
       if (ll > 0 && addr < TPA)
         fatal_load ("LOAD ADDRESS LESS THAN 100", addr);
 
-      if (ll > 0 && !have_first)
+      if (!store && ll > 0 && !have_first)
         {
           first_addr = addr;
           have_first = 1;
@@ -447,29 +360,115 @@ main (int argc, char **argv)
         record_error ("CHECKSUM ERROR ", addr,
                       (addr + (unsigned)ll) & 0xFFFF, data, ll);
 
-      for (i = 0; i < ll; i++)
+      if (store)
         {
-          unsigned addr_masked = (addr + (unsigned)i) & 0xFFFF;
+          for (i = 0; i < ll; i++)
+            {
+              unsigned long a =
+                ((unsigned long)addr + (unsigned long)i) & 0xFFFFUL;
 
-          if ((size_t)addr_masked >= imagesz)
-            fatal_load ("LOAD ADDRESS TOO HIGH", addr_masked);
-
-          image [addr_masked] = data [i];
+              if (a >= win_base && a < win_base + WINSZ)
+                image [a - win_base] = data [i];
+            }
         }
+      else
+        {
+          if (ll > 0 && (addr + (unsigned)ll - 1) > last_addr)
+            last_addr = (addr + (unsigned)ll - 1);
 
-      if (ll > 0 && (addr + (unsigned)ll - 1) > last_addr)
-        last_addr = (addr + (unsigned)ll - 1);
-
-      total_bytes += (unsigned)ll;
+          total_bytes += (unsigned)ll;
+        }
     }
 
   if (ferror (src))
+    fatal_load ("DISK READ ERROR",
+                (have_first ? first_addr : (unsigned)TPA));
+}
+
+/******************************************************************************/
+
+int
+main (int argc, char **argv)
+{
+  char *dot;
+  const char *hnp = NULL;
+  FILE *src;
+  FILE *out;
+  unsigned long span, records, pad_start, out_end, pos, win_end;
+
+  memset (data, 0, sizeof (data));
+  image = NULL;
+  win_base = 0;
+
+#ifndef __CPM__
+# ifndef __VBCC__
+  /* Flawfinder: ignore */ /* False positive CWE-807/CWE-20 */
+  hnp = getenv ("HEXCOM_NO_PAD");
+# else
+  hnp = "1";
+# endif
+#endif
+
+  image = (unsigned char *)malloc (WINSZ);
+
+  if (NULL == image)
+    fatal_load ("OUT OF MEMORY", TPA);
+
+  (void)printf ("CP/M 8080 HEXCOM\tVER 3.0N\n");
+
+  (void)fflush (stdout);
+  (void)fflush (stderr);
+
+  if (argc < 2 || strlen (argv [1]) >= sizeof (base))
     {
-      (void)fclose (src);
-      fatal_load ("DISK READ ERROR",
-                  (have_first ? first_addr : (unsigned)TPA));
+      (void)fprintf (stderr,
+        "Copyright (c) 2026 Jeffrey H. Johnson <johnsonjh.dev@gmail.com>\n"
+        "\n"
+        "Usage:\n"
+        "  hexcom <basename>  (Reads basename.hex, writes basename.com)\n"
+#ifndef __CPM__
+# ifndef __VBCC__
+        "\n"
+        "Set 'HEXCOM_NO_PAD=1' in the environment to disable record padding.\n"
+# endif
+#endif
+        "\n");
+
+      /*LINTED E_CONSTANT_CONDITION*/
+      FREE (image);
+
+      return 1;
     }
 
+  (void)strncpy (base, argv [1], sizeof (base) - 1);
+  base [sizeof (base) - 1] = '\0';
+  dot = strrchr (base, '.');
+
+  if (NULL != dot && (0 == strcmp (dot, ".hex") || 0 == strcmp (dot, ".HEX")))
+    *dot = '\0';
+
+  (void)xstrcpy(srcname, base, sizeof (srcname));
+  (void)xstrcat(srcname, ".hex", sizeof (srcname));
+
+  (void)xstrcpy(dstname, base, sizeof (dstname));
+  (void)xstrcat(dstname, ".com", sizeof (dstname));
+
+  src = fopen (srcname, "r");
+
+  if (NULL == src)
+    fatal_load ("CANNOT OPEN SOURCE FILE", TPA);
+
+  /*
+   * The original creates the output file before reading, so a malformed HEX
+   * leaves an empty .com behind; opening it here reproduces that behavior!
+   */
+
+  out = fopen (dstname, "w");
+
+  if (NULL == out)
+    fatal_load ("DIRECTORY FULL", TPA);
+
+  scan_hex (src, 0);
   (void)fclose (src);
 
   if (!have_first)
@@ -480,22 +479,9 @@ main (int argc, char **argv)
 
   span = ((last_addr >= first_addr) ? (last_addr - first_addr + 1) : 0);
   records = (span + RECSZ - 1) / RECSZ;
-
-  if (NULL == hnp)
-    {
-      unsigned long pad_start = (unsigned long)first_addr +
-                                (unsigned long)span;
-
-      unsigned long pad_end = (unsigned long)first_addr +
-                              (unsigned long)records * RECSZ;
-
-      if (pad_end > (unsigned long)imagesz)
-        pad_end = (unsigned long)imagesz;
-
-      if (pad_start < pad_end)
-        (void)memset (image + (size_t)pad_start, 0x1A,
-                      (size_t)(pad_end - pad_start));
-    }
+  pad_start = (unsigned long)first_addr + span;
+  out_end = (unsigned long)first_addr +
+            ((NULL == hnp) ? records * RECSZ : span);
 
   (void)printf ("FIRST ADDRESS %04X\n", first_addr);
   (void)printf ("LAST  ADDRESS %04X\n", last_addr);
@@ -505,29 +491,43 @@ main (int argc, char **argv)
   (void)fflush (stdout);
   (void)fflush (stderr);
 
-  {
-    unsigned long ul_write_size;
+  if (out_end > ADDRSP)
+    fatal_load ("IMAGE TOO LARGE", first_addr);
 
-    ul_write_size = ((NULL == hnp) ? (unsigned long)records * RECSZ
-                                   : (unsigned long)span);
+  for (pos = first_addr; pos < out_end; pos = win_end)
+    {
+      unsigned long p;
+      size_t n;
 
-    if (ul_write_size > 0)
-      {
-        size_t write_size;
+      win_base = pos & ~(WINSZ - 1UL);
+      win_end = win_base + WINSZ;
 
-        if (ul_write_size >
-            ((unsigned long)imagesz - (unsigned long)first_addr))
-          fatal_load ("IMAGE TOO LARGE", first_addr);
+      if (win_end > out_end)
+        win_end = out_end;
 
-        write_size = (size_t)ul_write_size;
+      (void)memset (image, 0, (size_t)WINSZ);
 
-        if (fwrite (image + first_addr, 1, write_size, out) != write_size)
-          {
-            (void)fclose (out);
-            fatal_load ("DISK WRITE ERROR", first_addr);
-          }
-      }
-  }
+      src = fopen (srcname, "r");
+
+      if (NULL == src)
+        fatal_load ("CANNOT OPEN SOURCE FILE", TPA);
+
+      scan_hex (src, 1);
+      (void)fclose (src);
+
+      /* 0x1A fill after the last loaded byte, up to the record boundary */
+      for (p = ((pad_start > win_base) ? pad_start : win_base);
+           p < win_end; p++)
+        image [p - win_base] = 0x1A;
+
+      n = (size_t)(win_end - pos);
+
+      if (fwrite (image + (size_t)(pos - win_base), 1, n, out) != n)
+        {
+          (void)fclose (out);
+          fatal_load ("DISK WRITE ERROR", first_addr);
+        }
+    }
 
   if (0 != fclose (out))
     fatal_load ("CANNOT CLOSE FILE", first_addr);
