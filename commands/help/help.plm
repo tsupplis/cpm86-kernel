@@ -14,7 +14,7 @@ do;
     07 Oct 82  by Bruce Skidmore
 */
 
-$include(:f2:vaxcmd.lit)
+$include(vaxcmd.lit)
 
 declare plmstart label public;
 
@@ -315,9 +315,9 @@ page$check:
            line$cnt = 0;
            do while (line$cnt = 0);
               if low(version) >= 30H then
-                line$cnt = direct$con$io(0FFH);
+                line$cnt = direct$con$io(0FDH);
               else
-                line$cnt = direct$con$io(0FEH);
+                line$cnt = direct$con$io(0FFH);
            end;
            call print$console$buf(.(cr,'                             ',
                                                                   cr,'$'));

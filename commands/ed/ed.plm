@@ -57,7 +57,7 @@ DO;
 
 ****/
 
-$include (:f1:copyrt.lit)
+$include (copyrt.lit)
 
 declare
     mpmproduct literally '01h', /* requires mp/m */

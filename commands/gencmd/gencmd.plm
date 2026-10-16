@@ -766,58 +766,58 @@ get$switches: procedure;
   
 
    
- /* ARRIVE HERE FROM THE SYSTEM MONITOR, READY TO READ THE HEX TAPE */
+ /* arrive here from the system monitor, ready to read the hex tape */
 
- /* SET UP STACKPOINTER IN THE LOCAL AREA */
-DECLARE STACK(64) ADDRESS;
-SP = STACKPOINTER; STACKPOINTER = .STACK(LENGTH(STACK));
-LA = 0h;
+ /* set up stackpointer in the local area */
+declare stack(64) address;
+sp = stackpointer; stackpointer = .stack(length(stack));
+la = 0H;
 mbuffadr = .memory;
 t8080 = false;
 nozero = false;
 head = true;
 output$created = false;
 
-CALL PRINT(.('CP/M 8086 GENCMD VER 1.1N (10.2026)$'));
-CALL CRLF;
+call print(.('CP/M 8086 GENCMD VER 1.1N (10.2026)$'));
+call crlf;
 
-/* USAGE IF NO FILENAME GIVEN */
-IF FCBA(1) = ' ' THEN
-    DO;
-    CALL PRINT(.('USAGE: GENCMD name[.H86] [seg[switches]...]$'));
-    CALL PRINT(.('  seg:   DATA CODE EXTRA STACK X1..X4 8080 NZERO NHEAD$'));
-    CALL PRINT(.('  Baddr  base paragraph address (hex)$'));
-    CALL PRINT(.('  Mmin   minimum memory paragraphs (hex)$'));
-    CALL PRINT(.('  Xmax   maximum memory paragraphs (hex)$'));
-    CALL CRLF;
-    CALL SET$RETURN$CODE(0FF00H);
-    CALL BOOT;
-    END;
+/* usage if no filename given */
+if fcba(1) = ' ' then
+    do;
+    call print(.('USAGE: GENCMD name[.H86] [seg[switches]...]$'));
+    call print(.('  seg:   DATA CODE EXTRA STACK X1..X4 8080 NZERO NHEAD$'));
+    call print(.('  Baddr  base paragraph address (hex)$'));
+    call print(.('  Mmin   minimum memory paragraphs (hex)$'));
+    call print(.('  Xmax   maximum memory paragraphs (hex)$'));
+    call crlf;
+    call set$return$code(0FF00h);
+    call boot;
+    end;
 
-SBP = LENGTH(SBUFF);
-   /* SET UP THE SOURCE FILE */
-    CALL MOVE(.FCBA,.SFCB,33);
-    CALL MOVE(.('H86',0),.SFCB(9),4);
-    CALL OPEN(.SFCB);
-    IF DCNT = 255 THEN CALL PERROR(.('CANNOT OPEN SOURCE$'));
+sbp = length(sbuff);
+   /* set up the source file */
+    call move(.fcba,.sfcb,33);
+    call move(.('H86',0),.sfcb(9),4);
+    call open(.sfcb);
+    if dcnt = 255 then call perror(.('CANNOT OPEN SOURCE$'));
 
-    CALL MOVE(.('CMD'),.FCBA+9,3);
+    call move(.('CMD'),.fcba+9,3);
 
- /* REMOVE ANY EXISTING FILE BY THIS NAME */
- CALL DELETE(.FCBA);
- /* THEN OPEN A NEW FILE */
- CALL MAKE(.FCBA); CALL OPEN(.FCBA);
- IF DCNT = 255 THEN CALL PERROR(.('NO MORE DIRECTORY SPACE$')); ELSE
-        DO;
+ /* remove any existing file by this name */
+ call delete(.fcba);
+ /* then open a new file */
+ call make(.fcba); call open(.fcba);
+ if dcnt = 255 then call perror(.('NO MORE DIRECTORY SPACE$')); else
+        do;
         output$created = true;
         call ignore$filename;
         call parse$tail;
-        CALL RELOC;
-        CALL CLOSE(.FCBA);
-        IF DCNT = 255 THEN CALL PERROR(.('CANNOT CLOSE FILE$'));
+        call reloc;
+        call close(.fcba);
+        if dcnt = 255 then call perror(.('CANNOT CLOSE FILE$'));
         END;
 
- CALL SET$RETURN$CODE(0);
- CALL BOOT;
-END plmstart;
-END;
+ call set$return$code(0);
+ call boot;
+end plmstart;
+end;
