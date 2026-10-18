@@ -1248,6 +1248,10 @@ TRNCMK:
 	mov	cx,3
 	rep	movsb			;set 'cmd'  type
 	mov	dx,offset WKFCB
+	cmp	word ptr CMDHOOK,0	;hook installed?
+	jz	TRNCMD_STD		;no, run standard command search
+	jmp	word ptr CMDHOOK	;yes, jump to custom command hook
+TRNCMD_STD:
 	call	OPENW			;open command file
 	jnz	TRNCMO			;OK
 	call	SLCRDR			;not found so command error
@@ -1455,6 +1459,7 @@ IXRSRT:
 ;
 MODIRE	db	0		;other side file exist mode  0 not exist
 MODDIR	db	0		;directory mode  0 non-system  1 system file
+CMDHOOK	dw	0		;transient command hook (0 = standard CP/M-86)
 ;
 ;  Patch area
 ;

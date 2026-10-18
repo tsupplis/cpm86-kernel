@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys commands
+all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys commands extra
 
 # 320K disks store side 1 in reverse cylinder order (pcbios.a86 SETUP_INTREG),
 # so cpmtools has to work on an untwisted copy that is twisted back at the end.
@@ -98,7 +98,7 @@ endef
 commands:
 	$(MAKE) -C $(CMDDIR)
 
-extra:
+extra: 144feat-map
 	$(MAKE) -C extra
 
 cpmwk.img: base-160.img
@@ -233,9 +233,13 @@ cpm86-160-4.img: FTOOLS = $(BASICTOOLS)
 cpm86-160-4.img: base-160.img
 	$(flat_image)
 
+144feat-map: cpm.sys cpmexp.sys
+	python3 tools/gen_144feat_inc.py
+
 cpm.sys: cpm86.h86
 	cpm86_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
 	mv cpm86.cmd cpm.sys
+
 
 cpmorg.sys: cpm86org.h86
 	cpm86_gencmd cpm86org.h86 8080 "CODE[A51,M0000]"
@@ -322,7 +326,7 @@ clean-images:
 dist: disks.zip
 
 disks.zip: $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
-	zip $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
+	zip -j $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
     
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.
