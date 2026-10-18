@@ -1411,7 +1411,7 @@ MODDIR	db	0		;directory mode  0 non-system  1 system file
 ;  Equations of external labels
 ;
 				;24D8H	is system page ???
-Y24E0	equ	024E0h		;max column (conwid in BDOS)
+CONWID	equ	024E0h		;max column (conwid in BDOS)
 ;
 ;
 	cseg
@@ -1429,7 +1429,7 @@ PATCHSUBMITSELDSK:
 ;  Directory out patch for short line display
 ;
 DIRPAT:
-	cmp	byte ptr .Y24E0,60
+	cmp	byte ptr .CONWID,60
 	jc	DIRPAS			;short line
 	jmp	DIROUP
 ;

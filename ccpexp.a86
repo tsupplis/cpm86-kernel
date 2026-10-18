@@ -965,7 +965,7 @@ DIROUD:
 ;  Directory out patch for short line display
 ;
 DIRPAT:
-	cmp	byte ptr .Y24E0,60
+	cmp	byte ptr .CONWID,60
 	jnc	DIROUP			;long line
 	;Short line
 	and	al,01h
@@ -1466,7 +1466,7 @@ CMDHOOK	dw	0		;transient command hook (0 = standard CP/M-86)
 ;  Equations of external labels
 ;
 				;24D8H	is system page ???
-Y24E0	equ	024E0h		;max column (conwid in BDOS)
+CONWID	equ	024E0h		;max column (conwid in BDOS)
 ;
 ;
 ; Reserved upper CCP patch area.
