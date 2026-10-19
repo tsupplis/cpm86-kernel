@@ -1,459 +1,555 @@
-;***********************************************************
-;  SETUP.A86 - reconstructed from base/setup.cmd
-;  Skeleton from `a86tool.py scaffold`: the first instruction is real,
-;  the rest of the image is a raw db dump still to be decoded.
+;*****************************************************************************
 ;
-;  Build:   make
-;  Check:   make check
-;***********************************************************
+;	SETUP - CP/M-86 BIOS customization for the IBM PC and XT, version 1.2
+;	Copyright (C) 1983, Digital Research
+;
+;	Reconstructed from base/setup.cmd; assembles byte-identical.
+;
+;	Build: make setup.cmd
+;	Check: cmp setup.cmd ../../base/setup.cmd
+;
+;	Interactive BIOS options are stored in a 512-byte configuration sector
+;	and take effect at the next power-on or reset.  The sector begins with
+;	DDB2h and includes memory disk, startup command, FIDDS, disk timing,
+;	verification, sound and optional snapshots of live BIOS settings.
+;
+;	The XIOS pointer slots below belong to the shipped IBM PC BIOS ABI.
+;	The display uses its VT52 escapes; BIOS calls handle keyboard input,
+;	window clearing and direct hard disk access.
+;
+;*****************************************************************************
 
-; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	093ch
-image_end	equ	1e90h
-
-; One group so the CMD has a single CODE descriptor (the 8080 model),
-; but the data keeps its own segment.
+; Single CODE group (8080 model), with DS-relative symbols in the data segment.
 cgroup	group	code,data
 
 	cseg
 	org	100h
 
-start:
-	jmps	l0126
+; ---- BDOS / BIOS numbers -----------------------------------
+f_reset		equ	0
+f_conin		equ	1
+f_conout	equ	6
+f_constat	equ	11
+f_seldisk	equ	14
+f_dma		equ	26
+f_sysdata	equ	49
+f_bios		equ	50		; direct XIOS call through a parameter block
+f_dmaseg	equ	51
 
-l0102:
+i_bdos		equ	0e0h
+i_video		equ	10h
+i_disk		equ	13h
+i_keyb		equ	16h
+
+; Offsets of pointers inside the system data segment returned by BDOS 49.
+keytblptr	equ	0254eh		; two sets of ten 20-byte definitions
+serialptr	equ	02552h		; two serial-port parameter bytes
+iovecptr	equ	02554h		; five logical character-I/O assignment words
+
+; Absolute aliases for code-resident dispatch tables (fixed image addresses).  RASM otherwise adds
+; a CS override to a label operand, changing the original instruction bytes.
+cmdactsoff	equ	001bfh
+saveactsoff	equ	002b2h
+memactsoff	equ	00316h
+verifyactsoff	equ	0041ch
+stepactsoff	equ	00470h
+soundactsoff	equ	004e7h
+fiddsactsoff	equ	0053bh
+diskactsoff	equ	005efh
+
+; Bounds for tools/a86tool.py.
+data_org	equ	093ch
+image_end	equ	1e90h
+
+start:
+	jmps	begin
+
 	db	'Copyright (C) 1983, Digital Research'
 
-l0126:
+;-----------------------------------------------------------------------------
+; Entry: discard type-ahead, obtain the XIOS segment and load saved options.
+;-----------------------------------------------------------------------------
+begin:
 	mov	ax,cs
 	mov	ds,ax
-	call	l08f2
-	mov	cl,31h
-	int	0e0h
-	mov	word ptr d0b3b,es
-	call	l0730
-	call	l07a7
+	call	flushkb
+	mov	cl,f_sysdata
+	int	i_bdos
+	mov	word ptr xiossg,es
+	call	drawframe
+	call	loadsettings
 
-l013b:
-	call	l0709
-	mov	di,d0bef
-	call	l08c9
-	add	bx,d0bf1
+;-----------------------------------------------------------------------------
+; The key list and action table change together when the page changes.
+; getchoice returns a word-table displacement in BX.
+;-----------------------------------------------------------------------------
+mainloop:
+	call	showpage
+	mov	di,pagekeys
+	call	getchoice
+	add	bx,pageactions
 	call	word ptr [bx]
-	call	l0901
-	jmps	l013b
+	call	clrbody
+	jmps	mainloop
 
-l0150:
-d0150	dw	l019e,l0291,l02f5,l044f,l051a,l0185,l0646,l06b6
-d0160	dw	l03fb,l04c6,l05ce,l016c,l0646,l06b6
+;-----------------------------------------------------------------------------
+; Main page: F1..F6, F9 update, F10 exit.  Second page: F1..F4, F9, F10.
+;-----------------------------------------------------------------------------
+mainacts	dw	commandmenu,savemenu,memorymenu,stepmenu,fiddsmenu,secondpage,update,exitprog
+pageacts	dw	verifymenu,soundmenu,diskmenu,mainpage,update,exitprog
 
-l016c:
-	mov	word ptr d0bed,0bf5h
-	mov	word ptr d0bf1,0150h
-	mov	word ptr d0bef,0c2dh
-	mov	word ptr d0bf3,0c3dh
+;-----------------------------------------------------------------------------
+; Install the four descriptors for the main menu.
+;-----------------------------------------------------------------------------
+mainpage:
+	mov	word ptr pagetitle,offset maintitle
+	mov	word ptr pageactions,offset mainacts
+	mov	word ptr pagekeys,offset mainkeys
+	mov	word ptr pagebuttons,offset mainbuttons
 	ret
 
-l0185:
-	mov	word ptr d0bed,0bffh
-	mov	word ptr d0bf1,0160h
-	mov	word ptr d0bef,0c36h
-	mov	word ptr d0bf3,0cd2h
+;-----------------------------------------------------------------------------
+; Install the descriptors for the second page.
+;-----------------------------------------------------------------------------
+secondpage:
+	mov	word ptr pagetitle,offset secondtitle
+	mov	word ptr pageactions,offset pageacts
+	mov	word ptr pagekeys,offset secondkeys
+	mov	word ptr pagebuttons,offset secondbuttons
 	ret
 
-l019e:
-	mov	si,offset d0c42
-	mov	ax,0ddah
-	call	l0876
-	call	l01f3
-	mov	si,offset d0eac
-	call	l083d
+;-----------------------------------------------------------------------------
+; Power-on command line: enter, cancel, or return to the main menu.
+;-----------------------------------------------------------------------------
+commandmenu:
+	mov	si,offset cmdtitle
+	mov	ax,offset cmdhelp
+	call	showhelp
+	call	showcommand
+	mov	si,offset cmdbuttons
+	call	showoptions
 	mov	dh,0dh
-	call	l088e
-	mov	di,offset d0eee
-	call	l08c9
-	jmp	word ptr 01bfh[bx]
+	call	selectprompt
+	mov	di,offset cmdkeys
+	call	getchoice
+	jmp	word ptr cmdactsoff[bx]
 
-l01bf:
-d01bf	dw	l01c5,l01eb,l016c
+cmdacts	dw	newcommand,cancelcommand,mainpage
 
-l01c5:
+newcommand:
 	mov	cx,0b01h
-	call	l0904
-	mov	si,offset d0efd
+	call	clrwindow
+	mov	si,offset cmdentryhelp
 	mov	dx,0d05h
-	call	l0883
+	call	putlines
 	mov	dh,12h
-	mov	si,offset d0fae
-	call	l0891
+	mov	si,offset msgnewcommand
+	call	revcent
 	mov	dx,141dh
 	mov	cx,14h
-	mov	di,offset d094b
-	call	l0224
-	jmp	l019e
+	mov	di,offset bootcommand
+	call	editcommand
+	jmp	commandmenu
 
-l01eb:
-	mov	byte ptr d094b,00h
-	jmp	l019e
+cancelcommand:
+	mov	byte ptr bootcommand,00h
+	jmp	commandmenu
 
-l01f3:
-	mov	si,offset d0e8d
+;-----------------------------------------------------------------------------
+; Display at most 20 bytes; embedded CR is shown as the vertical bar glyph.
+;-----------------------------------------------------------------------------
+showcommand:
+	mov	si,offset msgcommand
 	mov	dx,0a0eh
-	call	l08a9
-	call	l0910
+	call	putat
+	call	reverseon
 	mov	cx,14h
-	mov	si,offset d094b
+	mov	si,offset bootcommand
 	cld
 	lodsb
 	test	al,al
-	jnz	l0213
-	mov	si,offset d0ef2
-	call	l08ac
-	jmps	l0221
+	jnz	cmdshow
+	mov	si,offset msgnone
+	call	puts
+	jmps	cmdshown
 
-l0213:
+cmdshow:
 	cmp	al,0dh
-	jnz	l0219
+	jnz	cmdput
 	mov	al,0b3h
 
-l0219:
-	call	l091d
+cmdput:
+	call	conout
 	lodsb
 	test	al,al
-	loopne	l0213
+	loopne	cmdshow
 
-l0221:
-	jmp	l0914
+cmdshown:
+	jmp	reverseoff
 
-l0224:
-	call	l08b6
+;-----------------------------------------------------------------------------
+; Edit at ES:DI, up to CX bytes, at position DX.  Ctrl-E inserts a CR;
+; Return stores CR,NUL, Backspace removes a byte.  A full buffer is left
+; unterminated, as in the shipped program; the display is length-limited.
+;-----------------------------------------------------------------------------
+editcommand:
+	call	gotoxy
 	mov	bx,cx
 
-l0229:
+editfill:
 	mov	al,5fh
-	call	l091d
-	loop	l0229
+	call	conout
+	loop	editfill
 	mov	cx,bx
-	call	l08b6
+	call	gotoxy
 	mov	al,6dh
-	call	l0916
+	call	escout
 
-l023a:
+editkey:
 	mov	al,20h
-	call	l091d
+	call	conout
 	mov	al,08h
-	call	l091d
-	call	l0936
+	call	conout
+	call	getraw
 	and	al,7fh
 	cmp	al,0dh
-	jz	l026f
+	jz	editdone
 	cmp	al,05h
-	jz	l0263
+	jz	editcr
 	cmp	al,08h
-	jz	l0275
+	jz	editback
 	cmp	al,20h
-	jc	l025c
+	jc	editbeep
 	stosb
-	jmps	l0268
+	jmps	editecho
 
-l025c:
+editbeep:
 	mov	al,07h
-	call	l091d
-	jmps	l023a
+	call	conout
+	jmps	editkey
 
-l0263:
+editcr:
 	mov	al,0dh
 	stosb
 	mov	al,0b3h
 
-l0268:
-	call	l091d
-	loop	l023a
-	jmps	l028c
+editecho:
+	call	conout
+	loop	editkey
+	jmps	editexit
 
-l026f:
+editdone:
 	stosb
 	mov	al,00h
 	stosb
-	jmps	l028c
+	jmps	editexit
 
-l0275:
+editback:
 	cmp	cx,bx
-	jz	l025c
+	jz	editbeep
 	inc	cx
 	dec	di
 	mov	al,5fh
-	call	l091d
+	call	conout
 	mov	al,08h
-	call	l091d
+	call	conout
 	mov	al,08h
-	call	l091d
-	jmps	l023a
+	call	conout
+	jmps	editkey
 
-l028c:
+editexit:
 	mov	al,6eh
-	jmp	l0916
+	jmp	escout
 
-l0291:
-	mov	si,offset d0c5c
-	mov	ax,0fc7h
-	call	l0876
-	mov	si,offset d1092
-	call	l083d
+;-----------------------------------------------------------------------------
+; Toggle which live BIOS settings are copied into the configuration sector.
+; The flags here are separate from the persistent validity flags in that sector.
+;-----------------------------------------------------------------------------
+savemenu:
+	mov	si,offset savetitle
+	mov	ax,offset savehelp
+	call	showhelp
+	mov	si,offset savebuttons
+	call	showoptions
 
-l02a0:
-	call	l02d2
+saveloop:
+	call	showsaves
 	mov	dh,0ah
-	call	l088e
-	mov	di,offset d110a
-	call	l08c9
-	jmp	word ptr 02b2h[bx]
+	call	selectprompt
+	mov	di,offset savekeylist
+	call	getchoice
+	jmp	word ptr saveactsoff[bx]
 
-l02b2:
-d02b2	dw	l02ba,l02c2,l02ca,l016c
+saveacts	dw	togglekeys,toggleio,toggleserial,mainpage
 
-l02ba:
-	xor	byte ptr d0b3d,0ffh
-	jmp	l02a0
+togglekeys:
+	xor	byte ptr savekeys,0ffh
+	jmp	saveloop
 
-l02c2:
-	xor	byte ptr d0b3e,0ffh
-	jmp	l02a0
+toggleio:
+	xor	byte ptr saveio,0ffh
+	jmp	saveloop
 
-l02ca:
-	xor	byte ptr d0b3f,0ffh
-	jmp	l02a0
+toggleserial:
+	xor	byte ptr saveserial,0ffh
+	jmp	saveloop
 
-l02d2:
+;-----------------------------------------------------------------------------
+; Display function-key, I/O and serial save requests at rows 12, 15 and 18.
+;-----------------------------------------------------------------------------
+showsaves:
 	mov	dx,0c0ch
 	mov	cx,03h
-	mov	bx,offset d0b3d
-	call	l0910
+	mov	bx,offset savekeys
+	call	reverseon
 
-l02de:
-	mov	si,offset d10fe
+saveshow:
+	mov	si,offset msgsaved
 	test	byte ptr [bx],0ffh
-	jnz	l02e9
-	mov	si,offset d1104
+	jnz	saveput
+	mov	si,offset msgblank
 
-l02e9:
-	call	l08a9
+saveput:
+	call	putat
 	inc	bx
 	add	dh,03h
-	loop	l02de
-	jmp	l0914
+	loop	saveshow
+	jmp	reverseoff
 
-l02f5:
-	mov	si,offset d0c75
-	mov	ax,110fh
-	call	l0876
-	call	l0372
-	mov	si,12a8h
-	call	l083d
+;-----------------------------------------------------------------------------
+; Memory disk starting segment.  Only the high byte is entered; low byte is zero.
+;-----------------------------------------------------------------------------
+memorymenu:
+	mov	si,offset memtitle
+	mov	ax,offset memhelp
+	call	showhelp
+	call	showmemory
+	mov	si,offset membuttons
+	call	showoptions
 	mov	dh,0fh
-	call	l088e
-	mov	di,offset d12ca
-	call	l08c9
-	jmp	word ptr 0316h[bx]
+	call	selectprompt
+	mov	di,offset memkeys
+	call	getchoice
+	jmp	word ptr memactsoff[bx]
 
-l0316:
-d0316	dw	l031a,l016c
+memacts	dw	newmemory,mainpage
 
-l031a:
+;-----------------------------------------------------------------------------
+; Accept 0000, 0800..9000 or C000..E000, in steps of 0100h.
+;-----------------------------------------------------------------------------
+newmemory:
 	mov	cx,0f01h
-	call	l0904
-	mov	si,offset d12cd
+	call	clrwindow
+	mov	si,offset mementryhelp
 	mov	dx,0f05h
-	call	l0883
-	mov	si,offset d1386
+	call	putlines
+	mov	si,offset msgnewmemory
 	mov	dh,13h
-	call	l0891
-	mov	si,offset d139d
+	call	revcent
+	mov	si,offset inputcursor
 	mov	dx,1526h
-	call	l08a9
-	call	l03a7
+	call	putat
+	call	gethex
 	mov	cl,04h
 	shl	al,cl
 	mov	dh,al
-	call	l03a7
+	call	gethex
 	or	dh,al
 	mov	al,6eh
-	call	l0916
+	call	escout
 	mov	al,dh
 	cmp	al,00h
-	jz	l0369
+	jz	storememory
 	cmp	al,08h
-	jc	l0363
+	jc	badmemory
 	cmp	al,90h
-	jna	l0369
+	jna	storememory
 	cmp	al,0c0h
-	jc	l0363
+	jc	badmemory
 	cmp	al,0e0h
-	jna	l0369
+	jna	storememory
 
-l0363:
-	call	l03d4
-	jmp	l02f5
+badmemory:
+	call	memoryerror
+	jmp	memorymenu
 
-l0369:
+storememory:
 	mov	dl,00h
-	mov	d093d,dx
-	jmp	l02f5
+	mov	memsegment,dx
+	jmp	memorymenu
 
-l0372:
-	mov	si,offset d126f
+showmemory:
+	mov	si,offset msgmemory
 	mov	dx,0c12h
-	call	l08a9
-	call	l0910
-	mov	dx,d093d
-	call	l0393
+	call	putat
+	call	reverseon
+	mov	dx,memsegment
+	call	puthexbyte
 	xchg	dh,dl
-	call	l0393
-	mov	si,offset d1292
-	call	l08ac
-	jmp	l0914
+	call	puthexbyte
+	mov	si,offset msgsegment
+	call	puts
+	jmp	reverseoff
 
-l0393:
+;-----------------------------------------------------------------------------
+; Print DH as two hex digits.  puthexdigit accepts its low nibble in AL.
+;-----------------------------------------------------------------------------
+puthexbyte:
 	mov	al,dh
 	mov	cl,04h
 	shr	al,cl
-	call	l03a0
+	call	puthexdigit
 	mov	al,dh
 	and	al,0fh
 
-l03a0:
-	mov	bx,offset d1298
+puthexdigit:
+	mov	bx,offset hexdigits
 	xlat	bx
-	jmp	l091d
+	jmp	conout
 
-l03a7:
-	call	l0936
+;-----------------------------------------------------------------------------
+; Read and echo a hex digit; return its value in AL.  The original case fold
+; subtracts 20h from every character at or above 60h before validation.
+;-----------------------------------------------------------------------------
+gethex:
+	call	getraw
 	cmp	al,60h
-	jc	l03b0
+	jc	hexscan
 	sub	al,20h
 
-l03b0:
-	mov	di,offset d1298
+hexscan:
+	mov	di,offset hexdigits
 	mov	cx,10h
 	cld
 	repne	scasb
-	jz	l03c2
+	jz	hexecho
 	mov	al,07h
-	call	l091d
-	jmps	l03a7
+	call	conout
+	jmps	gethex
 
-l03c2:
-	call	l091d
+hexecho:
+	call	conout
 	mov	al,20h
-	call	l091d
+	call	conout
 	mov	al,08h
-	call	l091d
+	call	conout
 	mov	al,0fh
 	sub	al,cl
 	ret
 
-l03d4:
+;-----------------------------------------------------------------------------
+; Highlight the error, beep three times and wait for acknowledgement.
+;-----------------------------------------------------------------------------
+memoryerror:
 	mov	al,70h
-	call	l0916
-	mov	si,offset d13a4
+	call	escout
+	mov	si,offset msgbadmemory
 	mov	dh,15h
-	call	l089a
+	call	putcent
 	mov	al,71h
-	call	l0916
+	call	escout
 	mov	cx,03h
 
-l03e9:
+errorbeep:
 	mov	al,07h
-	call	l091d
-	loop	l03e9
-	mov	si,offset d13bf
+	call	conout
+	loop	errorbeep
+	mov	si,offset msganykey
 	mov	dh,13h
-	call	l0891
-	jmp	l0936
+	call	revcent
+	jmp	getraw
 
-l03fb:
-	mov	si,offset d0cd7
-	mov	ax,13d8h
-	call	l0876
-	mov	si,offset d14f1
-	call	l083d
+;-----------------------------------------------------------------------------
+; Enable or disable BIOS verification after disk writes.
+;-----------------------------------------------------------------------------
+verifymenu:
+	mov	si,offset verifytitle
+	mov	ax,offset verifyhelp
+	call	showhelp
+	mov	si,offset verifybuttons
+	call	showoptions
 	mov	dh,0dh
-	call	l088e
+	call	selectprompt
 
-l040f:
-	call	l0430
-	mov	di,offset d1566
-	call	l08c9
-	jmp	word ptr 041ch[bx]
+verifyloop:
+	call	showverify
+	mov	di,offset verifykeys
+	call	getchoice
+	jmp	word ptr verifyactsoff[bx]
 
-l041c:
-d041c	dw	l0422,l0429,l0185
+verifyacts	dw	verifyon,verifyoff,secondpage
 
-l0422:
-	mov	byte ptr d093f,0ffh
-	jmps	l040f
+verifyon:
+	mov	byte ptr verifyflag,0ffh
+	jmps	verifyloop
 
-l0429:
-	mov	byte ptr d093f,00h
-	jmps	l040f
+verifyoff:
+	mov	byte ptr verifyflag,00h
+	jmps	verifyloop
 
-l0430:
-	mov	si,offset d152f
+showverify:
+	mov	si,offset msgverify
 	mov	dx,0b11h
-	call	l08a9
-	call	l0910
-	mov	si,offset d1554
-	test	byte ptr d093f,0ffh
-	jnz	l0449
-	mov	si,offset d155d
+	call	putat
+	call	reverseon
+	mov	si,offset msgenabled
+	test	byte ptr verifyflag,0ffh
+	jnz	verifyput
+	mov	si,offset msgdisabled
 
-l0449:
-	call	l08ac
-	jmp	l0914
+verifyput:
+	call	puts
+	jmp	reverseoff
 
-l044f:
-	mov	si,offset d0c85
-	mov	ax,156ah
-	call	l0876
-	mov	si,offset d1682
-	call	l083d
+;-----------------------------------------------------------------------------
+; Head step time is the high nibble of the diskette parameter byte.
+; Increasing that nibble shortens the delay; carry prevents wrapping.
+;-----------------------------------------------------------------------------
+stepmenu:
+	mov	si,offset steptitle
+	mov	ax,offset stephelp
+	call	showhelp
+	mov	si,offset stepbuttons
+	call	showoptions
 	mov	dh,0dh
-	call	l088e
+	call	selectprompt
 
-l0463:
-	call	l0490
-	mov	di,offset d16e8
-	call	l08c9
-	jmp	word ptr 0470h[bx]
+steploop:
+	call	showstep
+	mov	di,offset stepkeys
+	call	getchoice
+	jmp	word ptr stepactsoff[bx]
 
-l0470:
-d0470	dw	l0476,l047d,l016c
+stepacts	dw	stepfaster,stepslower,mainpage
 
-l0476:
-	mov	al,d0940
+stepfaster:
+	mov	al,steprate
 	add	al,10h
-	jmps	l0482
+	jmps	storestep
 
-l047d:
-	mov	al,d0940
+stepslower:
+	mov	al,steprate
 	sub	al,10h
 
-l0482:
-	jc	l0489
-	mov	d0940,al
-	jmps	l0463
+storestep:
+	jc	stepbeep
+	mov	steprate,al
+	jmps	steploop
 
-l0489:
+stepbeep:
 	mov	al,07h
-	call	l091d
-	jmps	l0463
+	call	conout
+	jmps	steploop
 
-l0490:
-	mov	si,offset d16bb
+;-----------------------------------------------------------------------------
+; Display 2 * (16 - high nibble), in milliseconds.  AAM splits decimal digits.
+;-----------------------------------------------------------------------------
+showstep:
+	mov	si,offset msgstep
 	mov	dx,0b12h
-	call	l08a9
-	call	l0910
-	mov	al,d0940
+	call	putat
+	call	reverseon
+	mov	al,steprate
 	mov	cl,04h
 	shr	al,cl
 	or	al,0f0h
@@ -461,497 +557,577 @@ l0490:
 	shl	al,1
 	aam
 	test	ah,ah
-	jz	l04b8
+	jz	stepunits
 	push	ax
 	mov	al,ah
 	or	al,30h
-	call	l091d
+	call	conout
 	pop	ax
 
-l04b8:
+stepunits:
 	or	al,30h
-	call	l091d
-	mov	si,offset d16e1
-	call	l08ac
-	jmp	l0914
+	call	conout
+	mov	si,offset msgmsec
+	call	puts
+	jmp	reverseoff
 
-l04c6:
-	mov	si,offset d0cf3
-	mov	ax,16ech
-	call	l0876
-	mov	si,offset d17d4
-	call	l083d
+;-----------------------------------------------------------------------------
+; Enable the four-tone status melodies or replace them with the simple beep.
+;-----------------------------------------------------------------------------
+soundmenu:
+	mov	si,offset soundtitle
+	mov	ax,offset soundhelp
+	call	showhelp
+	mov	si,offset soundbuttons
+	call	showoptions
 	mov	dh,0dh
-	call	l088e
+	call	selectprompt
 
-l04da:
-	call	l04fb
-	mov	di,offset d1822
-	call	l08c9
-	jmp	word ptr 04e7h[bx]
+soundloop:
+	call	showsound
+	mov	di,offset soundkeys
+	call	getchoice
+	jmp	word ptr soundactsoff[bx]
 
-l04e7:
-d04e7	dw	l04ed,l04f4,l0185
+soundacts	dw	soundon,soundoff,secondpage
 
-l04ed:
-	mov	byte ptr d097b,0ffh
-	jmps	l04da
+soundon:
+	mov	byte ptr soundflag,0ffh
+	jmps	soundloop
 
-l04f4:
-	mov	byte ptr d097b,00h
-	jmps	l04da
+soundoff:
+	mov	byte ptr soundflag,00h
+	jmps	soundloop
 
-l04fb:
-	mov	si,offset d1826
+showsound:
+	mov	si,offset msgsound
 	mov	dx,0b10h
-	call	l08a9
-	call	l0910
-	mov	si,offset d1554
-	test	byte ptr d097b,0ffh
-	jnz	l0514
-	mov	si,offset d155d
+	call	putat
+	call	reverseon
+	mov	si,offset msgenabled
+	test	byte ptr soundflag,0ffh
+	jnz	soundput
+	mov	si,offset msgdisabled
 
-l0514:
-	call	l08ac
-	jmp	l0914
+soundput:
+	call	puts
+	jmp	reverseoff
 
-l051a:
-	mov	si,offset d184e
-	mov	ax,186eh
-	call	l0876
-	call	l057a
-	mov	si,offset d19dd
-	call	l083d
+;-----------------------------------------------------------------------------
+; Reserve 00..99 kilobytes for Field Installable Device Driver Software.
+;-----------------------------------------------------------------------------
+fiddsmenu:
+	mov	si,offset fiddstitle
+	mov	ax,offset fiddshelp
+	call	showhelp
+	call	showfidds
+	mov	si,offset fiddsbuttons
+	call	showoptions
 	mov	dh,0fh
-	call	l088e
-	mov	di,offset d1a05
-	call	l08c9
-	jmp	word ptr 053bh[bx]
+	call	selectprompt
+	mov	di,offset fiddskeys
+	call	getchoice
+	jmp	word ptr fiddsactsoff[bx]
 
-l053b:
-d053b	dw	l053f,l016c
+fiddsacts	dw	newfidds,mainpage
 
-l053f:
+newfidds:
 	mov	cx,0f01h
-	call	l0904
-	mov	si,offset d1a08
+	call	clrwindow
+	mov	si,offset fiddsentryhelp
 	mov	dx,0f05h
-	call	l0883
-	mov	si,offset d1acd
+	call	putlines
+	mov	si,offset msgnewfidds
 	mov	dh,13h
-	call	l0891
-	mov	si,offset d139d
+	call	revcent
+	mov	si,offset inputcursor
 	mov	dx,1526h
-	call	l08a9
-	call	l05aa
+	call	putat
+	call	getdecimal
 	mov	cl,0ah
 	mul	cl
 	mov	cx,ax
-	call	l05aa
+	call	getdecimal
 	mov	ah,00h
 	add	ax,cx
-	mov	.096bh,ax
+	mov	fiddsmem,ax
 	mov	al,6eh
-	call	l0916
-	jmp	l051a
+	call	escout
+	jmp	fiddsmenu
 
-l057a:
-	mov	si,offset d19b2
+showfidds:
+	mov	si,offset msgfidds
 	mov	dx,0c13h
-	call	l08a9
-	call	l0910
-	mov	ax,.096bh
+	call	putat
+	call	reverseon
+	mov	ax,fiddsmem
 	aam
 	test	ah,ah
-	jz	l0592
-	call	l05a0
+	jz	fiddsunits
+	call	puttens
 
-l0592:
+fiddsunits:
 	xchg	ah,al
-	call	l05a0
-	mov	si,offset d19d8
-	call	l08ac
-	jmp	l0914
+	call	puttens
+	mov	si,offset msgkb
+	call	puts
+	jmp	reverseoff
 
-l05a0:
+;-----------------------------------------------------------------------------
+; Print the decimal digit in AH, preserving AX.
+;-----------------------------------------------------------------------------
+puttens:
 	push	ax
 	mov	al,ah
 	or	al,30h
-	call	l091d
+	call	conout
 	pop	ax
 	ret
 
-l05aa:
-	call	l0936
+;-----------------------------------------------------------------------------
+; Read a decimal digit, echo it and return 0..9 in AL.
+;-----------------------------------------------------------------------------
+getdecimal:
+	call	getraw
 	cmp	al,30h
-	jc	l05c7
+	jc	decimalbeep
 	cmp	al,39h
-	ja	l05c7
+	ja	decimalbeep
 	push	ax
-	call	l091d
+	call	conout
 	mov	al,20h
-	call	l091d
+	call	conout
 	mov	al,08h
-	call	l091d
+	call	conout
 	pop	ax
 	sub	al,30h
 	ret
 
-l05c7:
+decimalbeep:
 	mov	al,07h
-	call	l091d
-	jmps	l05aa
+	call	conout
+	jmps	getdecimal
 
-l05ce:
-	mov	si,offset d0d0e
-	mov	ax,1ae5h
-	call	l0876
-	mov	si,offset d1bfa
-	call	l083d
+;-----------------------------------------------------------------------------
+; Select the disk holding the persistent configuration sector.  Hard disk
+; choice is exposed only after finding a type DBh partition in the MBR.
+;-----------------------------------------------------------------------------
+diskmenu:
+	mov	si,offset disktitle
+	mov	ax,offset diskhelp
+	call	showhelp
+	mov	si,offset diskbuttons
+	call	showoptions
 	mov	dh,0dh
-	call	l088e
+	call	selectprompt
 
-l05e2:
-	call	l0627
-	mov	di,offset d1c7c
-	call	l08c9
-	jmp	word ptr 05efh[bx]
+diskloop:
+	call	showdisk
+	mov	di,offset diskkeys
+	call	getchoice
+	jmp	word ptr diskactsoff[bx]
 
-l05ef:
-d05ef	dw	l05f5,l0185,l0608
+diskacts	dw	usefloppy,secondpage,usehard
 
-l05f5:
-	mov	byte ptr d0b40,00h
-	mov	word ptr d0b42,02h
-	mov	si,offset d1c64
-	call	l061b
-	jmps	l05e2
+usefloppy:
+	mov	byte ptr diskdrive,00h
+	mov	word ptr diskchs,02h
+	mov	si,offset msgfloppy
+	call	diskcaption
+	jmps	diskloop
 
-l0608:
-	mov	byte ptr d0b40,80h
-	mov	ax,d0b44
-	mov	d0b42,ax
-	mov	si,offset d1c70
-	call	l061b
-	jmps	l05e2
+usehard:
+	mov	byte ptr diskdrive,80h
+	mov	ax,hardchs
+	mov	diskchs,ax
+	mov	si,offset msghard
+	call	diskcaption
+	jmps	diskloop
 
-l061b:
+;-----------------------------------------------------------------------------
+; Copy the 11-character disk name into the shared update-and-exit caption.
+;-----------------------------------------------------------------------------
+diskcaption:
 	push	ds
 	pop	es
-	mov	di,offset d0d46
+	mov	di,offset updatedisk
 	mov	cx,0bh
 	cld
 	rep	movsb
 	ret
 
-l0627:
-	mov	si,offset d1c41
+showdisk:
+	mov	si,offset msgdisk
 	mov	dx,0b12h
-	call	l08a9
-	call	l0910
-	mov	si,offset d1c64
-	cmp	byte ptr d0b40,00h
-	jz	l0640
-	mov	si,offset d1c70
+	call	putat
+	call	reverseon
+	mov	si,offset msgfloppy
+	cmp	byte ptr diskdrive,00h
+	jz	diskput
+	mov	si,offset msghard
 
-l0640:
-	call	l08ac
-	jmp	l0914
+diskput:
+	call	puts
+	jmp	reverseoff
 
-l0646:
-	call	l06c2
-	mov	al,d0b40
+;-----------------------------------------------------------------------------
+; Merge requested live settings, write the configuration sector, then exit.
+; Hard disk uses BIOS INT 13h directly.  Floppy uses BDOS 50 to write four
+; 128-byte records through the XIOS.  Original code does not check write errors.
+;-----------------------------------------------------------------------------
+update:
+	call	savesettings
+	mov	al,diskdrive
 	test	al,80h
-	jz	l065d
-	call	l0830
-	mov	bx,093bh
+	jz	writefloppy
+	call	diskparams
+	mov	bx,offset cfgsector
 	mov	ah,03h
-	int	13h
-	jmp	l06b6
+	int	i_disk
+	jmp	exitprog
 
-l065d:
-	mov	cl,0eh
+;-----------------------------------------------------------------------------
+; Select A:, set the DMA segment, and select track zero.  XIOS sectors 4..7
+; cover physical sector 2; the last write uses deblocking flag 1.
+;-----------------------------------------------------------------------------
+writefloppy:
+	mov	cl,f_seldisk
 	mov	dl,al
-	int	0e0h
-	mov	cl,33h
+	int	i_bdos
+	mov	cl,f_dmaseg
 	mov	dx,ds
-	int	0e0h
-	mov	cl,32h
-	mov	dx,0b48h
-	int	0e0h
-	mov	word ptr d0b46,093bh
-	mov	word ptr d0b4e,04h
-	mov	word ptr d0b53,00h
+	int	i_bdos
+	mov	cl,f_bios
+	mov	dx,offset seltrack
+	int	i_bdos
+	mov	word ptr dmaaddr,offset cfgsector
+	mov	word ptr sectorarg,04h
+	mov	word ptr writearg,00h
 	mov	cx,04h
 
-l0685:
+writerecord:
 	push	cx
-	mov	cl,1ah
-	mov	dx,d0b46
-	int	0e0h
-	mov	cl,32h
-	mov	dx,0b4dh
-	int	0e0h
-	cmp	word ptr d0b4e,07h
-	jnz	l06a2
-	mov	word ptr d0b53,01h
+	mov	cl,f_dma
+	mov	dx,dmaaddr
+	int	i_bdos
+	mov	cl,f_bios
+	mov	dx,offset selsector
+	int	i_bdos
+	cmp	word ptr sectorarg,07h
+	jnz	writedata
+	mov	word ptr writearg,01h
 
-l06a2:
-	mov	cl,32h
-	mov	dx,0b52h
-	int	0e0h
-	add	word ptr d0b46,80h
-	inc	word ptr d0b4e
+writedata:
+	mov	cl,f_bios
+	mov	dx,offset bioswrite
+	int	i_bdos
+	add	word ptr dmaaddr,80h
+	inc	word ptr sectorarg
 	pop	cx
-	loop	l0685
+	loop	writerecord
 
-l06b6:
-	mov	si,offset d0b64
-	call	l08ac
-	mov	cl,00h
+;-----------------------------------------------------------------------------
+; Restore the console and warm boot through BDOS.
+;-----------------------------------------------------------------------------
+exitprog:
+	mov	si,offset scroff
+	call	puts
+	mov	cl,f_reset
 	mov	dl,00h
-	int	0e0h
+	int	i_bdos
 
-l06c2:
-	mov	di,offset d099f
-	mov	si,offset d099b
+;-----------------------------------------------------------------------------
+; Copy serial parameters (2 bytes), I/O assignments (10 bytes), and both
+; function-key sets (400 bytes) from the current BIOS when requested.
+;-----------------------------------------------------------------------------
+savesettings:
+	mov	di,offset serialdata
+	mov	si,offset cfgserial
 	mov	cx,02h
-	mov	bx,2552h
-	mov	al,d0b3f
-	call	l06f5
-	mov	di,offset d09a1
-	mov	si,offset d099c
+	mov	bx,serialptr
+	mov	al,saveserial
+	call	copysetting
+	mov	di,offset iodata
+	mov	si,offset cfgio
 	mov	cx,0ah
-	mov	bx,2554h
-	mov	al,d0b3e
-	call	l06f5
-	mov	di,offset d09ab
-	mov	si,offset d099d
+	mov	bx,iovecptr
+	mov	al,saveio
+	call	copysetting
+	mov	di,offset keydata
+	mov	si,offset cfgkeys
 	mov	cx,0190h
-	mov	bx,254eh
-	mov	al,d0b3d
+	mov	bx,keytblptr
+	mov	al,savekeys
 
-l06f5:
+;-----------------------------------------------------------------------------
+; AL is the request flag, DS:SI the saved validity byte, DI the destination,
+; CX the byte count, BX the XIOS pointer slot.  Zero leaves saved data intact;
+; a request sets the validity flag and copies from the system data segment.
+;-----------------------------------------------------------------------------
+copysetting:
 	test	al,al
-	jz	l0708
+	jz	copyret
 	mov	[si],al
 	push	ds
 	pop	es
 	push	es
-	mov	ds,word ptr d0b3b
+	mov	ds,word ptr xiossg
 	mov	si,[bx]
 	cld
 	rep	movsb
 	pop	ds
 
-l0708:
+copyret:
 	ret
 
-l0709:
-	mov	si,d0bed
+;-----------------------------------------------------------------------------
+; Draw the current page, common exit buttons, reset notice and prompt.
+;-----------------------------------------------------------------------------
+showpage:
+	mov	si,pagetitle
 	mov	dh,03h
-	call	l089a
-	mov	si,d0bf3
-	call	l084d
-	mov	si,offset d0d3a
-	call	l084d
-	mov	si,offset d0d75
+	call	putcent
+	mov	si,pagebuttons
+	call	drawbuttons
+	mov	si,offset exitbuttons
+	call	drawbuttons
+	mov	si,offset msgreset
 	mov	dx,1605h
-	call	l08a9
-	mov	si,offset d0c0b
+	call	putat
+	mov	si,offset msgselect
 	mov	dh,05h
-	jmp	l0891
+	jmp	revcent
 
-l0730:
-	mov	si,offset d0b57
-	call	l08ac
+;-----------------------------------------------------------------------------
+; Frame: three horizontal rules, two sides, six individual corners and title.
+;-----------------------------------------------------------------------------
+drawframe:
+	mov	si,offset scron
+	call	puts
 	mov	cx,4eh
 	mov	dx,01h
 	mov	bl,0c4h
-	call	l0789
+	call	hline
 	mov	dx,0201h
 	mov	bl,0cdh
-	call	l0789
+	call	hline
 	mov	dx,1701h
 	mov	bl,0c4h
-	call	l0789
+	call	hline
 	mov	cx,16h
 	mov	dx,0100h
 	mov	bl,0b3h
-	call	l0796
+	call	vline
 	mov	dx,014fh
 	mov	bl,0b3h
-	call	l0796
-	mov	si,offset d0b6b
+	call	vline
+	mov	si,offset corners
 	mov	cx,06h
 
-l076a:
+cornloop:
 	mov	al,59h
-	call	l0916
+	call	escout
 	lodsb
 	add	al,20h
-	call	l091d
+	call	conout
 	lodsb
 	add	al,20h
-	call	l091d
+	call	conout
 	lodsb
-	call	l091d
-	loop	l076a
-	mov	si,offset d0b7d
+	call	conout
+	loop	cornloop
+	mov	si,offset banner
 	mov	dh,01h
-	jmp	l089a
+	jmp	putcent
 
-l0789:
+;-----------------------------------------------------------------------------
+; Draw BL across CX columns at DX, preserving CX.
+;-----------------------------------------------------------------------------
+hline:
 	push	cx
-	call	l08b6
+	call	gotoxy
 
-l078d:
+hlloop:
 	mov	al,bl
-	call	l091d
-	loop	l078d
+	call	conout
+	loop	hlloop
 	pop	cx
 	ret
 
-l0796:
+;-----------------------------------------------------------------------------
+; Draw BL down CX rows at DX, preserving CX and DX.
+;-----------------------------------------------------------------------------
+vline:
 	push	cx
 	push	dx
 
-l0798:
-	call	l08b6
+vlloop:
+	call	gotoxy
 	mov	al,bl
-	call	l091d
+	call	conout
 	inc	dh
-	loop	l0798
+	loop	vlloop
 	pop	dx
 	pop	cx
 	ret
 
-l07a7:
+;-----------------------------------------------------------------------------
+; Read hard disk 80h MBR into the shared 512-byte buffer.  A valid AA55h
+; signature permits scanning four entries for the first CP/M type DBh.
+; Derive the configuration sector from its start CHS, replacing the sector
+; bits with 3 while preserving the cylinder high bits.  The head stays zero.
+; Then try floppy sector 2 first, hard disk configuration sector second; a
+; DDB2h signature accepts the sector, otherwise compiled defaults survive.
+;-----------------------------------------------------------------------------
+loadsettings:
 	push	ds
 	pop	es
 	mov	dx,80h
 	mov	cx,01h
-	mov	bx,offset d1c80
+	mov	bx,offset sectorbuf
 	mov	ax,0201h
-	int	13h
-	jc	l07e8
-	cmp	word ptr d1e7e,0aa55h
-	jnz	l07e8
+	int	i_disk
+	jc	readfloppy
+	cmp	word ptr bootsig,0aa55h
+	jnz	readfloppy
 	mov	cx,04h
-	mov	si,offset d1e3e
+	mov	si,offset partitions
 
-l07c7:
+partscan:
 	cmp	byte ptr 04h[si],0dbh
-	jz	l07d4
+	jz	foundpart
 	add	si,10h
-	loop	l07c7
-	jmps	l07e8
+	loop	partscan
+	jmps	readfloppy
 
-l07d4:
+foundpart:
 	mov	ax,02h[si]
 	and	al,0c0h
 	or	al,03h
-	mov	d0b44,ax
-	mov	byte ptr d1c7c,03h
-	mov	byte ptr d1bfa,02h
+	mov	hardchs,ax
+	mov	byte ptr diskkeys,03h
+	mov	byte ptr diskbuttons,02h
 
-l07e8:
+readfloppy:
 	mov	dx,00h
 	mov	cx,02h
-	mov	bx,offset d1c80
+	mov	bx,offset sectorbuf
 	mov	ax,0201h
-	int	13h
-	jc	l0800
-	cmp	word ptr d1c80,0ddb2h
-	jz	l0823
+	int	i_disk
+	jc	readhard
+	cmp	word ptr sectorbuf,0ddb2h
+	jz	copysector
 
-l0800:
+readhard:
 	mov	dl,80h
-	mov	cx,d0b44
+	mov	cx,hardchs
 	mov	ax,0201h
-	int	13h
-	jc	l082f
-	cmp	word ptr d1c80,0ddb2h
-	jnz	l082f
-	mov	d0b40,dl
-	mov	d0b42,cx
-	mov	si,offset d1c70
-	call	l061b
+	int	i_disk
+	jc	loadret
+	cmp	word ptr sectorbuf,0ddb2h
+	jnz	loadret
+	mov	diskdrive,dl
+	mov	diskchs,cx
+	mov	si,offset msghard
+	call	diskcaption
 
-l0823:
-	mov	si,offset d1c80
-	mov	di,093bh
+copysector:
+	mov	si,offset sectorbuf
+	mov	di,offset cfgsector
 	mov	cx,0100h
 	cld
 	rep	movsw
 
-l082f:
+loadret:
 	ret
 
-l0830:
+;-----------------------------------------------------------------------------
+; Prepare ES:BX externally; return DX=drive/head, CX=CHS and AL=one sector.
+; Retained helper for the direct BIOS write path.
+;-----------------------------------------------------------------------------
+diskparams:
 	push	ds
 	pop	es
-	mov	dx,.0b40h
-	mov	cx,d0b42
+	mov	dx,word ptr diskdrive
+	mov	cx,diskchs
 	mov	al,01h
 	ret
 
-l083d:
-	call	l084d
-	mov	si,offset d0dca
-	call	l084d
-	mov	si,d0bed
-	jmp	l08ac
+;-----------------------------------------------------------------------------
+; Draw this option's buttons and the shared return-to-page button and caption.
+;-----------------------------------------------------------------------------
+showoptions:
+	call	drawbuttons
+	mov	si,offset backbutton
+	call	drawbuttons
+	mov	si,pagetitle
+	jmp	puts
 
-l084d:
+;-----------------------------------------------------------------------------
+; SI addresses a count byte then records: row, column, two key-caption bytes,
+; NUL-terminated text.  Draw the key box and text for each record.
+;-----------------------------------------------------------------------------
+drawbuttons:
 	lodsb
 	cbw
 	xchg	ax,cx
 
-l0850:
+buttonloop:
 	lodsw
 	xchg	al,ah
 	mov	dx,ax
 	lodsw
 	mov	bx,ax
 	push	si
-	mov	si,offset d0bc4
-	call	l08a9
+	mov	si,offset buttonbox
+	call	putat
 	mov	al,bl
-	call	l091d
+	call	conout
 	mov	al,bh
-	call	l091d
-	mov	si,offset d0be6
-	call	l08ac
+	call	conout
+	mov	si,offset buttonend
+	call	puts
 	pop	si
-	call	l08ac
-	loop	l0850
+	call	puts
+	loop	buttonloop
 	ret
 
-l0876:
+;-----------------------------------------------------------------------------
+; SI is the option title; AX points to help lines.  Clear the body, centre
+; the title on row 4, then print NUL-terminated lines from row 6, column 5.
+; An extra NUL ends the line list.
+;-----------------------------------------------------------------------------
+showhelp:
 	push	ax
-	call	l0901
+	call	clrbody
 	mov	dh,04h
-	call	l089a
+	call	putcent
 	pop	si
 	mov	dx,0605h
 
-l0883:
-	call	l08a9
+putlines:
+	call	putat
 	inc	dh
 	test	byte ptr [si],0ffh
-	jnz	l0883
+	jnz	putlines
 	ret
 
-l088e:
-	mov	si,offset d0dba
+;-----------------------------------------------------------------------------
+; Centre the shared function-selection prompt in reverse video on row DH.
+;-----------------------------------------------------------------------------
+selectprompt:
+	mov	si,offset msgfunction
 
-l0891:
-	call	l0910
-	call	l089a
-	jmp	l0914
+revcent:
+	call	reverseon
+	call	putcent
+	jmp	reverseoff
 
-l089a:
+;-----------------------------------------------------------------------------
+; Centre the NUL-terminated string at SI on row DH, then print it.
+; ES is set to DS for the length scan.
+;-----------------------------------------------------------------------------
+putcent:
 	push	ds
 	pop	es
 	mov	di,si
@@ -961,95 +1137,118 @@ l089a:
 	shr	cx,1
 	mov	dl,cl
 
-l08a9:
-	call	l08b6
+putat:
+	call	gotoxy
 
-l08ac:
+puts:
 	lodsb
 
-l08ad:
-	call	l091d
+putsloop:
+	call	conout
 	lodsb
 	test	al,al
-	jnz	l08ad
+	jnz	putsloop
 	ret
 
-l08b6:
+;-----------------------------------------------------------------------------
+; VT52 ESC Y: output row DH and column DL, each biased by 20h.
+;-----------------------------------------------------------------------------
+gotoxy:
 	mov	al,59h
-	call	l0916
+	call	escout
 	mov	al,dh
 	add	al,20h
-	call	l091d
+	call	conout
 	mov	al,dl
 	add	al,20h
-	jmp	l091d
+	jmp	conout
 
-l08c9:
+;-----------------------------------------------------------------------------
+; DI points to count, then accepted function-key numbers (scan code minus
+; 3Ah).  Reject other keys with a beep.  Return BX = 2 * matched index.
+;-----------------------------------------------------------------------------
+getchoice:
 	mov	cl,[di]
 	mov	ch,00h
 	inc	di
 
-l08ce:
+choicekey:
 	push	cx
 	push	di
 	push	ds
 	pop	es
 	mov	bx,cx
-	call	l0936
+	call	getraw
 	mov	al,ah
 	sub	al,3ah
 	repne	scasb
 	mov	dx,cx
 	pop	di
 	pop	cx
-	jz	l08ea
+	jz	choicefound
 	mov	al,07h
-	call	l091d
-	jmps	l08ce
+	call	conout
+	jmps	choicekey
 
-l08ea:
+choicefound:
 	sub	bx,dx
 	dec	bx
 	add	bx,bx
 	mov	ah,00h
 	ret
 
-l08f2:
-	mov	cl,0bh
-	int	0e0h
+;-----------------------------------------------------------------------------
+; Discard pending BDOS console input.
+;-----------------------------------------------------------------------------
+flushkb:
+	mov	cl,f_constat
+	int	i_bdos
 	test	al,al
-	jz	l0900
-	mov	cl,01h
-	int	0e0h
-	jmps	l08f2
+	jz	flushret
+	mov	cl,f_conin
+	int	i_bdos
+	jmps	flushkb
 
-l0900:
+flushret:
 	ret
 
-l0901:
+;-----------------------------------------------------------------------------
+; Clear rows 3..22 inside the frame.  clrwindow takes its top left in CX.
+;-----------------------------------------------------------------------------
+clrbody:
 	mov	cx,0301h
 
-l0904:
+clrwindow:
 	mov	dx,164eh
 	mov	bx,07h
 	mov	ax,0700h
-	int	10h
+	int	i_video
 	ret
 
-l0910:
+;-----------------------------------------------------------------------------
+; VT52 ESC r / ESC u toggle reverse video.
+;-----------------------------------------------------------------------------
+reverseon:
 	mov	al,72h
-	jmps	l0916
+	jmps	escout
 
-l0914:
+reverseoff:
 	mov	al,75h
 
-l0916:
+;-----------------------------------------------------------------------------
+; Send ESC followed by AL; falls through to conout.
+;-----------------------------------------------------------------------------
+escout:
 	push	ax
 	mov	al,1bh
-	call	l091d
+	call	conout
 	pop	ax
 
-l091d:
+;-----------------------------------------------------------------------------
+; Raw BDOS console output.  Preserve the registers used by string/table
+; loops and restore forward string direction after the BDOS call.
+;-----------------------------------------------------------------------------
+conout:
 	push	bx
 	push	cx
 	push	dx
@@ -1057,8 +1256,8 @@ l091d:
 	push	di
 	push	es
 	mov	dl,al
-	mov	cl,06h
-	int	0e0h
+	mov	cl,f_conout
+	int	i_bdos
 	cld
 	pop	es
 	pop	di
@@ -1068,41 +1267,63 @@ l091d:
 	pop	bx
 	ret
 
-l0931:
-	db	0b4h,01h,0cdh,16h,0c3h
-
-l0936:
-	mov	ah,00h
-	int	16h
+;-----------------------------------------------------------------------------
+; Unreachable BIOS keyboard-status helper retained in the shipped image.
+;-----------------------------------------------------------------------------
+keystatus:
+	mov	ah,01h
+	int	i_keyb
 	ret
 
-l093b:
-	db	0b2h
+;-----------------------------------------------------------------------------
+; Wait for a BIOS key: AL is the character and AH is the scan code.
+;-----------------------------------------------------------------------------
+getraw:
+	mov	ah,00h
+	int	i_keyb
+	ret
 
-l093c:
 
 ; ---- data ----
+; LINK86 aligns DSEG on a word boundary.  The signature starts at odd
+; address 093Bh, so its low byte must remain at the end of CSEG.
+; Persistent configuration sector, exactly 512 bytes (093Bh..0B3Ah).
+; Layout matches pcbios.a86 LOAD_CFGSEC / APPLY_CFG.  Reserved areas are
+; stored bytes, not uninitialised space, so defaults reproduce the original.
+cfgsector	db	0b2h
 	dseg
 	db	0ddh
-d093d	dw	0d000h
-d093f	db	00h
-d0940	db	0cfh
-	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-d094b	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+memsegment	dw	0d000h		; memory disk starts at segment D000h
+verifyflag	db	00h		; verify after write disabled
+steprate	db	0cfh		; high nibble C = 8 msec step time
+cfgreserved	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Startup command: 32 bytes reserved, editor/display limit 20 bytes.
+bootcommand	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
-d096b	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h
-d097b	db	0ffh
-	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; FIDDS reservation in KiB, followed by 14 reserved bytes.
+fiddsmem	dw	00h
+fiddsreserve	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h
+
+; FFh enables musical status messages; 31 reserved bytes follow.
+soundflag	db	0ffh
+soundreserve	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h
-d099b	db	00h
-d099c	db	00h
-d099d	db	00h,00h
-d099f	db	00h,00h
-d09a1	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-d09ab	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Persistent validity flags: serial, character I/O, key definitions; then spare.
+cfgserial	db	00h
+cfgio	db	00h
+cfgkeys	db	00h
+cfgspare	db	00h
+
+; Saved serial parameters, five I/O assignment words and 400 key bytes.
+serialdata	dw	00h
+iodata	dw	0,0,0,0,0
+keydata	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
@@ -1136,224 +1357,224 @@ d09ab	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h
-d0b3b	dw	00h
-d0b3d	db	00h
-d0b3e	db	00h
-d0b3f	db	00h
-d0b40	db	00h
+
+; Runtime state, outside the saved sector.  Save requests start clear.
+; Drive/head is also read as a word for BIOS INT 13h (DL/DH).
+xiossg	dw	00h
+savekeys	db	00h
+saveio	db	00h
+saveserial	db	00h
+diskdrive	db	00h
+diskhead	db	00h
+diskchs	dw	02h		; CH=0, CL=2: floppy configuration sector
+hardchs	dw	00h
+dmaaddr	dw	00h
+
+; BDOS 50 parameter blocks: function byte, CX word, DX word.
+; SETTRK=10, SETSEC=11, WRITE=14.  The code changes their arguments in place.
+seltrack	db	0ah
+	dw	00h
+	dw	00h
+selsector	db	0bh
+sectorarg	dw	04h		; CX: 128-byte record number
+	dw	00h
+bioswrite	db	0eh
+writearg	dw	00h		; CX: write/deblocking type
+	dw	00h
+
+; VT52 console setup and restore sequences.
+scron	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
 	db	00h
-d0b42	dw	02h
-d0b44	dw	00h
-d0b46	dw	00h
-	db	0ah,00h,00h,00h,00h,0bh
-d0b4e	dw	04h
-	db	00h,00h,0eh
-d0b53	dw	00h
-	db	00h,00h
-d0b57	db	1bh,45h,1bh,77h,1bh,6eh,1bh,71h,1bh,74h,1bh,75h
-	db	00h
-d0b64	db	1bh,45h,1bh,76h,1bh,6dh,00h
-d0b6b	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
-	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
-d0b7d	db	'CP/M-86 BIOS Customization Program for t'
+scroff	db	1bh,45h,1bh,76h,1bh,6dh,00h
+
+; Frame corners: six row, column, glyph triples.
+corners	db	00h,00h,0dah
+	db	00h,4fh,0bfh
+	db	02h,00h,0c6h
+	db	02h,4fh,0b5h
+	db	17h,00h,0c0h
+	db	17h,4fh,0d9h
+banner	db	'CP/M-86 BIOS Customization Program for t'
 	db	'he IBM PC and XT   version 1.2',00h
-d0bc4	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+
+; Function-key button outline, with relative cursor motion and reverse video.
+buttonbox	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
 	db	72h,46h,00h
-d0be6	db	1bh,75h,1bh,43h,20h,20h,00h
-d0bed	dw	0bf5h
-d0bef	dw	0c2dh
-d0bf1	dw	0150h
-d0bf3	dw	0c3dh
-d0bf5	db	'Main Menu',00h
-	db	'Second Page',00h
-d0c0b	db	' SELECT BIOS CUSTOMIZATION OPTION',00h
-d0c2d	db	08h,01h,02h,03h,04h,05h,06h,09h,0ah,06h,01h,02h
-	db	03h,04h,09h,0ah
-d0c3d	db	06h,07h,04h,31h,20h
-d0c42	db	'Power-On Command Line',00h
-	db	07h,2ch,32h,20h
-d0c5c	db	'Save BIOS Parameters',00h
-	db	0ah,04h,33h,20h
-d0c75	db	'Memory Disk',00h
-	db	0ah,2ch,34h,20h
-d0c85	db	'Disk Head Step Time',00h
-	db	0dh,04h
-	db	'5 Field Inst. Device Driver',00h
-	db	0dh,',6 Second Page of Options',00h
-	db	04h,07h,04h,31h,20h
-d0cd7	db	'Verify After Disk Write',00h
-	db	07h,2ch,32h,20h
-d0cf3	db	'Musical Error Messages',00h
-	db	0ah,04h,33h,20h
-d0d0e	db	'Select Storage Disk',00h
-	db	0ah,',4 Return to Main Menu',00h
-d0d3a	db	02h,12h,04h
-	db	'9 Update '
-d0d46	db	'Floppy Disk and Exit',00h
-	db	12h
-	db	',10Exit without Updating',00h
-d0d75	db	'All modified options will take effect at'
-	db	' the next Power-On or Reset.',00h
-d0dba	db	'SELECT FUNCTION',00h
-d0dca	db	01h,14h,14h
-	db	'9 Return to ',00h
-	db	'      This option allows a single Comman'
-	db	'd Line of up to 20 characters',00h
-	db	'to be executed at Power-On, or following'
-	db	' a System Reset.   The ',27h,0b3h,27h
-	db	20h,69h,73h,00h
+buttonend	db	1bh,75h,1bh,43h,20h,20h,00h
+
+; Current page descriptors: title, key list, action table and button list.
+pagetitle	dw	maintitle
+pagekeys	dw	mainkeys
+pageactions	dw	mainacts
+pagebuttons	dw	mainbuttons
+maintitle	db	'Main Menu',00h
+secondtitle	db	'Second Page',00h
+msgselect	db	' SELECT BIOS CUSTOMIZATION OPTION',00h
+
+; Key lists: count, then BIOS scan codes minus 3Ah (F1=1, F9=9, F10=10).
+mainkeys	db	08h,01h,02h,03h,04h,05h,06h,09h,0ah
+secondkeys	db	06h,01h,02h,03h,04h,09h,0ah
+
+; Button lists: count, then row, column, two key-caption bytes, text, NUL.
+; Captions are also reused as option titles.  Help blocks are NUL-terminated
+; lines followed by an additional NUL; all coordinates are zero-based.
+mainbuttons	db	06h,07h,04h,'1 '
+cmdtitle	db	'Power-On Command Line',00h
+	db	07h,2ch,'2 '
+savetitle	db	'Save BIOS Parameters',00h
+	db	0ah,04h,'3 '
+memtitle	db	'Memory Disk',00h
+	db	0ah,2ch,'4 '
+steptitle	db	'Disk Head Step Time',00h
+	db	0dh,04h,'5 '
+	db	'Field Inst. Device Driver',00h
+	db	0dh,2ch,'6 '
+	db	'Second Page of Options',00h
+secondbuttons	db	04h,07h,04h,'1 '
+verifytitle	db	'Verify After Disk Write',00h
+	db	07h,2ch,'2 '
+soundtitle	db	'Musical Error Messages',00h
+	db	0ah,04h,'3 '
+disktitle	db	'Select Storage Disk',00h
+	db	0ah,2ch,'4 '
+	db	'Return to Main Menu',00h
+exitbuttons	db	02h,12h,04h,'9 '
+	db	'Update '
+
+; First 11 bytes are replaced when the storage disk selection changes.
+updatedisk	db	'Floppy Disk and Exit',00h
+	db	12h,2ch,'10'
+	db	'Exit without Updating',00h
+msgreset	db	'All modified options will take effect at the next Power-On or Reset.',00h
+msgfunction	db	'SELECT FUNCTION',00h
+backbutton	db	01h,14h,14h,'9 '
+	db	'Return to ',00h
+cmdhelp	db	'      This option allows a single Command Line of up to 20 characters',00h
+	db	'to be executed at Power-On, or following a System Reset.   The ',27h,0b3h,27h,' is',00h
 	db	'used to show a Carriage Return (0DH).',00h
 	db	00h
-d0e8d	db	'The current Command Line is:  ',00h
-d0eac	db	02h,0eh,14h
-	db	'1 Enter a New Command Line',00h
-	db	11h,14h
-	db	'3 Cancel the Current Command Line',00h
-d0eee	db	03h,01h,03h,09h
-d0ef2	db	'  < none >',00h
-d0efd	db	'      Terminate the new Command Line wit'
-	db	'h a Carriage Return.   To put',00h
-	db	'a Carriage Return within the command, ty'
-	db	'pe a Control-E.  To erase one',00h
+msgcommand	db	'The current Command Line is:  ',00h
+cmdbuttons	db	02h,0eh,14h,'1 '
+	db	'Enter a New Command Line',00h
+	db	11h,14h,'3 '
+	db	'Cancel the Current Command Line',00h
+cmdkeys	db	03h,01h,03h,09h
+msgnone	db	'  < none >',00h
+cmdentryhelp	db	'      Terminate the new Command Line with a Carriage Return.   To put',00h
+	db	'a Carriage Return within the command, type a Control-E.  To erase one',00h
 	db	'character, type a Back Space (',11h,'--).',00h
 	db	00h
-d0fae	db	'ENTER A NEW COMMAND LINE',00h
-	db	'      This option allows the current sta'
-	db	'te of certain BIOS parameters',00h
-	db	'to be saved, and reinstated at the next '
-	db	'Power-On or System Reset.  To',00h
-	db	'cancel the Save command, retype the appr'
-	db	'opriate function key.',00h
+msgnewcommand	db	'ENTER A NEW COMMAND LINE',00h
+savehelp	db	'      This option allows the current state of certain BIOS parameters',00h
+	db	'to be saved, and reinstated at the next Power-On or System Reset.  To',00h
+	db	'cancel the Save command, retype the appropriate function key.',00h
 	db	00h
-d1092	db	03h,0bh,14h
-	db	'1 Save Programmable Function Keys',00h
-	db	0eh,14h
-	db	'3 Save Character I/O Assignments',00h
-	db	11h,14h
-	db	'5 Save Serial Port Configurations',00h
-d10fe	db	'Saved',00h
-d1104	db	'     ',00h
-d110a	db	04h,01h,03h,05h,09h
-	db	'      This option reserves a portion of '
-	db	'memory to be used as a Logical',00h
-	db	'Disk Drive, referred to as M:.  The user'
-	db	' selects the starting address,',00h
-	db	'and the BIOS allocates all of the contig'
-	db	'uous memory above that address',00h
-	db	'to Memory Disk.   If no memory is found '
-	db	'at the starting address, or if',00h
-	db	'the starting address is zero, then no Me'
-	db	'mory Disk will be created.',00h
+savebuttons	db	03h,0bh,14h,'1 '
+	db	'Save Programmable Function Keys',00h
+	db	0eh,14h,'3 '
+	db	'Save Character I/O Assignments',00h
+	db	11h,14h,'5 '
+	db	'Save Serial Port Configurations',00h
+msgsaved	db	'Saved',00h
+msgblank	db	'     ',00h
+savekeylist	db	04h,01h,03h,05h,09h
+memhelp	db	'      This option reserves a portion of memory to be used as a Logical',00h
+	db	'Disk Drive, referred to as M:.  The user selects the starting address,',00h
+	db	'and the BIOS allocates all of the contiguous memory above that address',00h
+	db	'to Memory Disk.   If no memory is found at the starting address, or if',00h
+	db	'the starting address is zero, then no Memory Disk will be created.',00h
 	db	00h
-d126f	db	'The current Starting Address is:  ',00h
-d1292	db	':0000',00h
-d1298	db	'0123456789ABCDEF',01h,11h,14h
-	db	'1 Enter a new Starting Address',00h
-d12ca	db	02h,01h,09h
-d12cd	db	'      Type the two most significant hexa'
-	db	'decimal digits (0-9 or A-F) of',00h
-	db	'the Starting Address segment.  The addre'
-	db	'ss must be within the range of',00h
-	db	'0800-9000 or C000-E000, or equal to 0','000.'
+msgmemory	db	'The current Starting Address is:  ',00h
+msgsegment	db	':0000',00h
+
+; Hex conversion alphabet, immediately followed by the memory option buttons.
+hexdigits	db	'0123456789ABCDEF'
+membuttons	db	01h,11h,14h,'1 '
+	db	'Enter a new Starting Address',00h
+memkeys	db	02h,01h,09h
+mementryhelp	db	'      Type the two most significant hexadecimal digits (0-9 or A-F) of',00h
+	db	'the Starting Address segment.  The address must be within the range of',00h
+	db	'0800-9000 or C000-E000, or equal to 0000.',00h
 	db	00h
+msgnewmemory	db	'ENTER STARTING ADDRESS',00h
+inputcursor	db	' _',08h,08h,1bh,'m',00h
+msgbadmemory	db	' Invalid Starting Address ',00h
+msganykey	db	'TYPE ANY KEY TO CONTINUE',00h
+verifyhelp	db	'      This option controls the Verify After Write feature of the BIOS',00h
+	db	'Disk Drive software.   When enabled, the Disk is verified after every',00h
+	db	'write operation, with automatic retries for verification errors.  The',00h
+	db	'Verify feature results in greater data security at the cost of speed.',00h
 	db	00h
-d1386	db	'ENTER STARTING ADDRESS',00h
-d139d	db	20h,5fh,08h,08h,1bh,6dh,00h
-d13a4	db	' Invalid Starting Address ',00h
-d13bf	db	'TYPE ANY KEY TO CONTINUE',00h
-	db	'      This option controls the Verify Af'
-	db	'ter Write feature of the BIOS',00h
-	db	'Disk Drive software.   When enabled, the'
-	db	' Disk is verified after every',00h
-	db	'write operation, with automatic retries '
-	db	'for verification errors.  The',00h
-	db	'Verify feature results in greater data s'
-	db	'ecurity at the cost of speed.',00h
+verifybuttons	db	02h,0eh,14h,'1 '
+	db	'Enable Verify After Write',00h
+	db	11h,14h,'3 '
+	db	'Disable Verify After Write',00h
+msgverify	db	'The Verify After Write feature is:  ',00h
+msgenabled	db	'Enabled ',00h
+msgdisabled	db	'Disabled',00h
+verifykeys	db	03h,01h,03h,09h
+stephelp	db	'      This option sets a Head Step Time of 2 to 32 mSec for the Floppy',00h
+	db	'Disk Controller.  The smaller the time, the faster the Disk Head moves',00h
+	db	'from track to track.   The default time is set to 8 mSec, but times of',00h
+	db	'6 mSec or 4 mSec work with some Disk Drives.  Caution is advised.',00h
 	db	00h
-d14f1	db	02h,0eh,14h
-	db	'1 Enable Verify After Write',00h
-	db	11h,14h
-	db	'3 Disable Verify After Write',00h
-d152f	db	'The Verify After Write feature is:  ',00h
-d1554	db	'Enabled ',00h
-d155d	db	'Disabled',00h
-d1566	db	03h,01h,03h,09h
-	db	'      This option sets a Head Step Time '
-	db	'of 2 to 32 mSec for the Floppy',00h
-	db	'Disk Controller.  The smaller the time, '
-	db	'the faster the Disk Head moves',00h
-	db	'from track to track.   The default time '
-	db	'is set to 8 mSec, but times of',00h
-	db	'6 mSec or 4 mSec work with some Disk Dri'
-	db	'ves.  Caution is advised.',00h
-	db	00h
-d1682	db	02h,0eh,14h
-	db	'1 Decrease Head Step Time',00h
-	db	11h,14h
-	db	'3 Increase Head Step Time',00h
-d16bb	db	'The current Disk Head Step Time is:  ',00h
-d16e1	db	' mSec ',00h
-d16e8	db	03h,01h,03h,09h
-	db	'      This option controls the Musical M'
-	db	'essages which come with status',00h
-	db	'line errors.   When enabled, all status '
-	db	'line errors are accompanied by',00h
-	db	'a distinctive four toned melody.  If dis'
-	db	'abled, this melody is replaced',00h
+stepbuttons	db	02h,0eh,14h,'1 '
+	db	'Decrease Head Step Time',00h
+	db	11h,14h,'3 '
+	db	'Increase Head Step Time',00h
+msgstep	db	'The current Disk Head Step Time is:  ',00h
+msgmsec	db	' mSec ',00h
+stepkeys	db	03h,01h,03h,09h
+soundhelp	db	'      This option controls the Musical Messages which come with status',00h
+	db	'line errors.   When enabled, all status line errors are accompanied by',00h
+	db	'a distinctive four toned melody.  If disabled, this melody is replaced',00h
 	db	'by a simple beep.',00h
 	db	00h
-d17d4	db	02h,0eh,14h
-	db	'1 Enable the Musical Error Messages',00h
-	db	11h,14h
-	db	'3 Disable the Musical Error Messages',00h
-d1822	db	03h,01h,03h,09h
-d1826	db	'Musical Error Messages are currently:  ',00h
-d184e	db	'Field Installable Device Driver',00h
-	db	'      This option reserves a block of me'
-	db	'mory at the top of the BIOS to',00h
-	db	'be used by Field Installable Device Driv'
-	db	'er Software (FIDDS).   The use',00h
-	db	'of this feature requires a separate FIDD'
-	db	'S program capable of attaching',00h
-	db	'itself to the BIOS.  For further informa'
-	db	'tion, refer to the application',00h
+soundbuttons	db	02h,0eh,14h,'1 '
+	db	'Enable the Musical Error Messages',00h
+	db	11h,14h,'3 '
+	db	'Disable the Musical Error Messages',00h
+soundkeys	db	03h,01h,03h,09h
+msgsound	db	'Musical Error Messages are currently:  ',00h
+fiddstitle	db	'Field Installable Device Driver',00h
+fiddshelp	db	'      This option reserves a block of memory at the top of the BIOS to',00h
+	db	'be used by Field Installable Device Driver Software (FIDDS).   The use',00h
+	db	'of this feature requires a separate FIDDS program capable of attaching',00h
+	db	'itself to the BIOS.  For further information, refer to the application',00h
 	db	'note:  "CP/M-86 FIDDS for the IBM PC".',00h
 	db	00h
-d19b2	db	'Current FIDDS Memory Allocation is:  ',00h
-d19d8	db	' Kb ',00h
-d19dd	db	01h,11h,14h
-	db	'1 Change the FIDDS Memory Allocation',00h
-d1a05	db	02h,01h,09h
-d1a08	db	'      Type a two digit decimal number eq'
-	db	'ual to the number of kilobytes',00h
-	db	'you want to reserve for FIDDS.  To enter'
-	db	' a number less than 10, type a',00h
-	db	'leading zero.  To disable the FIDDS feat'
-	db	'ure, type 00.',00h
+msgfidds	db	'Current FIDDS Memory Allocation is:  ',00h
+msgkb	db	' Kb ',00h
+fiddsbuttons	db	01h,11h,14h,'1 '
+	db	'Change the FIDDS Memory Allocation',00h
+fiddskeys	db	02h,01h,09h
+fiddsentryhelp	db	'      Type a two digit decimal number equal to the number of kilobytes',00h
+	db	'you want to reserve for FIDDS.  To enter a number less than 10, type a',00h
+	db	'leading zero.  To disable the FIDDS feature, type 00.',00h
 	db	00h
-d1acd	db	'ENTER FIDDS MEMORY SIZE',00h
-	db	'      This option controls which disk is'
-	db	' used to store the information',00h
-	db	'which is created by the SETUP program.  '
-	db	'Selecting the Floppy Disk will',00h
-	db	'send this information to drive A:.   Sel'
-	db	'ecting the Hard Disk will send',00h
-	db	'it to the Hard Disk with the lowest driv'
-	db	'e letter (usually B:).',00h
+msgnewfidds	db	'ENTER FIDDS MEMORY SIZE',00h
+diskhelp	db	'      This option controls which disk is used to store the information',00h
+	db	'which is created by the SETUP program.  Selecting the Floppy Disk will',00h
+	db	'send this information to drive A:.   Selecting the Hard Disk will send',00h
+	db	'it to the Hard Disk with the lowest drive letter (usually B:).',00h
 	db	00h
-d1bfa	db	01h
-	db	0eh,14h
-	db	'1 Store SETUP data on Floppy Disk',00h
-	db	11h,14h
-	db	'3 Store SETUP data on Hard Disk',00h
-d1c41	db	'The current Storage Disk is the:  ',00h
-d1c64	db	'Floppy Disk',00h
-d1c70	db	' Hard Disk ',00h
-d1c7c	db	02h
-	db	01h,09h,03h
-d1c80	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Only the floppy button is initially drawn; finding a CP/M partition changes
+; the count to two.  diskkeys similarly changes from two to three choices.
+diskbuttons	db	01h,0eh,14h,'1 '
+	db	'Store SETUP data on Floppy Disk',00h
+	db	11h,14h,'3 '
+	db	'Store SETUP data on Hard Disk',00h
+msgdisk	db	'The current Storage Disk is the:  ',00h
+msgfloppy	db	'Floppy Disk',00h
+msghard	db	' Hard Disk ',00h
+diskkeys	db	02h,01h,09h,03h
+
+; Shared disk buffer: 512 bytes.  First holds the hard disk MBR, then a
+; candidate configuration sector.  These sublabels describe the MBR view.
+sectorbuf	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
@@ -1391,13 +1612,20 @@ d1c80	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h
-d1e3e	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Four 16-byte MBR partition entries (type at +4, start sector/cylinder at +2).
+partitions	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h
-d1e7e	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-	db	00h,00h,00h,00h,00h,00h
+
+; MBR signature word, checked for AA55h.
+bootsig	dw	00h
+
+; Sixteen trailing zero bytes in the shipped image.
+imagepad	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h
 
 	end
