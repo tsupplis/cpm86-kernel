@@ -13,6 +13,8 @@ SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
+mform.cmd mformorg.cmd: Makefile
+
 mform.obj: mform.a86
 
 mformorg.obj: mformorg.a86
