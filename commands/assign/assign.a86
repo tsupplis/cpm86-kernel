@@ -1,8 +1,10 @@
 ;***********************************************************
 ;  ASSIGN.A86 - CP/M-86 Character I/O Assignment for the IBM PC
-;  Reconstructed from ndisasm output, for RASM-86 (CP/M-86)
+;  Reconstructed from the shipped binary, for RASM-86 (CP/M-86)
+;  Working banner is 1.0N; the shipped banner is 1.0 (two extra spaces).
 ;
-;  Build:   RASM86 ASSIGN
+;  Build:   make assign.cmd
+;           RASM86 ASSIGN
 ;           LINK86 ASSIGN[$SZ,COD[ORI[0]],DAT[ORI[0],MAX[0]]]
 ;  (8080 model: CGROUP holds both segments, so the CMD has one
 ;   CODE descriptor and DS = CS at run-time)
@@ -13,25 +15,43 @@
 ;
 ;  Five logical devices (CONIN, CONOUT, AUXIN, AUXOUT, LSTOUT)
 ;  are each a bit mask of physical devices, held in curasn and
-;  copied to/from a table inside the XIOS.
+;  copied to/from a table inside the XIOS.  Interactive changes stay local
+;  until F9 commits all five assignments.  Batch mode validates and reports
+;  one logical assignment, then writes all five back; errors do not commit.
+;
+;  Reconstruction checks must build assign.cmd directly: make check builds
+;  the assiorg snapshot, whose original banner still matches base/assign.cmd.
 ;***********************************************************
 
 ; ---- BDOS / BIOS numbers -----------------------------------
-f_reset		equ	0		; system reset
+f_reset		equ	0	; system reset
 f_conin		equ	1
-f_conout	equ	6		; raw console output
-f_constat	equ	11		; console status
-f_sysdata	equ	49		; get system data segment
+f_conout	equ	6	; raw console output
+f_constat	equ	11	; console status
+f_sysdata	equ	49	; get system data segment
 
 i_bdos		equ	0e0h	; CP/M-86 entry point
-i_video		equ	10h		; PC BIOS video
-i_equip		equ	11h		; PC BIOS equipment list
-i_keyb		equ	16h		; PC BIOS keyboard
+i_video		equ	10h	; PC BIOS video
+i_equip		equ	11h	; PC BIOS equipment list
+i_keyb		equ	16h	; PC BIOS keyboard
 
 ; ---- addresses outside this image --------------------------
-xatbl	equ	02554h		; assignment table offset within the system data segment
-tailbuf	equ	0080h		; base page command tail
-serbit	equ	0200h		; equipment-word weight of one serial port
+xatbl	equ	2554h	; assignment table offset within the system data segment
+tailbuf	equ	80h	; base page command tail
+serbit	equ	0200h	; equipment-word weight of one serial port
+prtbit	equ	4000h	; equipment-word weight of one printer
+
+; Device masks: keyboard, screen, serial 0/1, printers 0/1/2, dummy.
+; Only bits 0..6 are populated in allmsk; see findphys for the dummy quirk.
+inmask	equ	0dh	; keyboard and serial ports
+outmask	equ	7eh	; screen, serial ports and printers
+nlogical	equ	5
+maxphys	equ	7
+stacktop	equ	0d90h	; initial SP inside the trailing zero-filled area
+
+; Bounds for tools/a86tool.py (the last byte is LINK86 paragraph padding).
+data_org	equ	0736h
+image_end	equ	0da0h
 
 ;***********************************************************
 ;  CODE SEGMENT
@@ -42,7 +62,7 @@ serbit	equ	0200h		; equipment-word weight of one serial port
 cgroup	group	code,data
 
 	cseg
-	org	100h
+	org	0100h
 
 start:	jmps	begin
 
@@ -53,7 +73,7 @@ begin:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
-	mov	sp,0d90h
+	mov	sp,stacktop
 	cld
 	call	flushkb
 	mov	cl,f_sysdata
@@ -82,7 +102,7 @@ mainloop:
 	call	getkey
 	call	word ptr dsptbl[bx]	; dispatch on menu1 selection
 	mov	bx,sel
-	call	putlog			; un-highlight the device we just left
+	call	putlog	; un-highlight the device we just left
 	jmp	mainloop
 
 ;-----------------------------------------------------------
@@ -97,7 +117,7 @@ doinput:
 inploop:
 	mov	di,offset men2
 	call	getkey
-	cmp	al,00ah
+	cmp	al,0ah
 	jnz	inpkey
 	ret
 
@@ -106,15 +126,15 @@ inpkey:
 	dec	bx
 	add	bx,bx
 	mov	al,devmsk[bx]
-	test	al,00dh			; keyboard or either serial port only
+	test	al,inmask	; keyboard or either serial port only
 	jnz	inpset
-	mov	al,007h			; bell
+	mov	al,07h	; bell
 	call	conout
 	jmps	inploop
 
 inpset:
 	mov	bx,sel
-	mov	curasn[bx],al		; replace, not toggle
+	mov	curasn[bx],al	; replace, not toggle
 	call	putcell
 	jmps	inploop
 
@@ -130,7 +150,7 @@ dooutput:
 outloop:
 	mov	di,offset men2
 	call	getkey
-	cmp	al,00ah
+	cmp	al,0ah
 	jnz	outkey
 	ret
 
@@ -139,15 +159,15 @@ outkey:
 	dec	bx
 	add	bx,bx
 	mov	al,devmsk[bx]
-	test	al,07eh			; screen, serial or printer
+	test	al,outmask	; screen, serial or printer
 	jnz	outtog
-	mov	al,007h			; bell
+	mov	al,07h	; bell
 	call	conout
 	jmps	outloop
 
 outtog:
 	mov	bx,sel
-	xor	curasn[bx],al		; toggle this device in the mask
+	xor	curasn[bx],al	; toggle this device in the mask
 	call	putcell
 	jmps	outloop
 
@@ -162,8 +182,8 @@ finish:
 wrxios:
 	les	di,dword ptr xiosp	; assignment table inside the XIOS
 	mov	si,offset curasn
-	mov	cx,00005h
-	mov	ah,000h
+	mov	cx,nlogical
+	mov	ah,00h
 	cld
 
 wrloop:
@@ -173,7 +193,7 @@ wrloop:
 
 doexit:
 	mov	cl,f_reset
-	mov	dl,000h
+	mov	dl,00h
 	int	i_bdos
 
 ;-----------------------------------------------------------
@@ -188,38 +208,38 @@ devinit:
 	int	i_equip
 	mov	dx,ax
 	mov	di,offset devtbl
-	mov	ax,00100h		; keyboard: code 0, mask 01h
+	mov	ax,0100h	; keyboard: code 0, mask 01h
 	stosw
-	mov	ax,00201h		; screen: code 1, mask 02h
+	mov	ax,0201h	; screen: code 1, mask 02h
 	stosw
-	mov	byte ptr allmsk,003h
+	mov	byte ptr allmsk,03h
 	push	dx
-	mov	ax,00402h		; serial ports: code 2, mask 04h
+	mov	ax,0402h	; serial ports: code 2, mask 04h
 	mov	bx,serbit
-	mov	cx,00002h
-	and	dx,00e00h		; equipment bits 9-11 = serial port count
+	mov	cx,02h
+	and	dx,0e00h	; equipment bits 9-11 = serial port count
 	call	adddev
 	pop	dx
-	mov	ax,01004h		; printers: code 4, mask 10h
-	mov	bx,04000h
-	mov	cx,00003h
-	and	dx,0c000h		; equipment bits 14-15 = printer count
+	mov	ax,1004h	; printers: code 4, mask 10h
+	mov	bx,prtbit
+	mov	cx,03h
+	and	dx,0c000h	; equipment bits 14-15 = printer count
 	call	adddev
 	sub	di,offset devtbl
 	shr	di,1
 	mov	ndev,di
 	sub	dx,dx
 	mov	ax,di
-	cmp	al,007h
+	cmp	al,maxphys
 	jc	setgeom
 	inc	dx
 
-; With more than seven devices the grid is one row taller, and its left edge
-; moves to keep it centred.
+; Seven devices set wide, which moves the main-menu key legends and prompt
+; down one row.  Grid top row = 15 - ndev, left column = 30, in all cases.
 setgeom:
 	mov	byte ptr wide,dl
-	mov	dx,0081eh
-	add	dh,007h
+	mov	dx,081eh
+	add	dh,07h
 	sub	dh,al
 	mov	column,dx
 
@@ -230,18 +250,19 @@ rdxios:
 	push	ds
 	lds	si,dword ptr xiosp	; read current assignments out of the XIOS
 	mov	di,offset curasn
-	mov	cx,00005h
+	mov	cx,nlogical
 	cld
 
 rdloop:
-	lodsw				; XIOS holds words, we keep bytes
+	lodsw	; XIOS holds words, we keep bytes
 	stosb
 	loop	rdloop
 	pop	ds
 	ret
 
-; Append CX device entries while the masked equipment bits are non-zero.
-; AL = device code, AH = bit mask, BX = decrement for one unit of DX.
+; Append up to CX device entries.  Entry ZF comes from the caller's AND of
+; the equipment word; stop when that count reaches zero or CX runs out.
+; AL = device code, AH = bit mask, BX = equipment-word weight of one device.
 adddev:
 	jz	addret
 
@@ -261,42 +282,42 @@ addret:
 ;***********************************************************
 ; ---- the fixed frame: rules, corners and the banner --------
 drawtop:
-	mov	si,offset scron		; clear screen and set up the VT52 modes
+	mov	si,offset scron	; clear screen and set up the VT52 modes
 	call	puts
-	mov	cx,0004eh
-	mov	dx,00001h
-	mov	bl,0c4h			; single horizontal rule under the title
+	mov	cx,4eh
+	mov	dx,01h
+	mov	bl,0c4h	; single horizontal rule under the title
 	call	hline
-	mov	dx,00201h
-	mov	bl,0cdh			; double horizontal rule - column headings go here
+	mov	dx,0201h
+	mov	bl,0cdh	; double horizontal rule - column headings go here
 	call	hline
-	mov	dx,01701h
-	mov	bl,0c4h			; single horizontal rule - screen bottom
+	mov	dx,1701h
+	mov	bl,0c4h	; single horizontal rule - screen bottom
 	call	hline
-	mov	cx,00016h
-	mov	dx,00100h
-	mov	bl,0b3h			; left vertical rule
+	mov	cx,16h
+	mov	dx,0100h
+	mov	bl,0b3h	; left vertical rule
 	call	vline
-	mov	dx,0014fh
-	mov	bl,0b3h			; right vertical rule
+	mov	dx,014fh
+	mov	bl,0b3h	; right vertical rule
 	call	vline
-	mov	si,offset corner		; table of (row,col,char) corner pieces
-	mov	cx,00006h
+	mov	si,offset corner	; table of (row,col,char) corner pieces
+	mov	cx,06h
 
 cornloop:
-	mov	al,059h			; VT52 cursor-position command
+	mov	al,59h	; VT52 cursor-position command
 	call	escout
 	lodsb
-	add	al,020h
+	add	al,20h
 	call	conout
 	lodsb
-	add	al,020h
+	add	al,20h
 	call	conout
 	lodsb
 	call	conout
 	loop	cornloop
 	mov	si,offset banner
-	mov	dh,001h
+	mov	dh,01h
 	jmp	putcent
 
 ; ---- the assignment grid: rows, divider and column headings ----
@@ -319,7 +340,7 @@ gridrow:
 	pop	cx
 	loop	gridrow
 	mov	dx,column
-	add	dx,00100h
+	add	dx,0100h
 	mov	cx,06h
 	mov	bl,0b3h
 
@@ -345,11 +366,11 @@ gridtee:
 	mov	bx,0c1d9h
 	mov	al,0c0h
 	call	gridseg
-	mov	cx,05h
+	mov	cx,nlogical
 
 ; the five logical-device column headings above the grid
 labelcols:
-	mov	bx,05h
+	mov	bx,nlogical
 	sub	bx,cx
 	call	putlog
 	loop	labelcols
@@ -361,7 +382,7 @@ labelcols:
 
 ; the physical-device row labels down the left edge
 devnames:
-	mov	al,[bx]			; device code -> name string
+	mov	al,[bx]	; device code -> name string
 	mov	ah,00h
 	add	ax,ax
 	mov	di,ax
@@ -460,7 +481,7 @@ putcell:
 ; device that is set in its assignment byte.
 fillgrid:
 	mov	bx,offset curasn
-	mov	cx,05h
+	mov	cx,nlogical
 	mov	dx,column
 	add	dx,0102h
 
@@ -473,9 +494,9 @@ fgcol:
 fgrow:
 	mov	al,[bx]
 	test	[di],al
-	mov	si,offset offmsg		; blanks
+	mov	si,offset offmsg	; blanks
 	jz	fgput
-	mov	si,offset onmsg		; "* ON *"
+	mov	si,offset onmsg	; "* ON *"
 
 fgput:
 	call	putat
@@ -496,8 +517,8 @@ menumain:
 	mov	dx,column
 	sub	dx,05feh
 	add	dh,wide
-	mov	bx,2031h		; " 1" - first key label
-	mov	cx,05h
+	mov	bx,2031h	; "1 " - first key label
+	mov	cx,nlogical
 
 mmkey:
 	call	putkey
@@ -506,43 +527,43 @@ mmkey:
 	loop	mmkey
 	mov	dx,column
 	sub	dx,0309h
-	mov	bx,2039h		; " 9"
+	mov	bx,2039h	; "9 "
 	call	putkey
 	sub	dx,0ff11h
-	mov	si,offset msgexit		; "Assign and Exit"
+	mov	si,offset msgexit	; "Assign and Exit"
 	call	putat
 	mov	dx,column
-	sub	dx,0051bh
+	sub	dx,051bh
 	add	dh,wide
-	mov	si,offset msglog		; "SELECT LOGICAL DEVICE"
+	mov	si,offset msglog	; "SELECT LOGICAL DEVICE"
 	jmp	putat
 
 ; Enter physical selection for an input device.
 selinput:
 	call	hilite
-	mov	byte ptr legal,0dh	; input devices: keyboard/serial
+	mov	byte ptr legal,inmask	; input devices: keyboard/serial
 	call	menuphys
-	mov	si,offset msgin		; " INPUT DEVICE"
+	mov	si,offset msgin	; " INPUT DEVICE"
 	jmps	selprompt
 
 ; Enter physical selection for an output device.
 seloutput:
 	call	hilite
-	mov	byte ptr legal,7eh	; output devices: screen/serial/printers
+	mov	byte ptr legal,outmask	; output devices: screen/serial/printers
 	call	menuphys
-	mov	si,offset msgout		; " OUTPUT DEVICE"
+	mov	si,offset msgout	; " OUTPUT DEVICE"
 
 selprompt:
 	push	si
 	mov	dx,column
-	sub	dx,0051bh
-	mov	si,offset msgphys		; "SELECT PHYSICAL"
+	sub	dx,051bh
+	mov	si,offset msgphys	; "SELECT PHYSICAL"
 	call	putat
 	inc	dh
 	pop	si
 	call	putat
 	add	dx,0205h
-	mov	si,offset msgend		; "End"
+	mov	si,offset msgend	; "End"
 	jmp	putat
 
 ; Legend for the physical-device menu - only devices legal for this
@@ -573,19 +594,19 @@ mpnext:
 	loop	mpkey
 	mov	dx,column
 	sub	dx,0309h
-	mov	bx,3031h		; "10"
+	mov	bx,3031h	; "10"
 	call	putkey
 	sub	dx,0ff05h
-	mov	si,offset msgend2		; "End"
+	mov	si,offset msgend2	; "End"
 	jmp	putat
 
 ; Redraw the current logical device in reverse video.
 hilite:
 	mov	bx,ax
-	mov	al,72h			; ESC r - reverse video on
+	mov	al,72h	; ESC r - reverse video on
 	call	escout
 	call	putlog
-	mov	al,75h			; ESC u - reverse video off
+	mov	al,75h	; ESC u - reverse video off
 	jmp	escout
 
 ; Emit one key legend "[nn]" at DX, joining it to the grid line above:
@@ -670,7 +691,8 @@ gotoxy:
 ;-----------------------------------------------------------
 ;  Read a function key and map it through the count-prefixed
 ;  key list at DS:DI.  Beeps and retries until one matches.
-;  Returns BX = (position-1)*2, ready to index a table.
+;  Returns AX = function-key number and BX = 2 * zero-based list index.
+;  The main menu uses BX to dispatch; physical menus use AX to select a row.
 ;-----------------------------------------------------------
 getkey:
 	mov	cl,[di]
@@ -685,7 +707,7 @@ gkloop:
 	mov	bx,cx
 	call	getraw
 	mov	al,ah
-	sub	al,3ah			; scan code -> F-key number
+	sub	al,3ah	; scan code -> F-key number
 	repne	scasb
 	mov	dx,cx
 	pop	di
@@ -722,7 +744,8 @@ escout:
 	call	conout
 	pop	ax
 
-; Raw console output, transparent to every register.
+; Raw console output: preserve BX, CX, DX, SI, DI and ES; restore forward
+; string direction.  AX and flags are not preserved.
 conout:
 	push	bx
 	push	cx
@@ -743,6 +766,7 @@ conout:
 	ret
 
 ; Unreachable: a key-status helper the original never calls.
+keystatus:
 	mov	ah,01h
 	int	i_keyb
 	ret
@@ -756,8 +780,8 @@ getraw:
 ;***********************************************************
 ;  COMMAND TAIL MODE
 ;***********************************************************
-; With no physical devices named, the tail only asks what the
-; logical device is currently assigned to.
+; With no physical devices named, report the current assignment.  This path
+; still writes all five assignments back as zero-extended bytes on exit.
 batch:
 	call	crlf
 	call	rdxios
@@ -773,9 +797,13 @@ batchend:
 	jmp	wrxios
 
 ;-----------------------------------------------------------
-;  Split the tail into two-letter codes: the logical device,
-;  its type, then any number of physical devices.  A blank is
-;  appended first so the last word terminates like the rest.
+;  The first letter of the logical device and of its type form
+;  tailcode (for example C,I).  Each physical token contributes
+;  its first and last letters (KEYBOARD -> KD, SERIAL-0 -> S0).
+;  Append space,NUL so the final token terminates like the rest.
+;  Only ASCII spaces separate tokens; spelling is otherwise unchecked
+;  and letter comparisons are case-sensitive.  The original parser has
+;  no bound check on the seven physical-code slots in tailphys.
 ;-----------------------------------------------------------
 parse:
 	mov	si,tailbuf
@@ -814,7 +842,7 @@ errlog:
 	mov	si,offset errlogmsg
 	jmp	errmsg
 
-; Skip blanks; Z set at end of tail.
+; Skip ASCII spaces; return the first non-space in AL, ZF set for NUL.
 skipsp:
 	lodsb
 	cmp	al,20h
@@ -822,7 +850,8 @@ skipsp:
 	test	al,al
 	ret
 
-; Keep the last letter of the word in AH: the codes are first+last letter.
+; Consume through the next space, leaving the token's last letter in AH.
+; Logical/type tokens ignore AH; physical tokens store it as their second byte.
 get2nd:
 	mov	ah,al
 	lodsb
@@ -833,7 +862,8 @@ get2nd:
 ;-----------------------------------------------------------
 ;  Match the logical device code.  scasw leaves CX holding
 ;  the number of entries *left*, which is the index curasn
-;  wants, so logcod is stored in reverse order.
+;  wants, so logcod is stored in reverse order.  Swapping the
+;  input bytes makes a word match the reversed letter pairs.
 ;-----------------------------------------------------------
 findlog:
 	push	cs
@@ -841,7 +871,7 @@ findlog:
 	mov	ax,tailcode
 	xchg	al,ah
 	mov	di,offset logcod
-	mov	cx,05h
+	mov	cx,nlogical
 	cld
 	repne	scasw
 	jnz	errlog
@@ -854,12 +884,12 @@ findlog:
 	mov	byte ptr legal,0feh
 	ret
 
-; Console and Aux have both directions; List is output only, so anything but
-; the two input codes gets the wider mask.
+; Selections 0 and 2 are Console Input and Aux Input; each accepts one
+; keyboard or serial device.  Output selections allow multiple devices.
 setlegal:
-	mov	byte ptr legal,0dh
+	mov	byte ptr legal,inmask
 	cmp	word ptr nphys,02h
-	jnc	errmany			; input may name only one device
+	jnc	errmany	; input may name only one device
 	ret
 
 errmany:
@@ -869,7 +899,10 @@ errmany:
 ;-----------------------------------------------------------
 ;  Turn each physical code into a bit and OR them together.
 ;  rol by the remaining scasw count gives KD=01 SN=02 S0=04
-;  S1=08 P0=10 P1=20 P2=40 DY=80; the dummy bit is dropped.
+;  S1=08 P0=10 P1=20 P2=40 DY=80.  Preserve the original
+;  dummy quirk: output legality includes bit 80h, but allmsk
+;  never sets it, so DY is rejected as off-line before the
+;  later AND could remove it.  No behaviour is changed here.
 ;-----------------------------------------------------------
 findphys:
 	push	cs
@@ -929,14 +962,14 @@ report:
 	test	dl,dl
 	jz	rpdummy
 	mov	dh,20h
-	mov	cx,07h
+	mov	cx,maxphys
 	mov	bx,offset physnm
 
 rploop:
 	rcr	dl,1
 	jnc	rpnext
 	mov	si,[bx]
-	mov	al,dh			; separator: space first time, comma after
+	mov	al,dh	; separator: space first time, comma after
 	mov	dh,2ch
 	call	conout
 	call	putword
@@ -970,7 +1003,7 @@ errmsg:
 	call	puts
 	jmp	doexit
 
-; CR LF, with no register preserved but AX.
+; Print CR LF; preserves the same registers as conout.  AX/flags may change.
 crlf:
 	mov	al,0dh
 	call	conout
@@ -980,17 +1013,17 @@ crlf:
 ; ---- data ----
 	dseg
 ; VT52 setup: ESC E clear, ESC w / ESC n / ESC q / ESC t / ESC u
-scron	db	01bh,'E',01bh,'w',01bh,'n',01bh,'q',01bh,'t',01bh,'u',0
+scron	db	1bh,'E',1bh,'w',1bh,'n',1bh,'q',1bh,'t',1bh,'u',0
 ; VT52 restore on exit: ESC E clear, ESC v, ESC m
-scroff	db	01bh,'E',01bh,'v',01bh,'m',0
+scroff	db	1bh,'E',1bh,'v',1bh,'m',0
 
 ; Corner glyphs for the title box: row, column, character.
-corner	db	000h,000h,0dah
-	db	000h,04fh,0bfh
-	db	002h,000h,0c6h
-	db	002h,04fh,0b5h
-	db	017h,000h,0c0h
-	db	017h,04fh,0d9h
+corner	db	00h,00h,0dah
+	db	00h,4fh,0bfh
+	db	02h,00h,0c6h
+	db	02h,4fh,0b5h
+	db	17h,00h,0c0h
+	db	17h,4fh,0d9h
 
 banner	db	'CP/M-86 Character I/O Assignment '
 	db	'for the IBM PC version 1.0N',0
@@ -1021,63 +1054,65 @@ offmsg	db	'      ',0
 ; Function-key legend box.  putkey patches offset 0 and 5 (the top corners) to
 ; join this box to the one above it, then prints keylbl for the digits.
 keybox	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh
-	db	00ah,008h,0b3h
-	db	008h,008h,008h,008h,008h,008h
-	db	0b3h,00ah,008h
+	db	0ah,08h,0b3h
+	db	08h,08h,08h,08h,08h,08h
+	db	0b3h,0ah,08h
 	db	0c0h,0c4h,0c4h,0c4h,0c4h,0d9h
-	db	01bh,'A',008h,008h,008h,008h,0
+	db	1bh,'A',08h,08h,08h,08h,0
 
-keylbl		db	01bh,'r','F'
+keylbl		db	1bh,'r','F'
 keydigits	dw	00h
-			db	01bh,'u',0
+			db	1bh,'u',0
 lastbox		dw	00h
 legal		db	0	; mask of devices legal for the current direction
-allmsk		db	0	; mask of every device present (patched into a string)
+allmsk		db	0	; presence mask: keyboard/screen plus BIOS-reported ports
 
-msglog		db	01bh,'r','SELECT LOGICAL DEVICE  ',0cdh,0cdh,010h,01bh,'u',0
+msglog		db	1bh,'r','SELECT LOGICAL DEVICE  ',0cdh,0cdh,10h,1bh,'u',0
 msgexit		db	'Assign and Exit',0
-msgphys		db	01bh,'r','SELECT PHYSICAL',0
+msgphys		db	1bh,'r','SELECT PHYSICAL',0
 msgin		db	' INPUT DEVICE',0
 msgout		db	' OUTPUT DEVICE',0
-msgend		db	019h,019h,019h,019h,01bh,'u',0
+msgend		db	19h,19h,19h,19h,1bh,'u',0
 msgend2		db	'End',0
 
-menu1:					; main selection menu, 1 count + N key codes
-men1		db	006h			; keys are (scan code - 03ah): F1..F5,F9
-			db	001h,002h,003h,004h,005h,009h	; Console,Aux,List,Input,Output,Assign&Exit
+menu1:	; main selection menu, 1 count + N key codes
+men1		db	06h	; keys are (scan code - 03ah): F1..F5,F9
+			db	01h,02h,03h,04h,05h,09h	; CONIN,CONOUT,AUXIN,AUXOUT,LSTOUT,Assign&Exit
 
-menu2:					; physical-device selection menu
-men2		db	008h			; F1..F7,F10
-			db	001h,002h,003h,004h,005h,006h,007h,00ah
+menu2:	; physical-device selection menu
+men2		db	08h	; F1..F7,F10
+			db	01h,02h,03h,04h,05h,06h,07h,0ah
 
-					; dsptbl - indexed by (menu1 selection-1)*2
-dsptbl		dw	doinput, dooutput, doinput, dooutput, dooutput, finish	; main-menu handler table, 6 words
+; dsptbl - indexed by twice the zero-based main-menu position
+dsptbl		dw	doinput, dooutput, doinput, dooutput, dooutput, finish	; main-menu handlers: two inputs, three outputs, commit
 
-curasn		db	000h,000h,000h	; 5 current assignments: CONIN,CONOUT,AUXIN,AUXOUT,LSTOUT
-			db	000h,000h
+curasn		db	00h,00h,00h	; low bytes of CONIN,CONOUT,AUXIN,AUXOUT,LSTOUT
+			db	00h,00h
 xiosp		dw	00h	; far pointer to the XIOS assignment table
 xiossg		dw	00h	; segment half of xiosp
-ndev		dw	0000h	; number of physical devices found
-devtbl		db	000h	; device table, one word each: AL=code, AH=bit mask
-devmsk		db	000h,000h,000h,000h,000h,000h,000h	; the AH half of devtbl[0] - indexed by (sel-1)*2
-			db	000h,000h,000h,000h,000h,000h
+ndev		dw	00h	; number of physical devices found
+devtbl		db	00h	; seven interleaved (device code, bit mask) records
+devmsk		db	00h,00h,00h,00h,00h,00h,00h	; first mask byte; other masks follow at stride 2
+			db	00h,00h,00h,00h,00h,00h
 gridlen		dw	00h
-wide		db	000h	; set when more than 7 devices are present
+wide		db	00h	; set when all seven physical device rows are present
 column		dw	00h	; screen position for the device column
-sel			dw	00h	; logical device currently selected
-nphys		dw	00h
-tailcode	dw	00h
-tailphys	db	000h,000h,000h,000h,000h,000h,000h
-			db	000h,000h,000h,000h,000h,000h,000h
+sel			dw	00h	; zero-based logical device index (0..4)
+nphys		dw	00h	; number of physical tokens parsed from the command tail
+tailcode	dw	00h	; first letters: logical device, then direction
+; Seven two-byte physical codes; parse does not check this capacity.
+tailphys	db	00h,00h,00h,00h,00h,00h,00h
+			db	00h,00h,00h,00h,00h,00h,00h
 
 ; Logical device codes for the command tail.  findlog matches with repne scasw
 ; and keeps the *remaining* count as the selection, so the order is reversed:
 ; IC=0, OC=1, IA=2, OA=3, OL=4 - matching curasn.
 logcod		db	'OL','OA','IA','OC','IC'
 
-; Physical device codes: first and last letter of each name.  findphys turns the
-; remaining count into a bit with rol, giving KD=01 SN=02 S0=04 S1=08,
-; P0=10 P1=20 P2=40 DY=80; the dummy bit is stripped with "and al,7fh".
+; Physical tokens use first+last letter: KD, SN, S0, S1, P0, P1, P2, DY.
+; Stored pairs are byte-reversed because findphys swaps AL/AH before SCASW;
+; table order is also reversed so the remaining count yields the bit index.
+; Dummy is recognised here but fails the presence check (see findphys).
 physcod		db	'YD','2P','1P','0P','1S','0S','NS','DK'
 
 msgasn		db	' is assigned to:',0
@@ -1105,18 +1140,24 @@ errsuf		db	' ***',0dh
 			db	'first and last letter of each name.',0dh,0ah,0ah
 			db	'This example assigns List Output to the Screen and Printer 0:',0dh,0ah,0ah
 			db	'ASSIGN L O SN P0',0dh,0ah
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
-			db  00h
+	db	00h		; terminate the error/help text
+
+; Stack storage: starts at 0D0Fh with the working banner.  Initial SP is
+; stacktop (0D90h); the stack grows downward into these zero-filled bytes.
+stackspace	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Fifteen bytes above initial SP; LINK86 adds one paragraph-padding byte.
+imagepad	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+	db	00h,00h,00h
 
 	end
