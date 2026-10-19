@@ -1,30 +1,25 @@
 ;***********************************************************
-;  MFORM.A86 - CompuPro "MXdisk" memory drive formatter
+;  MFORM.A86 - CP/M-86 memory drive formatter
+;  Derived from the CompuPro "MXdisk" formatter; BIOS path only.
 ;  Reconstructed from ndisasm output, for RASM-86 (CP/M-86)
 ;
 ;  Build:   pcdev_rasm86 mform
-;           pcdev_linkcmd mform [$sz, nofill, data[additional[200]]]
-;  (additional[200] = 200h extra paragraphs = 2000h bytes past CMD image;
-;   secbuf at 280h, dirbuf at 400h, worst-case dir 2000h -> total 2400h)
+;           pcdev_linkcmd mform [$sz, nofill, data[additional[220]]]
+;  (220h extra paragraphs past the CMD image; runtime secbuf at 380h,
+;   dirbuf at 400h, worst-case directory ends at 2400h)
 ;
 ;  Usage:   MFORM drive[option]
 ;           X         confirmation required
 ;           X!        LLO present no prompt
-;           X-        forced format no prompt
+;           X-        forced format, quiet banner/messages; confirms Y/N
 ;***********************************************************
 
 ; ---- BDOS / BIOS numbers -----------------------------------
 f_conin         equ     1
 f_print         equ     9
-f_seldsk        equ     14
 f_version       equ     12
 f_getdpb        equ     31
-f_errmode       equ     45
 f_dirbios       equ     50
-f_openq         equ     135
-f_readq         equ     137
-f_writeq        equ     139
-f_sysdata       equ     154
 
 bio_seldsk      equ     9
 bio_settrk      equ     10
@@ -45,6 +40,14 @@ cprbanner db    'REV 1.2 2-9-83COPYRIGHT (C) 1982 COMPUPRO div. GODBOUT ELECTRON
 
 ; ---- parse command tail at DS:80h --------------------------
 start:
+; Reject multitasking systems before any drive access or format prompt.
+; Their XIOS interface is not the CP/M-86 BDOS 50 BIOS interface.
+        mov     cx,f_version
+        int     0e0h
+        test    bh,0f0h
+        jz      plaincpm
+        jmp     wrongos
+plaincpm:
         mov     quietflag,0
         mov     bx,80h
         mov     cl,[bx]                 ; tail length
@@ -82,14 +85,6 @@ notquiet:
 docnf:
         call    confirm
 nocnf:
-        mov     mtflag,0
-
-; ---- single-task or multitasking? --------------------------
-        mov     cx,f_version
-        int     0e0h
-        and     bh,0f0h
-        or      bh,bh
-        jnz     mtdisk
 
 ; ---- plain CP/M-86: DPB via BIOS SELDSK --------------------
         mov     cx,f_getdpb             ; only used to get ES
@@ -108,36 +103,6 @@ gotdph:
         mov     bx,es:[bx]
         jmp     chkmem
 
-; ---- multitasking: open queue, select drive, get DPB -------
-mtdisk:
-        mov     mtflag,1
-        mov     cl,f_sysdata
-        int     0e0h
-        mov     bx,es
-        mov     xiosseg,bx
-        mov     cl,f_openq
-        mov     dx,offset qpb
-        int     0e0h
-        or      ax,ax
-        jz      qopen
-        jmp     qerr
-qopen:
-        mov     cl,f_errmode
-        mov     dl,0ffh
-        int     0e0h
-        mov     cl,f_seldsk
-        mov     dl,drive
-        int     0e0h
-        mov     cl,f_seldsk
-        mov     dl,drive
-        int     0e0h
-        cmp     ah,4
-        jnz     getdpb
-        jmp     done
-getdpb:
-        mov     cx,f_getdpb
-        int     0e0h
-
 ; ---- byte before DPB must be >= 80h for a memory drive -----
 chkmem:
         dec     bx
@@ -153,7 +118,6 @@ ismem:
         jnz     dofmt                   ; user said Y: force format
 
 ; ---- '!' mode: look for signature at trk 3, sec 0 ----------
-        call    qlock
         mov     cl,0
         mov     al,bio_setsec
         call    bios
@@ -170,7 +134,6 @@ ismem:
         call    bios
         mov     al,bio_read
         call    bios
-        call    qunlock
         mov     bx,dmaoff
         mov     cx,7dh
         add     bx,cx
@@ -222,7 +185,6 @@ dofmt1:
 rdloop:
         push    dx
         push    cx
-        call    qlock
         mov     cx,dx
         mov     al,bio_settrk
         call    bios
@@ -241,7 +203,6 @@ rdloop:
         call    bios
         mov     al,bio_read
         call    bios
-        call    qunlock
         pop     cx
         pop     dx
         inc     cx
@@ -282,7 +243,6 @@ mark:
 wrloop:
         push    dx
         push    cx
-        call    qlock
         mov     cx,dx
         mov     al,bio_settrk
         call    bios
@@ -301,7 +261,6 @@ wrloop:
         call    bios
         mov     al,bio_write
         call    bios
-        call    qunlock
         pop     cx
         pop     dx
         inc     cx
@@ -319,7 +278,6 @@ wr1:
 wrdone:
 
 ; stamp signature 'LLO' at offset 7Dh of trk 3, sec 0
-        call    qlock
         mov     cl,0
         mov     al,bio_setsec
         call    bios
@@ -351,16 +309,12 @@ sigcpy:
         jnz     sigcpy
         mov     al,bio_write
         call    bios
-        call    qunlock
         jmps    done
 
 ;-----------------------------------------------------------
 ;  BIOS call wrapper.  AL = function, CX/DX = arguments
 ;-----------------------------------------------------------
 bios:
-        mov     bl,mtflag
-        or      bl,bl
-        jnz     bios_mt
         mov     bx,offset biosblk       ; single-task: BDOS 50
         mov     [bx],al
         mov     1[bx],cx
@@ -369,12 +323,6 @@ bios:
         mov     dx,bx
         int     0e0h
         ret
-bios_mt:
-        dec     al                      ; multitasking: far call
-        dec     al                      ; into XIOS, funcs shifted by 2
-        callf   dword ptr xiosoff
-        ret
-
 ;-----------------------------------------------------------
 ;  Ask Y/N.  Anything but Y exits.
 ;-----------------------------------------------------------
@@ -401,8 +349,8 @@ nodrive:
         mov     dx,offset msg_usage
         call    print
         jmps    done
-qerr:
-        mov     dx,offset msgqerr
+wrongos:
+        mov     dx,offset msgwrongos
         jmps    pmsg
 notmem:
         mov     dx,offset msgnotmem
@@ -430,54 +378,6 @@ print:
         pop     ax
         ret
 
-;-----------------------------------------------------------
-;  Queue "lock" = read queue, "unlock" = write queue.
-;  No-ops on single-task systems.
-;-----------------------------------------------------------
-qlock:
-        push    ax
-        push    cx
-        push    dx
-        mov     al,mtflag
-        or      al,al
-        jz      qlk1
-        mov     cl,f_readq
-        mov     dx,offset qpb
-        int     0e0h
-        or      ax,ax
-        jz      qlk1
-        pop     dx
-        pop     cx
-        pop     ax
-        jmps    qerr
-qlk1:
-        pop     dx
-        pop     cx
-        pop     ax
-        ret
-
-qunlock:
-        push    ax
-        push    cx
-        push    dx
-        mov     al,mtflag
-        or      al,al
-        jz      qul1
-        mov     cx,f_writeq
-        mov     dx,offset qpb
-        int     0e0h
-        or      ax,ax
-        jz      qul1
-        pop     dx
-        pop     cx
-        pop     ax
-        jmp     qerr
-qul1:
-        pop     dx
-        pop     cx
-        pop     ax
-        ret
-
 ;***********************************************************
 ;  DATA SEGMENT  (offsets 0-0FFh = CP/M-86 base page)
 ;***********************************************************
@@ -486,35 +386,28 @@ qul1:
 ; so offsets here are relative to that; the comments give the runtime offset.
         org     0
 
-confirmed db    0                       ; 100h  FF = user said Y
-sig       db    'LLO'                   ; 101h  format signature
-mtflag    db    0                       ; 104h  1 = multitasking
-qpb       db    0,0,0,0,0,0,15h,01h     ; 105h  queue parameter block
-qname     db    'MXdisk  '              ; 10Dh  queue name
-          db    0,0,0,0,0               ; 115h  (rest of QPB)
-xiosoff   dw    1003h                   ; 11Ah  far ptr: offset
-xiosseg   dw    0                       ; 11Ch          segment (runtime)
-
-msg_banner db   0dh,0ah,'CP/M-86 MFORM VER 1.0N (10.2026)',0dh,0ah,0dh,0ah,'$'
+confirmed db    0
+sig       db    'LLO'
+msg_banner db   0dh,0ah,'CP/M-86 MFORM VER 1.1N',0dh,0ah,0dh,0ah,'$'
 msg_usage  db   'USAGE: MFORM drive[option]',0dh,0ah
            db   '  X         confirmation required',0dh,0ah
            db   '  X!        LLO present no prompt',0dh,0ah
-           db   '  X-        forced format no prompt',0dh,0ah,'$'
+           db   '  X-        quiet format, confirms Y/N',0dh,0ah,'$'
 msginv    db    'INVALID DRIVE',0dh,0ah,'$'
 msgnodrv  db    'NO DRIVE SPECIFIED',0dh,0ah,'$'
-msgnotmem db    'DRIVE SPECIFIED IS NOT A MEMORY DRIVE',0dh,0ah,'$' ; 143h
-msgfmt    db    0dh,0ah,'FORMATTING MEMORY DRIVE',0ah,0dh,'$'      ; 16Bh
-msgcnf    db    'CONFIRM DESTROY ALL FILES ON THE MEMORY DRIVE (Y or N)? $' ; 187h
-msgqerr   db    0dh,0ah,'ERROR IN GETTING MXdisk QUEUE','$'        ; 1C0h
+msgnotmem db    'DRIVE SPECIFIED IS NOT A MEMORY DRIVE',0dh,0ah,'$'
+msgfmt    db    0dh,0ah,'FORMATTING MEMORY DRIVE',0ah,0dh,'$'
+msgcnf    db    'CONFIRM DESTROY ALL FILES ON THE MEMORY DRIVE (Y or N)? $'
+msgwrongos db  0dh,0ah,'MFORM requires single-tasking CP/M-86.',0dh,0ah,'$'
 
 quietflag db    0                       ; 0 = normal, 1 = quiet (no banner/msgs)
 biosblk   db    0,0,0,0,0               ; func, CX, DX for BDOS 50
 drive     db    0
-dirsecs   dw    0                       ; 1E6h  directory sector count
-loopctr   dw    0                       ; 1E8h
-spt       dw    0                       ; 1EAh
-trk0      dw    0                       ; 1ECh  DPB OFF
-dmaoff    dw    0                       ; 1EEh
+dirsecs   dw    0
+loopctr   dw    0
+spt       dw    0
+trk0      dw    0
+dmaoff    dw    0
 
 ; NOFILL drops everything from here on out of the CMD image; the loader
 ; supplies it via the data group's minimum allocation.

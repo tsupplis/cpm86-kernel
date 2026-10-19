@@ -96,7 +96,7 @@ Sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel repo
 | `hdmaint` | Updated 1.0→1.1 | — |
 | `help` | Original | CCP/M-86 3.1 |
 | `help.hlp` | Updated (fuller content) | CCP/M-86 3.1 |
-| `mform` | Patched (prompt removed) | Reverse engineering |
+| `mform` | CP/M-86 only; BIOS-based memory-drive formatter | Reverse engineering |
 | `pip` | Patched (DR rec.) | CCP/M-86 3.1 |
 | `print` | Original | — |
 | `setup` | Updated 1.0→1.2 | Reverse engineering, WIP |

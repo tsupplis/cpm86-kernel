@@ -22,12 +22,12 @@ dcl yes byte public data ('Y'),
 /* Text strings: */
 
 dcl
-initials(*)  byte public data('CP/M ASM86 1.1N (10.2026) SOURCE: ',0),
+initials(*)  byte public data('CP/M-86 ASM86 1.1N SOURCE: ',0),
 pagetext(*)  byte public data(' PAGE',0),
 endtext(*)   byte public data('END OF ASSEMBLY.  ',
                           'NUMBER OF ERRORS: ',0),
 USEFACTOR (*) BYTE PUBLIC DATA ('.  USE FACTOR: ',0),
-asm86text(*) byte public data(cr,lf,'CP/M 8086 ASSEMBLER VER 1.1N2 (10.2026)',
+asm86text(*) byte public data(cr,lf,'CP/M-86 8086 ASSEMBLER VER 1.1N2',
                               cr,lf,0),
 parerrtext(*) byte public data(cr,lf,'PARAMETER ERROR',cr,lf,0),
 openerrtext(*) byte public data(cr,lf,'NO FILE',0),

@@ -749,8 +749,10 @@ Syntax:
 
   Purpose:
 
-      MFORM  formats  a  CompuPro  MXdisk  memory  drive,  clearing
-  all  directory  entries  and  optionally  stamping  a  signature.
+      MFORM formats an already configured CP/M-86 memory drive,
+  clearing its directory and stamping an 'LLO' signature. It uses
+  the BIOS through BDOS Function 50. It does not allocate RAM or
+  enable the drive. MP/M-86 and Concurrent CP/M are not supported.
 
   Options:
 
@@ -759,8 +761,8 @@ Syntax:
   X!        Format only if the 'LLO' signature is not already present.
             No prompt is issued.
 
-  X-        Force format drive X with no banner or messages.
-            Useful in SUBMIT scripts.
+  X-        Force format drive X without the banner or format message.
+            The Y/N confirmation is still required.
 
   Examples:
 

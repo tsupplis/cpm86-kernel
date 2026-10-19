@@ -2038,7 +2038,7 @@ $ eject
  
 plmstart:              /* entry of MP/M-86 Interface */
 
-    CALL PRINT(.('CP/M-86 ED VER 2.0N (10.2026)$'));
+    CALL PRINT(.('CP/M-86 ED VER 2.0N$'));
     CALL CRLF;
     CALL CRLF;
 

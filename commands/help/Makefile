@@ -6,21 +6,20 @@ INTEL_OH86=intel_oh86
 GENCMD=cpm86_gencmd
 
 TOOLS=help.cmd
+
 DATA=help.hlp
 
 SNIPPETS=
 
 all: $(TOOLS) $(DATA) $(SNIPPETS)
 
-# Build help.hlp from help.dat using the index generator tool.
-# Edit help.dat to change topics; the index is regenerated automatically.
-help.hlp: help.dat ../../tools/help_hlp.py
-	python3 ../../tools/help_hlp.py help.dat help.hlp
+help.hlp: help.cmd help.dat
+	emu2 help.cmd '[C]'
+	@test -s $@
 
 # BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from help.mp2:
 #   BBB = start of dats segment / 16 (e.g. 1000)
 #   MMM = (start of memory segment - start of dats segment) / 16
-# Recursively expanded on purpose: help.mp2 only exists once help.h86 is built.
 PARA = sub(/H$$/,"",s); sub(/.$$/,"",s); sub(/^0+/,"",s); print tolower(s); exit
 HELP_BASE = $(shell awk '/DATS +DATA/{s=$$1; $(PARA)}' help.mp2)
 HELP_MEM  = $(shell awk '/MEMORY +MEMORY/{s=$$1; $(PARA)}' help.mp2)
