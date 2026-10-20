@@ -115,7 +115,7 @@ endef
 commands:
 	$(MAKE) -C $(CMDDIR)
 
-extra: 144feat-map
+extra: extra/144feat.inc
 	$(MAKE) -C extra
 
 cpmwk.img: base-160.img
@@ -251,8 +251,12 @@ cpm86-160-4.img: FTOOLS = $(BASICTOOLS)
 cpm86-160-4.img: base-160.img
 	$(flat_image)
 
-144feat-map: cpm.sys cpmexp.sys
-	python3 tools/gen_144feat_inc.py
+# Track the generated file, rather than an alias that never exists.
+extra/144feat.inc: cpm.sys cpmexp.sys tools/gen_144feat_inc.py
+	python3 tools/gen_144feat_inc.py $@
+
+.PHONY: 144feat-map
+144feat-map: extra/144feat.inc
 
 cpm.sys: cpm86.h86
 	cpm86_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
