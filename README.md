@@ -250,3 +250,9 @@ Primary source: http://www.cpm.z80.de
 | Bug patches | http://www.cpm.z80.de/download/cpm86bug.zip |
 | 144FEAT2 | Freek Heite |
 | hexcom | https://github.com/johnsonjh/tpzasm |
+
+--
+
+## License
+
+The whole repository is under CP/M (License)[LICENSE.md] when derived from CP/M or under MIT MIT (License)[License-bis.md] unless specified otherwise in a subdirectory.

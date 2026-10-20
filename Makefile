@@ -21,6 +21,9 @@ ASSIGN   = $(CMDDIR)/assign/assign.cmd
 DSKMAINT = $(CMDDIR)/dskmaint/dskmaint.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
+DFORM    = $(CMDDIR)/dskmaint/dform.cmd
+DCOPY    = $(CMDDIR)/disk/dcopy.cmd
+DCOMP    = $(CMDDIR)/disk/dcomp.cmd
 TESTSUB  = $(CMDDIR)/submit/testcpm.sub
 DATPFK   = $(CMDDIR)/function/data.pfk
 
@@ -31,6 +34,7 @@ DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
              dev/sid86.cmd
 BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
 DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
+EXTTOOLS   = $(DFORM) $(DCOPY) $(DCOMP)
 
 DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
     cpm86-160-4.img \
