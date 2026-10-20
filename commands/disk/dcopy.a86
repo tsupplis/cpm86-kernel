@@ -822,8 +822,8 @@ msg_invalid_drive	db	0Dh,0Ah
 	db	'$'
 
 	dseg
-msg_banner	db	0dh,0ah,'CP/M-86 FLOPPY COPY',0dh,0ah,'$'
-msg_usage	db	'USAGE: DCOPY drive1: {drive2:} {[1]}',0dh,0ah
+msg_banner	db	0dh,0ah,'CP/M-86 FLOPPY COPY VER 1.0N',0dh,0ah,'$'
+msg_usage	db	'USAGE: DCOPY drive1: {drive2:} {[1]}',0dh,0ah,0dh,0ah
 	db	'  drive1:  Source floppy drive, A: or B: (required)',0dh,0ah
 	db	'  drive2:  Target floppy drive (default: current drive)',0dh,0ah
 	db	'  [1]      Head zero only; closing ] is optional',0dh,0ah

@@ -110,7 +110,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `hexcom` | — | DR HEXCOM 3.00 reimplementation |
 > A clean-room reimplementation of `submit` (`msub`) with a visual and configurable menu system for submit orchestration is available at [cpm86-menu](https://github.com/tsupplis/cpm86-menu).
 
-`make commands` builds the full source set. `tod`, `dcopy`, `dcomp`, `dform` and the updated help database are built from source for the stock and experimental distributions. The experimental images also use reconstructed versions of the standard tools.
+`make commands` builds the full source set. `tod`, `mform`, `dcopy`, `dcomp`, `dform` and the updated help database are built from source for the stock and experimental distributions. The experimental images also use reconstructed versions of the standard tools.
 
 #### Command-line floppy tools
 

@@ -549,8 +549,8 @@ old_segment	dw	0
 ; Same bytes as the parameter table embedded in DSKMAINT.
 disk_params	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
 
-msg_banner	db	13,10,'CP/M-86 FLOPPY FORMATTER',13,10,'$'
-msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10
+msg_banner	db	13,10,'CP/M-86 FLOPPY FORMATTER VER 1.0N',13,10,'$'
+msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10,13,10
 	db	'  A: or B:  Target floppy drive (required)',13,10
 	db	'  1         Single-sided, 160K',13,10
 	db	'  2         Double-sided, 320K (default)',13,10

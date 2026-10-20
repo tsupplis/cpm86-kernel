@@ -48,7 +48,7 @@ SHARED     = base/setup.cmd base/hdmaint.cmd \
              base/config.cmd base/print.cmd 
 
 CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
-             base/help.cmd base/assign.cmd base/mform.cmd base/mformq.cmd \
+             base/help.cmd base/assign.cmd $(MFORM) base/mformq.cmd \
              $(HLP) base/dskmaint.cmd base/data.pfk \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
