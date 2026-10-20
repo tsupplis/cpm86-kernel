@@ -177,10 +177,10 @@
   Answer Y to compare another pair, or N to exit. An empty or invalid
   command line displays usage without starting disk operations.
 
-      This build is for CP/M-86 1.1 on the IBM PC. It uses ROM BIOS disk
-  calls and supports 40 cylinders with eight 512-byte sectors per head:
-  160K single-sided or 320K double-sided media. BDOS 3.x/XIOS support is
-  not implemented.
+      This build supports CP/M-86 1.1 using ROM BIOS and CCP/M-86 3.1
+  using native IBM PC XIOS. Both support 40 cylinders with eight 512-byte
+  sectors per head: 160K single-sided or 320K double-sided media. Close
+  all open files first on CCP/M. Ctrl-C cancels and releases disk locks.
 
   Examples:
 
@@ -212,10 +212,10 @@
   directly, as in B:[1]. Answer Y to copy another pair, or N to exit.
   An empty or invalid command line displays usage without copying.
 
-      This build is for CP/M-86 1.1 on the IBM PC. It uses ROM BIOS disk
-  calls and supports 40 cylinders with eight 512-byte sectors per head:
-  160K single-sided or 320K double-sided media. BDOS 3.x/XIOS support is
-  not implemented.
+      This build supports CP/M-86 1.1 using ROM BIOS and CCP/M-86 3.1
+  using native IBM PC XIOS. Both support 40 cylinders with eight 512-byte
+  sectors per head: 160K single-sided or 320K double-sided media. Close
+  all open files first on CCP/M. Ctrl-C cancels and releases disk locks.
 
   Examples:
 

@@ -234,8 +234,9 @@ cpm86-160-1.img: cpm.sys base-160.img | commands
 
 cpm86-160-2.img: FEAT = ibmpc-514ss
 cpm86-160-2.img: BASE = base-160.img
+# HELP stays on the bootable core disks; duplicating it here exceeds 160K.
 cpm86-160-2.img: FTOOLS = base/pip.cmd base/submit.cmd base/ed.cmd $(ASMTOOLS) \
-             $(EXTTOOLS) $(HELP) $(HLP)
+             $(EXTTOOLS)
 cpm86-160-2.img: base-160.img
 	$(flat_image)
 

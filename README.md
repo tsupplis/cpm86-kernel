@@ -116,11 +116,11 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `dcomp` | — | CP/M-86 port of DOS diskcomp |
-| `dcopy` | — | CP/M-86 port of DOS diskcopy |
-| `dform` | — | New, command-line DSKMAINT formatter (`commands/dskmaint/`) |
+| `dcomp` | — | CP/M-86 / CCP/M-86 port of DOS DISKCOMP |
+| `dcopy` | — | CP/M-86 / CCP/M-86 port of DOS DISKCOPY |
+| `dform` | — | New, CP/M-86 / CCP/M-86 DSKMAINT formatter |
 
-`dcopy` and `dcomp` are CP/M-86 ports of the PC DOS 1.10 DISKCOPY and DISKCOMP utilities, respectively. They derive from the byte-exact disassemblies in [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
+`dcopy` and `dcomp` are CP/M-86 / CCP/M-86 ports of the PC DOS 1.10 DISKCOPY and DISKCOMP utilities, respectively. They derive from the byte-exact disassemblies in [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
 
 `dform` is a new command-line derivative of DSKMAINT's formatter, sharing its boot sector and loader sources.
 
@@ -171,7 +171,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | --- | --- |
 | `cpm86-160-1.img` | Bootable core CP/M-86 |
 | `cpm86-160-1-at.img` | Bootable core, AT-compatible clock |
-| `cpm86-160-2.img` | CP/M-86 assembler tools + DCOPY/DCOMP/DFORM + updated HELP |
+| `cpm86-160-2.img` | CP/M-86 assembler tools + DCOPY/DCOMP/DFORM |
 | `cpm86-160-3.img` | Digital Research dev tools |
 | `cpm86-160-4.img` | BASIC development |
 
@@ -199,7 +199,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The three new floppy commands total about 32K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database too. The 320K core pair and all stock/experimental 720K and 1.44M images carry all three commands directly. Developer-only disks retain their toolchain contents.
+The three new floppy commands total about 51K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. The 320K core pair and all stock/experimental 720K and 1.44M images carry all three commands directly. Developer-only disks retain their toolchain contents.
 
 The experimental 160K pair ships the reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 

@@ -1,0 +1,401 @@
+;*****************************************************************************
+; CCP/M-86 3.1 IBM PC XIOS backend for DCOPY and DCOMP.
+; Follows DSKMAINT 1.5: SYSDAT:28h, UDA in ES, stack IOPB, MXdisk exclusion.
+; All partial acquisition paths are tracked for cleanup; no ROM BIOS calls.
+;*****************************************************************************
+	cseg
+
+; Obtain system pointers before any direct XIOS access. BDOS result_es and
+; result_bx retain pointer results despite the normal register-saving wrapper.
+ccpm_init:
+	mov	cl,154
+	call	bdos
+	mov	ax,result_es
+	mov	system_segment,ax
+	mov	cl,156
+	call	bdos
+	mov	bx,result_bx
+	mov	process_offset,bx
+	mov	es,word ptr system_segment
+	mov	ax,es:10h[bx]
+	mov	uda_segment,ax
+	mov	cl,153
+	call	bdos
+	cmp	ax,4
+	jc	ccpm_local
+	mov	dx,offset msg_terminal
+	jmp	ccpm_stop
+ccpm_local:
+	mov	bx,2ch
+	mul	bx
+	mov	es,word ptr system_segment
+	add	ax,es:word ptr .54h
+	mov	console_offset,ax
+	mov	bx,ax
+	cmp	es:word ptr 0eh[bx],0
+	jz	ccpm_equipment
+	mov	dx,offset msg_background
+	jmp	ccpm_stop
+ccpm_equipment:
+	xor	cx,cx
+	mov	al,14
+	call	ccpm_call
+	mov	bx,ax
+	mov	es,word ptr system_segment
+	mov	ax,es:[bx]
+	cmp	ax,2
+	jbe	ccpm_count_ready
+	mov	ax,2
+ccpm_count_ready:
+	mov	drive_count,al
+ccpm_init_done:
+	mov	ax,offset verify_space
+	add	ax,15
+	mov	cl,4
+	shr	ax,cl
+	mov	bx,ds
+	add	ax,bx
+	add	ax,0ffh
+	and	ax,0ff00h
+	mov	verify_segment,ax
+	ret
+
+; Lock after argument validation and allocation, before prompting for disks. Recheck the open-file vector while holding
+; the queue token, closing the race between the initial test and acquisition.
+ccpm_lock:
+	mov	es,word ptr system_segment
+	cmp	es:word ptr .88h,0
+	jz	ccpm_keep
+	mov	dx,offset msg_open_files
+	jmp	ccpm_stop
+ccpm_keep:
+	mov	bx,process_offset
+	mov	ax,es:6[bx]
+	and	ax,2
+	mov	old_keep,ax
+	mov	al,es:5[bx]
+	mov	old_priority,al
+	or	es:word ptr 6[bx],2
+	mov	byte ptr process_held,1
+	mov	dl,150
+	mov	cl,145
+	call	bdos
+	mov	es,word ptr system_segment
+	mov	bx,console_offset
+	pushf
+	cli
+	cmp	es:word ptr 0eh[bx],0
+	jnz	ccpm_console_busy
+	or	es:word ptr 0eh[bx],8
+	mov	byte ptr console_held,1
+	popf
+	mov	dx,offset disk_queue
+	mov	cl,135
+	call	bdos
+	or	ax,ax
+	jnz	ccpm_queue_error
+	mov	cl,137
+	call	bdos
+	or	ax,ax
+	jnz	ccpm_queue_error
+	mov	byte ptr disk_held,1
+	mov	es,word ptr system_segment
+	cmp	es:word ptr .88h,0
+	jz	ccpm_lock_done
+	mov	dx,offset msg_open_files
+	jmp	ccpm_stop
+ccpm_lock_done:
+; Native error handling must return errors instead of offering Ignore,
+; which would silently accept unread data or a failed copy/verification.
+	mov	es,word ptr uda_segment
+	mov	al,es:byte ptr .10h
+	mov	old_error_mode,al
+	mov	es:byte ptr .10h,0feh
+	mov	byte ptr io_mode_held,1
+	ret
+ccpm_console_busy:
+	popf
+	mov	dx,offset msg_background
+	jmp	ccpm_stop
+ccpm_queue_error:
+	mov	dx,offset msg_queue
+ccpm_stop:
+	call	puts
+	jmp	cleanup
+
+; XIOS calls without an IOPB: equipment and disk selection. Keep the caller's
+; segments and cursors, returning AX alone. Entry is obtained from SYSDAT.
+ccpm_call:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	mov	es,word ptr uda_segment
+	mov	ds,word ptr system_segment
+	callf	dword ptr .28h
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+; BIOS-shaped interface used only inside these commands: AH=request,
+; CH=cylinder, DH=head, DL=unit, ES:BX=buffer. Head one runs in reverse
+; XIOS logical-track order. XIOS read-back verification uses separate
+; storage so a failed verification never overwrites the buffered source.
+ccpm_io:
+	or	ah,ah
+	jnz	ccpm_transfer
+	xor	ax,ax                    ; native driver handles controller reset
+	clc
+	ret
+ccpm_transfer:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	mov	native_function,10
+	mov	native_dma_offset,bx
+	mov	native_dma_segment,es
+	cmp	ah,3
+	jnz	ccpm_not_write
+	mov	native_function,11
+ccpm_not_write:
+	cmp	ah,5
+	jnz	ccpm_not_format
+	mov	native_function,15
+ccpm_not_format:
+	cmp	ah,4
+	jnz	ccpm_dma_ready
+	mov	ax,verify_segment
+	mov	native_dma_segment,ax
+	mov	native_dma_offset,0
+ccpm_dma_ready:
+	push	cx
+	mov	cl,dl
+	mov	al,1
+	shl	al,cl
+	or	touched_drives,al
+	pop	cx
+	xor	ax,ax
+	mov	al,ch
+	or	dh,dh
+	jz	ccpm_track_ready
+	mov	al,79
+	sub	al,ch
+ccpm_track_ready:
+	mov	ch,8
+	mov	cl,dl
+	push	cx                        ; unit/count
+	push	ax                        ; logical track
+	xor	cx,cx
+	push	cx                        ; zero-based sector
+	push	word ptr native_dma_segment
+	push	word ptr native_dma_offset
+	mov	al,native_function
+	mov	es,word ptr uda_segment
+	mov	ds,word ptr system_segment
+	callf	dword ptr .28h
+	add	sp,10
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	or	al,al
+	jnz	ccpm_io_error
+	xor	ax,ax
+	clc
+	ret
+ccpm_io_error:
+; Quick-return XIOS reports only general failure (1) or write protection
+; (2). Map these to the existing retry/side-probe/format-fallback paths.
+	mov	ah,4
+	cmp	al,2
+	jnz	ccpm_io_failed
+	mov	ah,3
+ccpm_io_failed:
+	stc
+	ret
+
+; Invalidate media state before releasing MXdisk; then reset BDOS login
+; records outside the lock. Restore NOSWITCH, priority and the original
+; P_KEEP bit on every success, cancellation and failure path.
+ccpm_finish:
+	cmp	byte ptr disk_held,0
+	jz	ccpm_release_console
+	xor	cx,cx
+ccpm_invalidate_next:
+	mov	al,1
+	shl	al,cl
+	test	touched_drives,al
+	jz	ccpm_invalidate_advance
+	mov	dl,1
+	mov	al,9
+	call	ccpm_call
+	or	ax,ax
+	jz	ccpm_invalidate_advance
+	mov	bx,ax
+	mov	es,word ptr system_segment
+	mov	es:byte ptr 6[bx],0
+ccpm_invalidate_advance:
+	inc	cl
+	cmp	cl,2
+	jnz	ccpm_invalidate_next
+	cmp	byte ptr io_mode_held,0
+	jz	ccpm_return_token
+	mov	es,word ptr uda_segment
+	mov	al,old_error_mode
+	mov	es:byte ptr .10h,al
+	mov	byte ptr io_mode_held,0
+ccpm_return_token:
+	mov	dx,offset disk_queue
+	mov	cl,139
+	call	bdos
+	mov	byte ptr disk_held,0
+	cmp	byte ptr touched_drives,0
+	jz	ccpm_release_console
+	mov	cl,13
+	call	bdos
+ccpm_release_console:
+	cmp	byte ptr console_held,0
+	jz	ccpm_release_process
+	mov	es,word ptr system_segment
+	mov	bx,console_offset
+	and	es:word ptr 0eh[bx],0fff7h
+	mov	byte ptr console_held,0
+ccpm_release_process:
+	cmp	byte ptr process_held,0
+	jz	ccpm_finished
+	mov	dl,old_priority
+	mov	cl,145
+	call	bdos
+	mov	es,word ptr system_segment
+	mov	bx,process_offset
+	and	es:word ptr 6[bx],0fffdh
+	mov	ax,old_keep
+	or	es:6[bx],ax
+	mov	byte ptr process_held,0
+ccpm_finished:
+	ret
+
+	dseg
+result_es	dw	0
+result_bx	dw	0
+system_segment	dw	0
+process_offset	dw	0
+console_offset	dw	0
+uda_segment	dw	0
+old_keep	dw	0
+old_priority	db	0
+process_held	db	0
+console_held	db	0
+disk_held	db	0
+; Queue parameter block layout from the original CCP/M DSKMAINT image.
+disk_queue	db	0,0,0,0,0,0,0,0
+	db	'MXdisk  '
+	db	0,0,0,0,0,0
+msg_terminal	db	'This command requires a local virtual console.',13,10,'$'
+msg_background	db	'This command cannot run in background or buffered mode.',13,10,'$'
+msg_open_files	db	'Close all open files before direct disk access.',13,10,'$'
+msg_queue	db	'Cannot acquire the MXdisk queue.',13,10,'$'
+	cseg
+
+; The same binary selects single-user BIOS or this exact IBM PC XIOS.
+select_os:
+	mov	cl,12
+	call	bdos
+	cmp	ax,22h
+	jz	select_bios
+	and	ah,0fh
+	cmp	ah,4
+	jz	select_concurrent
+	cmp	ah,6
+	jz	select_concurrent
+	jmp	wrong_os
+select_concurrent:
+	mov	cl,163
+	call	bdos
+	cmp	ax,1431h
+	jnz	wrong_os
+	mov	byte ptr os_mode,1
+	call	ccpm_init
+	ret
+select_bios:
+	int	11h
+	test	al,1
+	jz	select_no_floppy
+	mov	cl,6
+	shr	al,cl
+	and	al,3
+	inc	al
+	cmp	al,2
+	jbe	select_drive_count
+	mov	al,2
+select_drive_count:
+	mov	drive_count,al
+	ret
+select_no_floppy:
+	mov	byte ptr drive_count,0
+	ret
+cancelled:
+	mov	dx,offset msg_cancelled
+	jmp	print_init_error_exit
+wrong_os:
+	mov	byte ptr os_mode,2
+	mov	dx,offset msg_wrong_os
+	jmp	print_init_error_exit
+
+; Preserve the request while polling Ctrl-C. The backend returns status
+; in AX/CF, preserving all live cursors and segment registers.
+disk_io:
+	push	ax
+	push	cx
+	push	dx
+	mov	dl,0ffh
+	mov	cl,f_rawio
+	call	bdos
+	cmp	al,3
+	jnz	disk_io_continue
+	jmp	cancelled
+disk_io_continue:
+	pop	dx
+	pop	cx
+	pop	ax
+	cmp	byte ptr os_mode,0
+	jz	disk_io_bios
+	jmp	ccpm_io
+disk_io_bios:
+	int	13h
+	ret
+
+	dseg
+os_mode	db	0
+touched_drives	db	0
+native_function	db	0
+native_dma_segment	dw	0
+native_dma_offset	dw	0
+verify_segment	dw	0
+old_error_mode	db	0
+io_mode_held	db	0
+msg_cancelled	db	'Cancelled.',13,10,'$'
+msg_wrong_os	db	'Requires CP/M-86 1.1 or Concurrent CP/M-86 3.1.',13,10,'$'
+verify_space	rs	2000h
+	cseg

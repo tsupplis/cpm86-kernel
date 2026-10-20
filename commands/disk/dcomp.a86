@@ -1,6 +1,6 @@
 ;*****************************************************************************
 ;
-;	DCOMP - CP/M-86 diskette comparison for the IBM PC
+;	DCOMP - CP/M-86 / CCP/M-86 diskette comparison for the IBM PC
 ;
 ;	Adapted from the PC DOS 1.10 utility by David Litton, IBM (1981-82).
 ;	The original copyright text is retained below.
@@ -27,11 +27,14 @@
 ;		DCOMP A:		use A: and the current drive
 ;		DCOMP		display command usage
 ;
-;	BIOS INT 13h transfers raw tracks: 40 cylinders, eight 512-byte
+;	CP/M-86 1.1 uses BIOS; CCP/M-86 3.1 uses native IBM PC XIOS.
+;	Both transfer raw tracks: 40 cylinders, eight 512-byte
 ;	sectors per head, one or two heads.  No filesystem is interpreted.
 ;	BDOS INT E0h handles console, current drive, memory and termination.
 ;	All BDOS calls preserve ES and the live disk/comparison registers.
 ;	The 512-byte private stack and program stay resident throughout.
+;	CCP/M locks MXdisk and protects process/console state during access.
+;	Ctrl-C releases locks, restores state and terminates through BDOS.
 ;
 ;*****************************************************************************
 
@@ -255,7 +258,7 @@ read_tracks:
 read_track_attempt:
 	xor	bx,bx
 	mov	ax,bios_read_track
-	int	13h
+	call	disk_io
 	jc	read_track_failed
 
 read_track_succeeded:
@@ -301,7 +304,7 @@ advance_read_buffer:
 read_track_failed:
 	push	ax
 	xor	ax,ax
-	int	13h
+	call	disk_io
 	pop	ax
 	cmp	ah,80h
 	jz	retry_disk_not_ready
@@ -344,6 +347,7 @@ select_single_sided:
 	jmp	advance_read_buffer
 
 report_read_error:
+	or	byte ptr compare_flags,flag_mismatch_seen ; No success after unread data.
 	mov	error_drive_char,dl
 	add	byte ptr error_drive_char,41h
 	mov	side_digit_char,dh
@@ -598,6 +602,7 @@ init:
 	mov	ss,ax
 	mov	sp,offset stack_top
 	cld
+	call	select_os
 	call	parse_args
 	jmp	encode_drive_letters
 
@@ -640,6 +645,10 @@ encode_drive_letters:
 ; The small buffer is resident; allocate the large buffer separately.
 allocate_compare_buffers:
 	call	alloc_buffer
+	cmp	byte ptr os_mode,0
+	jz	buffer_backend_ready
+	call	ccpm_lock
+buffer_backend_ready:
 	jmp	begin_comparison
 
 begin_comparison:
@@ -663,7 +672,7 @@ msg_invalid_parameter	db	0Dh,0Ah
 	db	'$'
 
 	dseg
-msg_banner	db	0dh,0ah,'CP/M-86 FLOPPY COMPARE VER 1.0N',0dh,0ah,0dh,0ah,'$'
+msg_banner	db	0dh,0ah,'CP/M-86 / CCP/M-86 FLOPPY COMPARE VER 1.0N',0dh,0ah,0dh,0ah,'$'
 msg_usage	db	'USAGE: DCOMP drive1: {drive2:} {[1]}',0dh,0ah
 	db	'  drive1:  First floppy drive, A: or B: (required)',0dh,0ah
 	db	'  drive2:  Second floppy drive (default: current drive)',0dh,0ah
@@ -685,6 +694,8 @@ bdos:
 	push	ds
 	push	es
 	int	i_bdos
+	mov	cs:result_es,es
+	mov	cs:result_bx,bx
 	pop	es
 	pop	ds
 	pop	bp
@@ -706,8 +717,8 @@ puts:
 	pop	ax
 	ret
 
-; Discard type-ahead before a disk swap or Y/N response, then read with echo.
-; Function 6 consumes queued input without echo; function 1 waits for the key.
+; Discard type-ahead before a disk swap or Y/N response, then poll a key.
+; Raw function 6 polling gives Ctrl-C an explicit cleanup path.
 wait_key:
 	push	cx
 	push	dx
@@ -721,18 +732,32 @@ flush_key:
 	call	bdos
 	jmp	flush_key
 read_key:
-	mov	cl,f_conin
+	mov	dl,0ffh
+	mov	cl,f_rawio
 	call	bdos
+	or	al,al
+	jz	read_key
+	cmp	al,3
+	jnz	key_return
+	jmp	cancelled
+key_return:
 	pop	dx
 	pop	cx
 	ret
 
 ; Forget both floppy login records after raw BIOS access, then let BDOS free
 ; the program and its transfer block.  No return through a DOS PSP is used.
+cleanup:
 doexit:
+	cmp	byte ptr os_mode,0
+	jz	exit_cpm
+	call	ccpm_finish
+	jmp	exit_program
+exit_cpm:
 	mov	dx,3
 	mov	cl,f_resetdrive
 	call	bdos
+exit_program:
 	xor	dx,dx
 	mov	cl,f_reset
 	int	i_bdos
@@ -743,16 +768,6 @@ doexit:
 ; invalid-drive status in AX.  Missing drives or bad arguments show usage.
 ;-----------------------------------------------------------------------------
 parse_args:
-	int	11h
-	mov	cl,6
-	shr	al,cl
-	and	al,3
-	inc	al
-	cmp	al,2
-	jbe	drive_count_ready
-	mov	al,2		; only A:/B: floppy units are supported
-drive_count_ready:
-	mov	drive_count,al
 	mov	cl,f_getdrive
 	call	bdos
 	inc	al
@@ -840,9 +855,9 @@ args_return:
 	ret
 
 ;-----------------------------------------------------------------------------
-; This kernel's function 53 finds a maximum block but does not reserve it;
-; function 55 reserves the returned size.  Keep both calls, check AL (the
-; kernel returns 00ffh on failure), and leave the allocation nonresident.
+; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
+; function 53 already reserves the block, so skip the second allocation.
+; Check AL for success and let termination release the transfer storage.
 ; Round up to a 4 KiB boundary so an eight-sector BIOS transfer cannot cross
 ; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
@@ -852,11 +867,15 @@ alloc_buffer:
 	call	bdos
 	or	al,al
 	jnz	memory_error
+; CCP/M function 53 already allocates; CP/M needs the second call.
+	cmp	byte ptr os_mode,0
+	jnz	memory_reserved
 	mov	byte ptr mem_ext,0
 	mov	cl,f_alloc
 	call	bdos
 	or	al,al
 	jnz	memory_error
+memory_reserved:
 	mov	dx,mem_segment
 	mov	bx,dx
 	add	dx,0ffh
@@ -909,4 +928,5 @@ stack_space	rs	stack_size
 stack_top:
 ; Up to 4 KiB padding aligns the 8 KiB read buffer for BIOS DMA.
 small_buffer	rs	3000h
+	include	ccpmio.a86
 	end
