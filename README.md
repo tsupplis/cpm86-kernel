@@ -271,4 +271,4 @@ Primary source: http://www.cpm.z80.de
 
 ## License
 
-CP/M-derived material is covered by the (CP/M license)[LICENSE.md]; other material uses the (MIT license)[LICENSE-bis.md], unless specified otherwise in a subdirectory.
+CP/M-derived material is covered by the [CP/M license](LICENSE.md); other material uses the [MIT license](LICENSE-bis.md), unless specified otherwise in a subdirectory.
