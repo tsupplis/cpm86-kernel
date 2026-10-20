@@ -86,27 +86,27 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `asm86` | Original | CCP/M-86 3.1 |
-| `assign` | Original | Reverse engineering |
-| `config` | Original | Reverse engineering |
-| `ddt86` | Original | CCP/M-86 3.1 |
-| `dskmaint` | Updated 1.0→1.2 | Reverse engineering |
-| `ed` | Patched (DR rec.) | CCP/M-86 3.1 |
-| `function` | Original | Reverse engineering |
-| `gencmd` | Original | CCP/M-86 3.1 |
+| `asm86` | Original | Adapted from CCP/M-86 3.1 |
+| `assign` | Original | Reverse engineered from CP/M-86 and adapted|
+| `config` | Original | Reverse engineered from CP/M-86 and adapted |
+| `ddt86` | Original | Adapted from CCP/M-86 3.1 |
+| `dskmaint` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
+| `ed` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
+| `function` | Original | Reverse engineered from CP/M-86 and adapted |
+| `gencmd` | Original | Adapted from CCP/M-86 3.1 |
 | `gendef` | Patched (DR rec.) | — |
-| `hdmaint` | Updated 1.0→1.1 | — |
-| `help` | Original | CCP/M-86 3.1 |
+| `hdmaint` | Updated 1.0→1.1 | TBD, Reverse engineered from CP/M-86 and adapted |
+| `help` | Original | Adapted from CCP/M-86 3.1 |
 | `help.hlp` | Rebuilt for every core distribution; includes DCOPY/DCOMP/DFORM | `commands/help/help.dat` |
 | `mform` | CP/M-86 only; BIOS-based memory-drive formatter | Reverse engineering |
-| `pip` | Patched (DR rec.) | CCP/M-86 3.1 |
-| `print` | Original | — |
-| `setup` | Updated 1.0→1.2 | Reverse engineering, WIP |
-| `stat` | Original | CP/M-80 2.2 |
-| `submit`  | Patched (DR rec.) | CP/M-80 2.2 |
-| `tod` | — (superseded) | New, CP/M-86-native rewrite |
+| `pip` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
+| `print` | Original | TBD, Reverse engineered from CP/M-86 and adapted |
+| `setup` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
+| `stat` | Original | Adapted from CP/M-80 2.2 |
+| `submit`  | Patched (DR rec.) | Adapted from CP/M-80 2.2 |
+| `tod` | — (superseded) | New, CP/M-86 rewrite |
 | `atinit` | Imported from [cpm86-hacking](https://github.com/tsupplis/cpm86-hacking) | — |
-| `asm80` | — | DR CP/M-80 sources (1976–1978) |
+| `asm80` | — | Adapted from CP/M-80 2.2 and translated using XLT86 |
 | `hexcom` | — | DR HEXCOM 3.00 reimplementation |
 > A clean-room reimplementation of `submit` (`msub`) with a visual and configurable menu system for submit orchestration is available at [cpm86-menu](https://github.com/tsupplis/cpm86-menu).
 
