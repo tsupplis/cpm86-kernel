@@ -4,6 +4,8 @@
 
 CP/M-86 1.1 kernel (BIOS, BDOS, CCP) and standard command set for IBM PC XT, emulators, and the V20 MBC, fully patched and buildable from source. Three parallel kernel source sets are kept: a frozen reference, an annotated working copy, and an experimental build. All standard commands are being rebuilt from original PL/M and assembler sources; original and patched binaries, the Digital Research and Microsoft dev toolchains, and `asm80`/`hexcom` for mixed 8080/8086 environments are also included.
 
+Also new cli tools have been added to be completely cli driven... (dform, dcopy, dcomp ....).
+
 Build requires [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
 ## Distributions
