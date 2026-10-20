@@ -53,7 +53,7 @@ CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/functio
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
              $(MFORM) $(FUNCTION) $(SHARED) $(DSKMAINT) $(HLP) $(TESTSUB) \
-             $(DATPFK) 
+             $(DATPFK)
 EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS) $(EXTTOOLS)
@@ -343,8 +343,8 @@ clean-images:
 
 dist: disks.zip
 
-disks.zip: $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
-	zip -j $@ $(DIST_DISKS) LICENSE.md diskdefs tools/cpm86twist.py
+disks.zip: $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
+	zip -j $@ $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
     
 
 # Verify cpm.sys and cpmorg.sys are binary-identical.

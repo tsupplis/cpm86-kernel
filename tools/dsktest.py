@@ -21,7 +21,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
                    EXPECT_WRITES=writes * (repeat + 1))
     with tempfile.TemporaryDirectory(prefix='cpm-disk-') as td:
         image = Path(td) / 'test.com'
-        subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'tests/harness.asm'),
+        subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'tests/dsktest.asm'),
                         '-o', str(image), f'-DIMAGE="{ROOT / tool}.cmd"',
                         *(f'-D{k}={v}' for k, v in options.items())], check=True)
         result = subprocess.run(['emu2', str(image)], capture_output=True,

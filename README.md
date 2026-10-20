@@ -88,9 +88,6 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `assign` | Original | Reverse engineering |
 | `config` | Original | Reverse engineering |
 | `ddt86` | Original | CCP/M-86 3.1 |
-| `dcomp` | Source build | PC DOS 1.10 DISKCOMP port to CP/M-86 (`commands/disk/`) |
-| `dcopy` | Source build | PC DOS 1.10 DISKCOPY port to CP/M-86 (`commands/disk/`) |
-| `dform` | Source build | Command-line DSKMAINT formatter (`commands/dskmaint/`) |
 | `dskmaint` | Updated 1.0→1.2 | Reverse engineering |
 | `ed` | Patched (DR rec.) | CCP/M-86 3.1 |
 | `function` | Original | Reverse engineering |
@@ -105,7 +102,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `setup` | Updated 1.0→1.2 | Reverse engineering, WIP |
 | `stat` | Original | CP/M-80 2.2 |
 | `submit`  | Patched (DR rec.) | CP/M-80 2.2 |
-| `tod` | — (superseded) | CP/M-86-native rewrite |
+| `tod` | — (superseded) | New, CP/M-86-native rewrite |
 | `atinit` | Imported from [cpm86-hacking](https://github.com/tsupplis/cpm86-hacking) | — |
 | `asm80` | — | DR CP/M-80 sources (1976–1978) |
 | `hexcom` | — | DR HEXCOM 3.00 reimplementation |
@@ -115,19 +112,15 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 
 #### Command-line floppy tools
 
-| Command | Purpose | Example |
+| Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `DCOPY drive1: {drive2:} {[1]}` | Copy raw sectors and verify writes; `[1]` restricts copying to head zero | `DCOPY A: B:[1]` |
-| `DCOMP drive1: {drive2:} {[1]}` | Compare raw sectors and report differences by track and side | `DCOMP A: B:` |
-| `DFORM drive: { [options] ... }` | Format with DSKMAINT's boot sector and loader; `1` single-sided, `2` double-sided (default), `V` verify after formatting | `DFORM A:[1V]` |
+| `dcomp` | — | CP/M-86 port of DOS diskcomp |
+| `dcopy` | — | CP/M-86 port of DOS diskcopy |
+| `dform` | — | New, command-line DSKMAINT formatter (`commands/dskmaint/`) |
 
-The drives are installed IBM PC floppy units A: or B:. DCOPY/DCOMP default an omitted second drive to the current CP/M drive and prompt for swaps when both arguments name the same drive. DFORM requires Y confirmation and formats one diskette per invocation; copy `CPM.SYS` with PIP's `[R]` option to complete a boot disk.
+`dcopy` and `dcomp` are CP/M-86 ports of the PC DOS 1.10 DISKCOPY and DISKCOMP utilities, respectively. They derive from the byte-exact disassemblies in [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
 
-Bracket groups may be attached to the drive or separated by spaces; closing brackets are optional. For example, `DFORM A: [1] [V` and `DFORM A:[1V]` are equivalent. Letters are case-insensitive. Empty or invalid command lines print usage; `HELP DCOPY`, `HELP DCOMP` and `HELP DFORM` describe the commands.
-
-These tools operate on 40-cylinder, eight-sector, 512-byte floppy formats only (160K/320K). Their presence on a 720K/1.44M distribution does not enable them to handle those media. They use the IBM ROM BIOS under single-user CP/M-86 1.1; a BDOS 3.x/XIOS backend is not implemented.
-
-`make -C commands/disk check` runs 88 simulated DCOPY/DCOMP cases. `make -C commands/dskmaint check` runs 58 simulated DFORM cases and retains DSKMAINT's byte-parity check. The NASM test harnesses use `.asm` and 8.3 names; the Python runners are `tools/dsktest.py` and `tools/dfmtest.py`. Real CP/M/floppy validation remains outstanding.
+`dform` is a new command-line derivative of DSKMAINT's formatter, sharing its boot sector and loader sources.
 
 #### Mixed 8080/8086 support
 
@@ -276,4 +269,4 @@ Primary source: http://www.cpm.z80.de
 
 ## License
 
-The whole repository is under CP/M (License)[LICENSE.md] when derived from CP/M or under MIT MIT (License)[License-bis.md] unless specified otherwise in a subdirectory.
+CP/M-derived material is covered by the [CP/M license](LICENSE.md); other material uses the [MIT license](LICENSE-bis.md), unless specified otherwise in a subdirectory.
