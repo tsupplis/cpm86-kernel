@@ -663,7 +663,7 @@ msg_invalid_parameter	db	0Dh,0Ah
 	db	'$'
 
 	dseg
-msg_banner	db	0dh,0ah,'CP/M-86 DCOMP for the IBM PC',0dh,0ah,'$'
+msg_banner	db	0dh,0ah,'CP/M-86 FLOPPY COMPARE',0dh,0ah,'$'
 msg_usage	db	'USAGE: DCOMP drive1: {drive2:} {[1]}',0dh,0ah
 	db	'  drive1:  First floppy drive, A: or B: (required)',0dh,0ah
 	db	'  drive2:  Second floppy drive (default: current drive)',0dh,0ah
