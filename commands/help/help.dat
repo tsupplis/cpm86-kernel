@@ -277,10 +277,11 @@
   Conflicting 1/2 options, unknown options and other incorrect arguments
   display usage and exit. An empty command line also displays usage.
 
-      This build requires single-user CP/M-86 1.1 on an IBM PC. It does
-  not support Concurrent CP/M/XIOS or nine-sector 180K/360K formats.
-  The formatted disk contains DSKMAINT's boot code and loader; copy
-  CPM.SYS to the disk with PIP's [R] option to complete a boot disk.
+      This build supports CP/M-86 1.1 using the IBM PC ROM BIOS and
+  Concurrent CP/M-86 3.1 using native XIOS. Nine-sector 180K/360K formats
+  are not supported. The formatted disk contains DSKMAINT's boot code
+  and the loader for the detected OS; copy CPM.SYS or CCPM.SYS to the
+  disk with PIP's [R] option to complete a boot disk.
 
   Examples:
 

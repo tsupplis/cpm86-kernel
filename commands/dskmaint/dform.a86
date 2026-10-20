@@ -1,6 +1,6 @@
 ;*****************************************************************************
 ;
-;	DFORM - command-line CP/M-86 floppy formatter for the IBM PC
+;	DFORM - CP/M-86 / Concurrent CP/M-86 command-line floppy formatter
 ;
 ;	Formatting algorithm and boot images from DSKMAINT (Digital Research,
 ;	1983). Uses the same bootsect.inc and loader.inc as the reconstruction.
@@ -19,13 +19,16 @@
 ;	selections print usage. An empty command also prints usage and exits.
 ;	Formatting always requires Y confirmation; N or Ctrl-C cancels.
 ;
-;	A fresh disk contains the DSKMAINT boot sector and loader, but CPM.SYS
-;	must still be copied to it. Tracks follow DSKMAINT's order: head zero
-;	cylinders 0..39, then head one cylinders 39..0. No FAT is generated.
+;	A fresh disk contains the DSKMAINT boot sector and loader. The system
+;	file (CPM.SYS or CCPM.SYS) must still be copied to it. Tracks follow
+;	DSKMAINT's order: head zero cylinders 0..39, then head one
+;	cylinders 39..0. No FAT is generated.
 ;
-;	CP/M-86 1.1 only: ROM BIOS INT 13h, not a Concurrent CP/M XIOS backend.
+;	CP/M-86 1.1 uses ROM BIOS; Concurrent CP/M-86 3.1 uses native XIOS.
+;	CCP/M uses DSKMAINT 1.5's MXdisk, P_KEEP and console exclusion protocol.
 ;	The 512-byte private stack and aligned 4 KiB track buffer stay resident.
-;	All exits restore the BIOS parameter vector before returning to BDOS.
+;	All exits restore the BIOS vector or release the CCP/M locks.
+;	The loader retry byte follows the detected OS: CP/M=2, CCP/M=3.
 ;	Raw BDOS console I/O avoids an implicit Ctrl-C exit during formatting.
 ;
 ;*****************************************************************************
@@ -59,17 +62,27 @@ start:
 	call	puts
 	call	parse_args
 
-; The ROM BIOS backend and its vector patch belong to single-user CP/M-86.
-; Do not infer a compatible XIOS from a later BDOS version number.
+ ; Select the OS backend before any disk access.
 	mov	cl,f_version
 	call	bdos
-	cmp	al,22h
-	jz	version_ok
-	jmp	wrong_os
-version_ok:
-	or	ah,ah
+	cmp	ax,22h
 	jz	system_ok
+	and	ah,0fh
+	cmp	ah,4
+	jz	concurrent_version
+	cmp	ah,6
+	jz	concurrent_version
 	jmp	wrong_os
+concurrent_version:
+	mov	cl,163
+	call	bdos
+	cmp	ax,1431h
+	jz	concurrent_ok
+	jmp	wrong_os
+concurrent_ok:
+	mov	byte ptr os_mode,1
+	call	ccpm_init
+	jmp	installed_drive
 system_ok:
 	int	11h
 	test	al,1
@@ -120,12 +133,21 @@ show_verify_option:
 ; Keep it installed through format, boot-track write and optional verify.
 ;-----------------------------------------------------------------------------
 format_disk:
+	cmp	byte ptr os_mode,0
+	jz	format_bios
+	call	ccpm_lock
+	jmp	format_ready
+format_bios:
 	call	install_vector
+format_ready:
 	mov	dx,offset msg_formatting
 	call	puts
 	mov	byte ptr track,0
 format_loop:
+	cmp	byte ptr os_mode,0
+	jnz	format_ids_ready
 	call	make_ids
+format_ids_ready:
 	mov	byte ptr operation,5
 	call	disk_io
 	inc	byte ptr track
@@ -153,6 +175,13 @@ format_loop:
 	mov	di,900h
 	mov	cx,loader_end-loader
 	rep	movsb
+; Select explicitly: either repository may supply the shared loader image.
+	mov	al,2
+	cmp	byte ptr os_mode,0
+	jz	boot_loader_ready
+	inc	al
+boot_loader_ready:
+	mov	es:byte ptr .951h,al
 	mov	byte ptr track,0
 	mov	byte ptr operation,3
 	call	disk_io
@@ -362,6 +391,8 @@ bdos:
 	push	ds
 	push	es
 	int	i_bdos
+	mov	result_es,es
+	mov	result_bx,bx
 	pop	es
 	pop	ds
 	pop	bp
@@ -436,6 +467,13 @@ io_attempt:
 	jnz	io_request
 	jmp	cancelled
 io_request:
+	mov	byte ptr disk_touched,1
+	cmp	byte ptr os_mode,0
+	jz	io_bios
+	call	ccpm_io
+	jc	io_failed
+	ret
+io_bios:
 	call	track_chs
 	mov	cl,1
 	mov	dl,drive
@@ -450,9 +488,12 @@ io_request:
 	ret
 io_failed:
 	mov	last_status,ah
+	cmp	byte ptr os_mode,0
+	jnz	io_retry_count
 	xor	ah,ah
 	mov	dl,drive
 	call	bios
+io_retry_count:
 	dec	byte ptr retries
 	jnz	io_attempt
 
@@ -503,6 +544,11 @@ install_vector:
 	ret
 
 cleanup:
+	cmp	byte ptr os_mode,0
+	jz	cleanup_bios
+	call	ccpm_finish
+	jmp	quit
+cleanup_bios:
 	cmp	byte ptr vector_active,0
 	jz	cleanup_login
 	xor	ax,ax
@@ -533,6 +579,7 @@ quit:
 
 ; ---- data ----
 	dseg
+os_mode		db	0
 options		db	0
 drive		db	0
 sides		db	1
@@ -549,7 +596,7 @@ old_segment	dw	0
 ; Same bytes as the parameter table embedded in DSKMAINT.
 disk_params	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
 
-msg_banner	db	13,10,'CP/M-86 FLOPPY FORMATTER VER 1.0N',13,10,'$'
+msg_banner	db	13,10,'CP/M-86 / CCP/M-86 FLOPPY FORMATTER VER 1.0N',13,10,'$'
 msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10,13,10
 	db	'  A: or B:  Target floppy drive (required)',13,10
 	db	'  1         Single-sided, 160K',13,10
@@ -572,15 +619,17 @@ msg_complete	db	'Format complete.',13,10,'$'
 msg_cancelled	db	13,10,'Cancelled.',13,10,'$'
 msg_bad_syntax	db	'Invalid parameter.',13,10,'$'
 msg_bad_drive	db	'Invalid drive specification.',13,10,'$'
-msg_wrong_os	db	'DFORM requires single-user CP/M-86 1.1 (BDOS 2.2).',13,10,'$'
-msg_io_error	db	'Disk operation failed; BIOS status '
+msg_wrong_os	db	'DFORM requires CP/M-86 1.1 or Concurrent CP/M-86 3.1.',13,10,'$'
+msg_io_error	db	'Disk operation failed; BIOS/XIOS status '
 status_hi	db	'0'
 status_lo	db	'0'
 	db	'.',13,10,'$'
 
 ; Shared generated images; lengths follow the source images automatically.
+bootsect:
 	include	bootsect.inc
 boot_end:
+loader:
 	include	loader.inc
 loader_end:
 
@@ -588,4 +637,5 @@ stack_space	rs	stack_size
 stack_top:
 ; Alignment can consume up to 4095 bytes before the 4096-byte track buffer.
 buffer_space	rs	2000h
+	include	ccpmio.a86
 	end

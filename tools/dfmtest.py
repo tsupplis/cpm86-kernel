@@ -10,8 +10,13 @@ count = 0
 
 def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
          fail=0, status=3, error=None, version=0x22, equipment=0x41,
-         drive=0, retry=False, abort_verify=False):
+         drive=0, retry=False, abort_verify=False, native=False,
+         console_state=0, open_files=0, queue_fail=0, console_number=0,
+         floppy_count=2, full_version=0x1431, initial_keep=0,
+         open_after_lock=0):
     global count
+    if native and version == 0x22:
+        version = 0x0431
     formats = sides * 40
     writes = 1
     verifies = sides * 40 if verify else 0
@@ -33,6 +38,11 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
                    ABORT_AT=abort, ABORT_VERIFY=int(abort_verify), FAIL_OP=fail,
                    FAIL_LIMIT=failures, FAIL_STATUS=status,
                    OSVER=version, EQUIPMENT=equipment, DRIVE=drive,
+                   NATIVE=int(native), CONSOLE_STATE=console_state,
+                   OPEN_FILES=open_files, QUEUE_FAIL=queue_fail,
+                   CONSOLE_NUMBER=console_number, FLOPPY_COUNT=floppy_count,
+                   FULL_VERSION=full_version, INITIAL_KEEP=initial_keep,
+                   OPEN_AFTER_LOCK=open_after_lock,
                    EXPECT_FORMATS=formats, EXPECT_WRITES=writes,
                    EXPECT_VERIFIES=verifies, EXPECT_FAILURES=failures,
                    EXPECT_RESET=reset)
@@ -43,6 +53,7 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
     track[:len(boot)] = boot
     track[0x1ff] = sides - 1
     track[0x900:0x900 + len(loader)] = loader
+    track[0x951] = 3 if native else 2
     with tempfile.TemporaryDirectory(prefix='dform-test-') as temp:
         temp = Path(temp)
         (temp / 'track.bin').write_bytes(track)
@@ -55,11 +66,11 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
                            capture_output=True, timeout=10)
     output = p.stdout.decode(errors='replace')
     expected = error or ('Cancelled.' if answer.upper() != 'Y' or abort >= 0 or abort_verify
-                         else f'BIOS status {status:02X}' if fail and not retry
+                         else f'BIOS/XIOS status {status:02X}' if fail and not retry
                          else 'Format complete.')
     assert not p.returncode and expected in output, (options, p.returncode,
                                                     output, p.stderr)
-    if error:
+    if error and not (native and (open_files or queue_fail or open_after_lock)):
         assert 'Continue (Y/N)?' not in output, output
     if error or abort >= 0 or abort_verify or (fail and not retry) or answer.upper() != 'Y':
         assert 'Format complete.' not in output, output
@@ -100,6 +111,29 @@ for tail in ('C:', '1:'):
     case(tail, error='Invalid drive specification.')
 case('A:', equipment=0, error='Invalid drive specification.')
 case('B:', equipment=1, drive=1, error='Invalid drive specification.')
-for ver in (0x31, 0x1431, 0x0122):
-    case(version=ver, error='requires single-user CP/M-86')
-print(f'PASS: {count} DFORM cases; boot track bytes, CHRN/order, cleanup and ES checked')
+for ver in (0x31, 0x0122):
+    case(version=ver, error='requires CP/M-86 1.1 or Concurrent CP/M-86 3.1')
+# The same binary also executes native CCP/M XIOS without any ROM BIOS call.
+for sides in (1, 2):
+    for verify in (False, True):
+        for drive in (0, 1):
+            tail = ('A:' if drive == 0 else 'B:') + ('[1' if sides == 1 else '[2') + ('V]' if verify else ']')
+            case(tail, native=True, sides=sides, verify=verify, drive=drive)
+for n in (0, 1, 40, 80):
+    case('A:[V]', native=True, verify=True, abort=n)
+case('A:[V]', native=True, verify=True, abort_verify=True)
+for op in (5, 3, 4):
+    case('A:[V]', native=True, verify=True, fail=op)
+    case('A:[V]', native=True, verify=True, fail=op, retry=True)
+case(native=True, answer='N')
+case(native=True, answer=chr(3))
+case(native=True, console_state=1, error='background or buffered')
+case(native=True, open_files=1, error='Close all open files')
+case(native=True, open_after_lock=1, error='Close all open files')
+case(native=True, console_number=1)
+case(native=True, initial_keep=2)
+case(native=True, queue_fail=0xffff, error='Cannot acquire')
+case(native=True, console_number=4, error='local virtual console')
+case(native=True, floppy_count=0, error='Invalid drive specification.')
+case(native=True, full_version=0x1430, error='requires CP/M-86')
+print(f'PASS: {count} dual-OS DFORM cases; boot images, BIOS/XIOS, locks and cleanup checked')

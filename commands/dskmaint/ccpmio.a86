@@ -1,0 +1,262 @@
+;*****************************************************************************
+; CCP/M-86 3.1 IBM PC XIOS backend for DFORM.
+; Follows DSKMAINT 1.5: SYSDAT:28h, UDA in ES, stack IOPB, MXdisk exclusion.
+; All partial acquisition paths are tracked for cleanup; no ROM BIOS calls.
+;*****************************************************************************
+	cseg
+
+; Obtain system pointers before any direct XIOS access. BDOS result_es and
+; result_bx retain pointer results despite the normal register-saving wrapper.
+ccpm_init:
+	mov	cl,154
+	call	bdos
+	mov	ax,result_es
+	mov	system_segment,ax
+	mov	cl,156
+	call	bdos
+	mov	bx,result_bx
+	mov	process_offset,bx
+	mov	es,word ptr system_segment
+	mov	ax,es:10h[bx]
+	mov	uda_segment,ax
+	mov	cl,153
+	call	bdos
+	cmp	ax,4
+	jc	ccpm_local
+	mov	dx,offset msg_terminal
+	jmp	ccpm_stop
+ccpm_local:
+	mov	bx,2ch
+	mul	bx
+	mov	es,word ptr system_segment
+	add	ax,es:word ptr .54h
+	mov	console_offset,ax
+	mov	bx,ax
+	cmp	es:word ptr 0eh[bx],0
+	jz	ccpm_equipment
+	mov	dx,offset msg_background
+	jmp	ccpm_stop
+ccpm_equipment:
+	xor	cx,cx
+	mov	al,14
+	call	ccpm_call
+	mov	bx,ax
+	mov	es,word ptr system_segment
+	mov	ax,es:[bx]
+	xor	bh,bh
+	mov	bl,drive
+	cmp	bx,ax
+	jc	ccpm_init_done
+	jmp	bad_drive
+ccpm_init_done:
+	ret
+
+; Lock only after Y confirmation. Recheck the open-file vector while holding
+; the queue token, closing the race between the initial test and acquisition.
+ccpm_lock:
+	mov	es,word ptr system_segment
+	cmp	es:word ptr .88h,0
+	jz	ccpm_keep
+	mov	dx,offset msg_open_files
+	jmp	ccpm_stop
+ccpm_keep:
+	mov	bx,process_offset
+	mov	ax,es:6[bx]
+	and	ax,2
+	mov	old_keep,ax
+	mov	al,es:5[bx]
+	mov	old_priority,al
+	or	es:word ptr 6[bx],2
+	mov	byte ptr process_held,1
+	mov	dl,150
+	mov	cl,145
+	call	bdos
+	mov	es,word ptr system_segment
+	mov	bx,console_offset
+	pushf
+	cli
+	cmp	es:word ptr 0eh[bx],0
+	jnz	ccpm_console_busy
+	or	es:word ptr 0eh[bx],8
+	mov	byte ptr console_held,1
+	popf
+	mov	dx,offset disk_queue
+	mov	cl,135
+	call	bdos
+	or	ax,ax
+	jnz	ccpm_queue_error
+	mov	cl,137
+	call	bdos
+	or	ax,ax
+	jnz	ccpm_queue_error
+	mov	byte ptr disk_held,1
+	mov	es,word ptr system_segment
+	cmp	es:word ptr .88h,0
+	jz	ccpm_lock_done
+	mov	dx,offset msg_open_files
+	jmp	ccpm_stop
+ccpm_lock_done:
+	ret
+ccpm_console_busy:
+	popf
+	mov	dx,offset msg_background
+	jmp	ccpm_stop
+ccpm_queue_error:
+	mov	dx,offset msg_queue
+ccpm_stop:
+	call	puts
+	jmp	cleanup
+
+; XIOS calls without an IOPB: equipment and disk selection. Keep the caller's
+; segments and cursors, returning AX alone. Entry is obtained from SYSDAT.
+ccpm_call:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	mov	es,word ptr uda_segment
+	mov	ds,word ptr system_segment
+	callf	dword ptr .28h
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+; Translate the common formatter operation to native XIOS: 15 format,
+; 11 write, 10 read/verify. Track zero's side byte controls media geometry;
+; no DOS-media or INT 13 emulation function is used.
+ccpm_io:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	mov	ch,8
+	mov	cl,drive
+	push	cx
+	xor	ch,ch
+	mov	cl,track
+	push	cx
+	xor	cx,cx
+	push	cx
+	mov	cx,buffer_segment
+	push	cx
+	xor	cx,cx
+	push	cx
+	mov	al,operation
+	cmp	al,5
+	jnz	ccpm_not_format
+	mov	al,15
+	jmp	ccpm_issue
+ccpm_not_format:
+	cmp	al,3
+	jnz	ccpm_read
+	mov	al,11
+	jmp	ccpm_issue
+ccpm_read:
+	mov	al,10
+ccpm_issue:
+	mov	es,word ptr uda_segment
+	mov	ds,word ptr system_segment
+	callf	dword ptr .28h
+	add	sp,10
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	or	al,al
+	jnz	ccpm_io_error
+	clc
+	ret
+ccpm_io_error:
+	mov	ah,al		; common formatter reports the XIOS result byte
+	stc
+	ret
+
+; Invalidate media state before releasing MXdisk; then reset BDOS login
+; records outside the lock. Restore NOSWITCH, priority and the original
+; P_KEEP bit on every success, cancellation and failure path.
+ccpm_finish:
+	cmp	byte ptr disk_held,0
+	jz	ccpm_release_console
+	cmp	byte ptr disk_touched,0
+	jz	ccpm_return_token
+	mov	cl,drive
+	mov	dl,1
+	mov	al,9
+	call	ccpm_call
+	or	ax,ax
+	jz	ccpm_return_token
+	mov	bx,ax
+	mov	es,word ptr system_segment
+	mov	es:byte ptr 6[bx],0
+ccpm_return_token:
+	mov	dx,offset disk_queue
+	mov	cl,139
+	call	bdos
+	mov	byte ptr disk_held,0
+	cmp	byte ptr disk_touched,0
+	jz	ccpm_release_console
+	mov	cl,13
+	call	bdos
+ccpm_release_console:
+	cmp	byte ptr console_held,0
+	jz	ccpm_release_process
+	mov	es,word ptr system_segment
+	mov	bx,console_offset
+	and	es:word ptr 0eh[bx],0fff7h
+	mov	byte ptr console_held,0
+ccpm_release_process:
+	cmp	byte ptr process_held,0
+	jz	ccpm_finished
+	mov	dl,old_priority
+	mov	cl,145
+	call	bdos
+	mov	es,word ptr system_segment
+	mov	bx,process_offset
+	and	es:word ptr 6[bx],0fffdh
+	mov	ax,old_keep
+	or	es:6[bx],ax
+	mov	byte ptr process_held,0
+ccpm_finished:
+	ret
+
+	dseg
+result_es	dw	0
+result_bx	dw	0
+system_segment	dw	0
+process_offset	dw	0
+console_offset	dw	0
+uda_segment	dw	0
+old_keep	dw	0
+old_priority	db	0
+process_held	db	0
+console_held	db	0
+disk_held	db	0
+; Queue parameter block layout from the original CCP/M DSKMAINT image.
+disk_queue	db	0,0,0,0,0,0,0,0
+	db	'MXdisk  '
+	db	0,0,0,0,0,0
+msg_terminal	db	'DFORM requires a local virtual console.',13,10,'$'
+msg_background	db	'DFORM cannot run in background or buffered mode.',13,10,'$'
+msg_open_files	db	'Close all open files before formatting.',13,10,'$'
+msg_queue	db	'Cannot acquire the MXdisk queue.',13,10,'$'
+	cseg

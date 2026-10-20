@@ -778,7 +778,7 @@ nozero = false;
 head = true;
 output$created = false;
 
-call print(.('CP/M-86 GENCMD VER 1.1N$'));
+call print(.('CP/M-86 / CCP/M-86 GENCMD VER 1.1N$'));
 call crlf;
 
 /* usage if no filename given */

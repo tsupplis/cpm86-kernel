@@ -1,7 +1,8 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
 ASM86=cpm86_asm86
-H862BIN=python3 ../../tools/h862bin.py
+H862BIN=h862bin
+BIN2ASM=bin2asm
 
 TOOLS=dskmaint.cmd dskmorg.cmd dform.cmd
 
@@ -19,12 +20,12 @@ dskmaint.obj: dskmaint.a86 $(INCS)
 
 dskmorg.obj: dskmorg.a86 $(INCS)
 
-dform.obj: dform.a86 $(INCS)
+dform.obj: dform.a86 ccpmio.a86 $(INCS)
 
 # bootsect and loader are assembled by themselves (ASM-86, not RASM-86):
 # BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
-# loaded into.  h862bin takes the exact image out of the hex file, and writes
-# it as a binary or as the include file DSKMAINT assembles into its data.
+# loaded into. h862bin extracts each binary image; bin2asm emits the data
+# declarations included by DSKMAINT and DFORM.
 bootsect.h86: bootsect.a86
 loader.h86: loader.a86
 
@@ -37,13 +38,21 @@ loader.h86: loader.a86
 %.bin: %.h86
 	$(H862BIN) $< $@
 
-%.inc: %.h86
-	$(H862BIN) $< $@
+%.inc: %.bin Makefile
+	$(BIN2ASM) -m -f $@ $<
+	unix2dos $@
 
 # dskmaint is an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
 %.cmd: %.obj
 	$(LINK86) $* '[$$sz, cod[ori[0]], dat[ori[0],max[0]]]'
+	cmdinfo $@
+
+# LINKCMD may retain trailing unused DATA bytes after collapsing the group.
+# Keep only the declared CODE payload, as in the dual-OS CCP/M build.
+dform.cmd: dform.obj Makefile
+	$(LINK86) dform '[$$sz,cod[ori[0]],dat[ori[0],max[0]]]'
+	@python3 -c "p='$@';b=open(p,'rb').read();open(p,'wb').write(b[:128+int.from_bytes(b[1:3],'little')*16])"
 	cmdinfo $@
 
 # RASM-86 exits 0 and still writes an .obj when it reports errors, so neither

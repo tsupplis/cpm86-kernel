@@ -1094,11 +1094,13 @@ trkmsg	db	' track',00h
 ; The boot sector written to track 0 by the formatter, 93h bytes.  It is meant
 ; to run at 0000:7c00.  The sides flag goes into byte 1ffh of the track.
 ; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
+bootsect:
 	include	bootsect.inc
 
 ; The loader written at offset 900h of track 0, 34eh bytes.  It looks for
 ; CPM.SYS or CCPM.SYS on the diskette and loads it.
 ; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
+loader:
 	include	loader.inc
 nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
 	db	00h

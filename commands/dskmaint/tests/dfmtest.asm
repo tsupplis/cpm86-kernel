@@ -19,6 +19,21 @@ start:
     mov es,ax
     mov word [es:78h],1234h
     mov word [es:7ah],5678h
+%if NATIVE
+    mov ax,5000h
+    mov es,ax
+    mov word [es:28h],xios
+    mov ax,cs
+    mov [es:2ah],ax
+    mov word [es:54h],200h
+    mov word [es:88h],OPEN_FILES
+    mov byte [es:105h],99
+    mov word [es:106h],40h | INITIAL_KEEP
+    mov word [es:110h],5100h
+    mov word [es:20eh+2ch*CONSOLE_NUMBER],CONSOLE_STATE
+    mov word [es:300h],FLOPPY_COUNT
+    mov word [es:406h],5555h
+%endif
     mov ax,cs
     add ax,(payload-$$+100h)/16
     mov es,ax
@@ -34,6 +49,9 @@ start:
     retf
 
 equipment:
+%if NATIVE
+    jmp bad
+%endif
     mov ax,EQUIPMENT
     iret
 bdos:
@@ -45,11 +63,34 @@ bdos:
     je version
     cmp cl,37
     je resetdrive
+%if NATIVE
+    cmp cl,163
+    je fullversion
+    cmp cl,154
+    je sysdata
+    cmp cl,156
+    je pdaddress
+    cmp cl,153
+    je console
+    cmp cl,145
+    je priority
+    cmp cl,135
+    je queue_open
+    cmp cl,137
+    je queue_read
+    cmp cl,139
+    je queue_write
+    cmp cl,13
+    je reset_all
+%endif
     jmp bad
 version:
     mov ax,OSVER
     jmp corrupt
 resetdrive:
+%if NATIVE
+    jmp bad
+%endif
     cmp dx,(1 << DRIVE)
     jne bad
     inc byte [cs:login_reset]
@@ -97,20 +138,207 @@ input:
 %endif
     jmp corrupt
 corrupt:
+    cmp cl,156
+    je .keep_bx
     mov bx,0bbbbh
-    mov cx,0cccch
+.keep_bx:
     mov dx,0ddddh
     mov si,0eeeeh
     mov di,0ffffh
     mov bp,0aaaah
     push ax
     mov ax,1234h
+    cmp cl,154
+    jne .normal_es
+    mov ax,5000h
+.normal_es:
     mov es,ax
     pop ax
+    mov cx,0cccch
     std
     iret
 
+
+%if NATIVE
+fullversion:
+    mov ax,FULL_VERSION
+    jmp corrupt
+sysdata:
+    xor ax,ax
+    jmp corrupt
+pdaddress:
+    mov bx,100h
+    xor ax,ax
+    jmp corrupt
+console:
+    mov ax,CONSOLE_NUMBER
+    jmp corrupt
+priority:
+    push es
+    mov ax,5000h
+    mov es,ax
+    mov [es:105h],dl
+    pop es
+    xor ax,ax
+    jmp corrupt
+queue_open:
+    mov si,dx
+    cmp word [si+8],'MX'
+    jne bad
+    cmp word [si+10],'di'
+    jne bad
+    mov ax,QUEUE_FAIL
+    jmp corrupt
+queue_read:
+    cmp byte [cs:queue_held],0
+    jne bad
+    mov byte [cs:queue_held],1
+%if OPEN_AFTER_LOCK
+    push es
+    mov ax,5000h
+    mov es,ax
+    mov word [es:88h],1
+    pop es
+%endif
+    xor ax,ax
+    jmp corrupt
+queue_write:
+    cmp byte [cs:queue_held],1
+    jne bad
+    mov byte [cs:queue_held],0
+    xor ax,ax
+    jmp corrupt
+reset_all:
+    cmp byte [cs:queue_held],0
+    jne bad
+    push es
+    mov ax,5000h
+    mov es,ax
+    cmp byte [es:406h],0
+    jne bad
+    pop es
+    inc byte [cs:login_reset]
+    xor ax,ax
+    jmp corrupt
+
+; Synthetic XIOS entry. A PUSH BP supplies the same stack depth as the
+; real XIOS ENTRY's internal near call to its selected disk driver.
+xios:
+    push bp
+    mov bp,sp
+    push ds
+    pop bx
+    cmp bx,5000h
+    jne bad
+    push es
+    pop bx
+    cmp bx,5100h
+    jne bad
+    cmp al,14
+    je .equipment
+    cmp al,9
+    je .select
+    cmp byte [cs:queue_held],1
+    jne bad
+    cmp word [106h],42h
+    jne bad
+    cmp byte [105h],150
+    jne bad
+    cmp word [20eh+2ch*CONSOLE_NUMBER],8
+    jne bad
+    cmp byte [ss:bp+14],DRIVE
+    jne bad
+    cmp byte [ss:bp+15],8
+    jne bad
+    cmp word [ss:bp+10],0
+    jne bad
+    cmp word [ss:bp+6],0
+    jne bad
+    mov bx,[ss:bp+8]
+    test bx,0ffh
+    jnz bad
+    mov es,bx
+    mov bx,[ss:bp+12]
+    cmp bx,SIDES*40
+    jae bad
+    cmp al,15
+    je .format
+    cmp al,11
+    je .write
+    cmp al,10
+    je .verify
+    jmp bad
+.equipment:
+    cmp cx,0
+    jne bad
+    mov ax,300h
+    jmp .return
+.select:
+    cmp cl,DRIVE
+    jne bad
+    mov ax,400h
+    jmp .return
+.format:
+%if FAIL_OP == 5
+    cmp byte [cs:failed_requests],FAIL_LIMIT
+    jb .failed
+%endif
+    xor bh,bh
+    cmp bl,[cs:format_count]
+    jne bad
+    inc byte [cs:format_count]
+    xor ax,ax
+    jmp .return
+.write:
+%if FAIL_OP == 3
+    cmp byte [cs:failed_requests],FAIL_LIMIT
+    jb .failed
+%endif
+    cmp bx,0
+    jne bad
+    cmp byte [cs:format_count],SIDES*40
+    jne bad
+    push ds
+    push cs
+    pop ds
+    mov si,expected_track
+    xor di,di
+    mov cx,1000h
+    cld
+    repe cmpsb
+    jne bad
+    pop ds
+    inc byte [cs:write_count]
+    xor ax,ax
+    jmp .return
+.verify:
+%if FAIL_OP == 4
+    cmp byte [cs:failed_requests],FAIL_LIMIT
+    jb .failed
+%endif
+    cmp bl,[cs:verify_count]
+    jne bad
+    inc byte [cs:verify_count]
+    xor ax,ax
+    jmp .return
+.failed:
+    inc byte [cs:failed_requests]
+    mov ax,FAIL_STATUS
+.return:
+    mov bx,ax
+    mov cx,0cccch
+    mov dx,0ddddh
+    mov si,0eeeeh
+    mov di,0ffffh
+    pop bp
+    retf
+%endif
+queue_held db 0
+
 bios:
+%if NATIVE
+    jmp bad
+%endif
     push bp
     mov bp,sp
     and word [ss:bp+6],0fffeh
@@ -245,6 +473,18 @@ check_chs:
     ret
 
 finish:
+%if NATIVE
+    cmp byte [cs:queue_held],0
+    jne bad
+    mov ax,5000h
+    mov es,ax
+    cmp word [es:106h],40h | INITIAL_KEEP
+    jne bad
+    cmp byte [es:105h],99
+    jne bad
+    cmp word [es:20eh+2ch*CONSOLE_NUMBER],CONSOLE_STATE
+    jne bad
+%endif
     cmp byte [cs:format_count],EXPECT_FORMATS
     jne bad
     cmp byte [cs:write_count],EXPECT_WRITES
