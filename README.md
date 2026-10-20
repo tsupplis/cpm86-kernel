@@ -97,7 +97,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `gendef` | Patched (DR rec.) | — |
 | `hdmaint` | Updated 1.0→1.1 | TBD, Reverse engineered from CP/M-86 and adapted |
 | `help` | Original | Adapted from CCP/M-86 3.1 |
-| `help.hlp` | Rebuilt for every core distribution; includes DCOPY/DCOMP/DFORM | `commands/help/help.dat` |
+| `help.hlp` | Original | Rebuilt for every core distribution; includes new tools too |
 | `mform` | CP/M-86 only; BIOS-based memory-drive formatter | Reverse engineering |
 | `pip` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
 | `print` | Original | TBD, Reverse engineered from CP/M-86 and adapted |
