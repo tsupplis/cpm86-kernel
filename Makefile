@@ -49,15 +49,28 @@ SHARED     = base/setup.cmd base/hdmaint.cmd \
 
 CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
              base/help.cmd base/assign.cmd base/mform.cmd base/mformq.cmd \
-             base/help.hlp base/dskmaint.cmd base/data.pfk \
+             $(HLP) base/dskmaint.cmd base/data.pfk \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
              $(MFORM) $(FUNCTION) $(SHARED) $(DSKMAINT) $(HLP) $(TESTSUB) \
-             $(DATAPFK) 
+             $(DATPFK) 
 EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 
-STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS)
-EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS)
+STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS) $(EXTTOOLS)
+EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
+
+# Rebuilt files are normal prerequisites, so command/help changes refresh
+# their images. Delegate compilation to the owning command Makefiles.
+.SECONDEXPANSION:
+SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
+               $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
+               $(MFORM) $(EXTTOOLS)
+$(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/Makefile)
+	$(MAKE) -C $(@D) $(@F)
+$(HLP): commands/help/help.dat
+
+# Expand each image's target-specific content list at dependency evaluation.
+$(DIST_DISKS): Makefile $$(FTOOLS)
 
 # Every image target drives one of the three canned recipes below through
 # target-specific FEAT/BASE/KRNL/FTOOLS variables. KRNL is empty on the
@@ -171,14 +184,14 @@ cpm86-320-at.img: FEAT = cpm86-320
 cpm86-320-at.img: BASE = base-320-at.img
 cpm86-320-at.img: KRNL = cpm.sys
 cpm86-320-at.img: ATSTART = 1
-cpm86-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS)
+cpm86-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
 cpm86-320-at.img: cpm.sys base-320-at.img | commands
 	$(twist_image)
 
 cpm86-320.img: FEAT = cpm86-320
 cpm86-320.img: BASE = base-320.img
 cpm86-320.img: KRNL = cpm.sys
-cpm86-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS)
+cpm86-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
 cpm86-320.img: cpm.sys base-320.img | commands
 	$(twist_image)
 
@@ -221,7 +234,8 @@ cpm86-160-1.img: cpm.sys base-160.img | commands
 
 cpm86-160-2.img: FEAT = ibmpc-514ss
 cpm86-160-2.img: BASE = base-160.img
-cpm86-160-2.img: FTOOLS = base/pip.cmd base/submit.cmd base/ed.cmd $(ASMTOOLS)
+cpm86-160-2.img: FTOOLS = base/pip.cmd base/submit.cmd base/ed.cmd $(ASMTOOLS) \
+             $(EXTTOOLS) $(HELP) $(HLP)
 cpm86-160-2.img: base-160.img
 	$(flat_image)
 

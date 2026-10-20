@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent / "commands/dskmaint"
 count = 0
 
 
@@ -46,7 +46,7 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
     with tempfile.TemporaryDirectory(prefix='dform-test-') as temp:
         temp = Path(temp)
         (temp / 'track.bin').write_bytes(track)
-        subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'tests/dform_harness.asm'),
+        subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'tests/dfmtest.asm'),
                         '-o', str(temp / 'test.com'),
                         f'-DIMAGE="{ROOT / "dform.cmd"}"',
                         f'-DTRACK="{temp / "track.bin"}"',

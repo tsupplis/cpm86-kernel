@@ -30,7 +30,7 @@ dcomp.obj: dcomp.a86
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
 check: all
-	python3 tests/check.py
+	python3 ../../tools/dsktest.py
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn

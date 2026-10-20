@@ -68,6 +68,6 @@ clean:
 	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS)
 
 check-dform: dform.cmd $(IMAGES)
-	python3 tests/check_dform.py
+	python3 ../../tools/dfmtest.py
 
 .PHONY: all check check-dform clean

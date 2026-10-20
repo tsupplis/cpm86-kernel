@@ -80,7 +80,7 @@ The PC/XT release also contains a patch at `0A3Ah` for Functions 56–58 (free m
 
 The CP/M-86 command set is available both as patched/original binaries (`base/`) and as reconstructed source builds (`commands/`). The table below shows the status of each tool in both dimensions.
 
-Sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel reports BDOS 2.2 with `BH=0`. Each tool was audited for version guards and for calls into BDOS functions not present in this kernel.
+Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel reports BDOS 2.2 with `BH=0`. Each tool was audited for version guards and for calls into BDOS functions not present in this kernel.
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
@@ -88,6 +88,9 @@ Sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel repo
 | `assign` | Original | Reverse engineering |
 | `config` | Original | Reverse engineering |
 | `ddt86` | Original | CCP/M-86 3.1 |
+| `dcomp` | Source build | PC DOS 1.10 DISKCOMP port to CP/M-86 (`commands/disk/`) |
+| `dcopy` | Source build | PC DOS 1.10 DISKCOPY port to CP/M-86 (`commands/disk/`) |
+| `dform` | Source build | Command-line DSKMAINT formatter (`commands/dskmaint/`) |
 | `dskmaint` | Updated 1.0→1.2 | Reverse engineering |
 | `ed` | Patched (DR rec.) | CCP/M-86 3.1 |
 | `function` | Original | Reverse engineering |
@@ -95,7 +98,7 @@ Sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel repo
 | `gendef` | Patched (DR rec.) | — |
 | `hdmaint` | Updated 1.0→1.1 | — |
 | `help` | Original | CCP/M-86 3.1 |
-| `help.hlp` | Updated (fuller content) | CCP/M-86 3.1 |
+| `help.hlp` | Rebuilt for every core distribution; includes DCOPY/DCOMP/DFORM | `commands/help/help.dat` |
 | `mform` | CP/M-86 only; BIOS-based memory-drive formatter | Reverse engineering |
 | `pip` | Patched (DR rec.) | CCP/M-86 3.1 |
 | `print` | Original | — |
@@ -108,7 +111,23 @@ Sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel repo
 | `hexcom` | — | DR HEXCOM 3.00 reimplementation |
 > A clean-room reimplementation of `submit` (`msub`) with a visual and configurable menu system for submit orchestration is available at [cpm86-menu](https://github.com/tsupplis/cpm86-menu).
 
-`make commands` builds the full source set. `tod` has no `base/` binary and is required by every image; the rest of the source-built tools are used by the experimental images.
+`make commands` builds the full source set. `tod`, `dcopy`, `dcomp`, `dform` and the updated help database are built from source for the stock and experimental distributions. The experimental images also use reconstructed versions of the standard tools.
+
+#### Command-line floppy tools
+
+| Command | Purpose | Example |
+| --- | --- | --- |
+| `DCOPY drive1: {drive2:} {[1]}` | Copy raw sectors and verify writes; `[1]` restricts copying to head zero | `DCOPY A: B:[1]` |
+| `DCOMP drive1: {drive2:} {[1]}` | Compare raw sectors and report differences by track and side | `DCOMP A: B:` |
+| `DFORM drive: { [options] ... }` | Format with DSKMAINT's boot sector and loader; `1` single-sided, `2` double-sided (default), `V` verify after formatting | `DFORM A:[1V]` |
+
+The drives are installed IBM PC floppy units A: or B:. DCOPY/DCOMP default an omitted second drive to the current CP/M drive and prompt for swaps when both arguments name the same drive. DFORM requires Y confirmation and formats one diskette per invocation; copy `CPM.SYS` with PIP's `[R]` option to complete a boot disk.
+
+Bracket groups may be attached to the drive or separated by spaces; closing brackets are optional. For example, `DFORM A: [1] [V` and `DFORM A:[1V]` are equivalent. Letters are case-insensitive. Empty or invalid command lines print usage; `HELP DCOPY`, `HELP DCOMP` and `HELP DFORM` describe the commands.
+
+These tools operate on 40-cylinder, eight-sector, 512-byte floppy formats only (160K/320K). Their presence on a 720K/1.44M distribution does not enable them to handle those media. They use the IBM ROM BIOS under single-user CP/M-86 1.1; a BDOS 3.x/XIOS backend is not implemented.
+
+`make -C commands/disk check` runs 88 simulated DCOPY/DCOMP cases. `make -C commands/dskmaint check` runs 58 simulated DFORM cases and retains DSKMAINT's byte-parity check. The NASM test harnesses use `.asm` and 8.3 names; the Python runners are `tools/dsktest.py` and `tools/dfmtest.py`. Real CP/M/floppy validation remains outstanding.
 
 #### Mixed 8080/8086 support
 
@@ -157,7 +176,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | --- | --- |
 | `cpm86-160-1.img` | Bootable core CP/M-86 |
 | `cpm86-160-1-at.img` | Bootable core, AT-compatible clock |
-| `cpm86-160-2.img` | CP/M-86 assembler tools |
+| `cpm86-160-2.img` | CP/M-86 assembler tools + DCOPY/DCOMP/DFORM + updated HELP |
 | `cpm86-160-3.img` | Digital Research dev tools |
 | `cpm86-160-4.img` | BASIC development |
 
@@ -165,15 +184,15 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 
 | Image | Contents |
 | --- | --- |
-| `cpm86-320.img` | Bootable core + assembler tools |
-| `cpm86-320-at.img` | Bootable core + assembler tools, AT-compatible clock |
+| `cpm86-320.img` | Bootable core + assembler tools + DCOPY/DCOMP/DFORM |
+| `cpm86-320-at.img` | Same commands, AT-compatible clock |
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
 
 **720K / 1.44M via the "1.44 MB Feature" — 2 disks**
 
 | Image | Contents |
 | --- | --- |
-| `cpm86-720-at.img` | Full command set + dev toolchain, AT-compatible clock |
+| `cpm86-720-at.img` | Full command set including DCOPY/DCOMP/DFORM + dev toolchain, AT-compatible clock |
 | `cpm86-1440-at.img` | Same content on 1.44M media |
 
 **Experimental: 4 disks**
@@ -185,7 +204,9 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The experimental 160K pair ships `ed`, `help`, `pip`, `stat`, `submit` and `tod`; the feature images add `asm86`, `ddt86` and `gencmd`. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
+The three new floppy commands total about 32K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database too. The 320K core pair and all stock/experimental 720K and 1.44M images carry all three commands directly. Developer-only disks retain their toolchain contents.
+
+The experimental 160K pair ships the reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 
 PCE helper scripts: `./cpm86`, `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make test`, `make test-320` and `make test-exp` are shortcuts for the common ones.
 
