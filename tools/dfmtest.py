@@ -13,7 +13,7 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
          drive=0, retry=False, abort_verify=False, native=False,
          console_state=0, open_files=0, queue_fail=0, console_number=0,
          floppy_count=2, full_version=0x1431, initial_keep=0,
-         open_after_lock=0):
+         open_after_lock=0, initial_error_mode=7, ignore_errors=False):
     global count
     if native and version == 0x22:
         version = 0x0431
@@ -43,6 +43,7 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
                    CONSOLE_NUMBER=console_number, FLOPPY_COUNT=floppy_count,
                    FULL_VERSION=full_version, INITIAL_KEEP=initial_keep,
                    OPEN_AFTER_LOCK=open_after_lock,
+                   INITIAL_ERROR_MODE=initial_error_mode, IGNORE_ERRORS=int(ignore_errors),
                    EXPECT_FORMATS=formats, EXPECT_WRITES=writes,
                    EXPECT_VERIFIES=verifies, EXPECT_FAILURES=failures,
                    EXPECT_RESET=reset)
@@ -136,4 +137,11 @@ case(native=True, queue_fail=0xffff, error='Cannot acquire')
 case(native=True, console_number=4, error='local virtual console')
 case(native=True, floppy_count=0, error='Invalid drive specification.')
 case(native=True, full_version=0x1430, error='requires CP/M-86')
+for mode in (0, 7, 0xfe, 0xff):
+    case(native=True, initial_error_mode=mode)
+    case(native=True, initial_error_mode=mode, abort=0)
+for op in (5, 3, 4):
+    case('A:[V]', native=True, verify=True, fail=op, ignore_errors=True)
+    case('A:[V]', native=True, verify=True, fail=op, retry=True,
+         ignore_errors=True)
 print(f'PASS: {count} dual-OS DFORM cases; boot images, BIOS/XIOS, locks and cleanup checked')

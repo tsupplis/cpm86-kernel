@@ -43,6 +43,12 @@ cpu 8086
 %ifndef EXPECT_RESET
 %define EXPECT_RESET 1
 %endif
+%ifndef FAIL_PROBE
+%define FAIL_PROBE 0
+%endif
+%ifndef PROBE_DRIVE
+%define PROBE_DRIVE -1
+%endif
 %ifndef NATIVE_STATUS
 %define NATIVE_STATUS 1
 %endif
@@ -575,8 +581,14 @@ reset_all:
     jne bad
     mov ax,3000h
     mov es,ax
+%if EXPECT_TOUCHED & 1
     cmp byte [es:406h],0
     jne bad
+%endif
+%if EXPECT_TOUCHED & 2
+    cmp byte [es:426h],0
+    jne bad
+%endif
     mov byte [cs:reset_done],1
     xor ax,ax
     jmp corrupt
@@ -637,6 +649,16 @@ xios:
 %if FAIL_NATIVE
     cmp byte [cs:native_failures],FAIL_TIMES
     jae .failure_done
+%if FAIL_PROBE
+    cmp ch,0
+    jne .failure_done
+    cmp dh,1
+    jne .failure_done
+%if PROBE_DRIVE >= 0
+    cmp dl,PROBE_DRIVE
+    jne .failure_done
+%endif
+%endif
 %if FAIL_NATIVE == 2
     cmp al,10
 %elif FAIL_NATIVE == 3

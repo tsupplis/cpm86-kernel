@@ -226,13 +226,30 @@ ccpm_track_ready:
 	ret
 ccpm_io_error:
 ; Quick-return XIOS reports only general failure (1) or write protection
-; (2). Map these to the existing retry/side-probe/format-fallback paths.
+; (2). Retain retry/format fallback, but never infer geometry from this
+; lossy mapping: check_native_probe rejects ambiguous head-one failures.
 	mov	ah,4
 	cmp	al,2
 	jnz	ccpm_io_failed
 	mov	ah,3
 ccpm_io_failed:
 	stc
+	ret
+
+; After the caller's retries are exhausted, a native cylinder-zero/head-one
+; failure cannot prove that the medium is single-sided. Stop before copying
+; buffered data or reporting equality; explicit [1] never probes this head.
+check_native_probe:
+	cmp	byte ptr os_mode,1
+	jnz	native_probe_return
+	or	ch,ch
+	jnz	native_probe_return
+	cmp	dh,1
+	jnz	native_probe_return
+	mov	dx,offset msg_native_probe
+	call	puts
+	jmp	cleanup
+native_probe_return:
 	ret
 
 ; Invalidate media state before releasing MXdisk; then reset BDOS login
@@ -395,6 +412,8 @@ native_dma_offset	dw	0
 verify_segment	dw	0
 old_error_mode	db	0
 io_mode_held	db	0
+msg_native_probe	db	'Cannot read head 1; unable to determine media sides.',13,10
+	db	'Use [1] only for known single-sided media.',13,10,'$'
 msg_cancelled	db	'Cancelled.',13,10,'$'
 msg_wrong_os	db	'Requires CP/M-86 1.1 or Concurrent CP/M-86 3.1.',13,10,'$'
 verify_space	rs	2000h

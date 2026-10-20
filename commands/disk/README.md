@@ -21,8 +21,11 @@ The CCP/M path requires a local foreground unbuffered console and no open
 files. It sets P_KEEP/NOSWITCH, raises priority, acquires MXdisk and rechecks
 open files under the lock. XIOS quick-return error mode prevents an Ignore
 response from silently accepting bad data. Native status 1 maps to the common
-sector-error retry/side-probe/format-fallback path; status 2 maps to write
-protection. XIOS does not return the full ROM BIOS status byte.
+sector-error retry/format-fallback path; status 2 maps to write
+protection. XIOS does not return the full ROM BIOS status byte. A native
+head-one probe error therefore stops the command rather than selecting a
+single side silently. Use [1] for known single-sided media; transient probe
+errors are retried before stopping.
 
 Ctrl-C follows explicit cleanup during prompts and disk access. Every exit
 restores the UDA error mode, returns MXdisk, invalidates each accessed drive's

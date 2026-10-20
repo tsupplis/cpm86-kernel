@@ -96,6 +96,13 @@ ccpm_keep:
 	mov	dx,offset msg_open_files
 	jmp	ccpm_stop
 ccpm_lock_done:
+; Return every native error to DFORM's retry loop. Interactive Ignore would
+; otherwise turn a failed format/write/verify into an apparent success.
+	mov	es,word ptr uda_segment
+	mov	al,es:byte ptr .10h
+	mov	old_error_mode,al
+	mov	es:byte ptr .10h,0feh
+	mov	byte ptr io_mode_held,1
 	ret
 ccpm_console_busy:
 	popf
@@ -209,6 +216,13 @@ ccpm_finish:
 	mov	es,word ptr system_segment
 	mov	es:byte ptr 6[bx],0
 ccpm_return_token:
+	cmp	byte ptr io_mode_held,0
+	jz	ccpm_release_token
+	mov	es,word ptr uda_segment
+	mov	al,old_error_mode
+	mov	es:byte ptr .10h,al
+	mov	byte ptr io_mode_held,0
+ccpm_release_token:
 	mov	dx,offset disk_queue
 	mov	cl,139
 	call	bdos
@@ -251,6 +265,8 @@ old_priority	db	0
 process_held	db	0
 console_held	db	0
 disk_held	db	0
+old_error_mode	db	0
+io_mode_held	db	0
 ; Queue parameter block layout from the original CCP/M DSKMAINT image.
 disk_queue	db	0,0,0,0,0,0,0,0
 	db	'MXdisk  '

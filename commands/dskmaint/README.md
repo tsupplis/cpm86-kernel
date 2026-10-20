@@ -28,7 +28,8 @@ are retried five times before reporting the final BIOS/XIOS status. Raw BDOS
 console I/O routes Ctrl-C through cleanup rather than terminating with the
 BIOS diskette parameter vector still patched or CCP/M locks still held.
 The CP/M path restores the vector before resetting the drive login state.
-The CCP/M path releases MXdisk and restores console/P_KEEP/priority state.
+The CCP/M path enables quick-return XIOS errors, releases MXdisk and restores
+console/P_KEEP/priority and UDA error-mode state.
 
 The formatted disk uses DSKMAINT's boot-track layout: E5 fill,
 shared boot code at offset 0, sides byte at 1FFh and shared loader at 900h.

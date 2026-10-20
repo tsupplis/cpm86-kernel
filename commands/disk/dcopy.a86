@@ -13,8 +13,11 @@
 ;		drive1: is required; drive2: defaults to the current drive.
 ;		The drives must be installed floppy units.  If both name
 ;		the same drive, the command prompts for diskette swaps.
-;	[1]	Use head zero only; otherwise detect one or two sides.
+;	[1]	Use head zero only; otherwise probe for the second side.
 ;		The closing bracket is optional: [1 is also accepted.
+;		CCP/M aborts if the probe fails: native XIOS cannot tell
+;		a missing head from unreadable data. Use [1] for known
+;		single-sided media.
 ;
 ;	Drive letters are case-insensitive.  Separate arguments with spaces
 ;	or tabs; [1] may appear before, between or after the drive arguments.
@@ -273,6 +276,7 @@ read_track_failed:
 	inc	byte ptr read_retries
 	cmp	byte ptr read_retries,4h
 	jnz	read_track_attempt
+	call	check_native_probe
 	test	byte ptr copy_flags,flag_geometry_known
 	jnz	report_source_read_error
 	or	ch,ch

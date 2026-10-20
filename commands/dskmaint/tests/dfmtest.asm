@@ -2,6 +2,12 @@
 ; DOS calls belong to this test harness only; no host disk is accessed.
 bits 16
 cpu 8086
+%ifndef INITIAL_ERROR_MODE
+%define INITIAL_ERROR_MODE 7
+%endif
+%ifndef IGNORE_ERRORS
+%define IGNORE_ERRORS 0
+%endif
 org 100h
 start:
     mov ax,cs
@@ -33,6 +39,9 @@ start:
     mov word [es:20eh+2ch*CONSOLE_NUMBER],CONSOLE_STATE
     mov word [es:300h],FLOPPY_COUNT
     mov word [es:406h],5555h
+    mov ax,5100h
+    mov es,ax
+    mov byte [es:10h],INITIAL_ERROR_MODE
 %endif
     mov ax,cs
     add ax,(payload-$$+100h)/16
@@ -246,6 +255,10 @@ xios:
     jne bad
     cmp word [20eh+2ch*CONSOLE_NUMBER],8
     jne bad
+%if !IGNORE_ERRORS
+    cmp byte [es:10h],0feh
+    jne bad
+%endif
     cmp byte [ss:bp+14],DRIVE
     jne bad
     cmp byte [ss:bp+15],8
@@ -323,6 +336,19 @@ xios:
     jmp .return
 .failed:
     inc byte [cs:failed_requests]
+%if IGNORE_ERRORS
+    ; Model native XIOS: normal error mode offers Ignore and returns zero.
+    ; Quick-return mode must instead propagate the failure to DFORM.
+    push es
+    mov ax,5100h
+    mov es,ax
+    cmp byte [es:10h],0feh
+    pop es
+    jae .accept_failure
+    xor ax,ax
+    jmp .return
+.accept_failure:
+%endif
     mov ax,FAIL_STATUS
 .return:
     mov bx,ax
@@ -483,6 +509,10 @@ finish:
     cmp byte [es:105h],99
     jne bad
     cmp word [es:20eh+2ch*CONSOLE_NUMBER],CONSOLE_STATE
+    jne bad
+    mov ax,5100h
+    mov es,ax
+    cmp byte [es:10h],INITIAL_ERROR_MODE
     jne bad
 %endif
     cmp byte [cs:format_count],EXPECT_FORMATS
