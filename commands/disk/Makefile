@@ -1,17 +1,17 @@
 RASM86=pcdev_rasm86
 LINK86=pcdev_linkcmd
 
-TOOLS=diskcopy.cmd diskcomp.cmd
+TOOLS=dcopy.cmd dcomp.cmd
 
 SNIPPETS=
 
 all: $(TOOLS) $(SNIPPETS)
 
-diskcopy.obj: diskcopy.a86
+dcopy.obj: dcopy.a86
 
-diskcomp.obj: diskcomp.a86
+dcomp.obj: dcomp.a86
 
-# diskcopy is an 8080-model CMD: one CODE group holding code, data and stack,
+# Both utilities use an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
 # LINK86 pads the output past the end of the group, so cut it back to the
 # length the header declares (128-byte header + LEN paragraphs).
@@ -29,6 +29,11 @@ diskcomp.obj: diskcomp.a86
 	@grep -qE 'Number of errors: +0\.' $*.log || \
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
+check: all
+	python3 tests/check.py
+
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
 	rm -f *.loc *.mp? *.lnk *.log
+
+.PHONY: all check clean

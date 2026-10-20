@@ -1,0 +1,912 @@
+;*****************************************************************************
+;
+;	DCOMP - CP/M-86 diskette comparison for the IBM PC
+;
+;	Adapted from the PC DOS 1.10 utility by David Litton, IBM (1981-82).
+;	The original copyright text is retained below.
+;
+;	Build:	make dcomp.cmd
+;	Usage:	DCOMP drive1: {drive2:} {[1]}
+;
+;	drive1:	First diskette drive, A: or B:.
+;	drive2:	Second diskette drive, A: or B:.
+;		drive1: is required; drive2: defaults to the current drive.
+;		The drives must be installed floppy units.  If both name
+;		the same drive, the command prompts for diskette swaps.
+;	[1]	Use head zero only; otherwise detect one or two sides.
+;		The closing bracket is optional: [1 is also accepted.
+;
+;	Drive letters are case-insensitive.  Separate arguments with spaces
+;	or tabs; [1] may appear before, between or after the drive arguments.
+;	The option may also follow a drive directly, as in A: B:[1].
+;	Answer Y to process another pair, or N to return to CP/M.
+;
+;	Examples:
+;		DCOMP A: B:	compare A: with B:
+;		DCOMP A: A: [1]	use one drive, head zero only
+;		DCOMP A:		use A: and the current drive
+;		DCOMP		display command usage
+;
+;	BIOS INT 13h transfers raw tracks: 40 cylinders, eight 512-byte
+;	sectors per head, one or two heads.  No filesystem is interpreted.
+;	BDOS INT E0h handles console, current drive, memory and termination.
+;	All BDOS calls preserve ES and the live disk/comparison registers.
+;	The 512-byte private stack and program stay resident throughout.
+;
+;*****************************************************************************
+
+; One CODE group (8080 model), with DS-relative data just as in FUNCTION.
+cgroup	group	code,data
+	cseg
+	org	100h
+
+; ---- BDOS numbers and stack --------------------------------
+i_bdos	equ	0e0h
+f_reset	equ	0
+f_conin	equ	1
+f_rawio	equ	6
+f_puts	equ	9
+f_constat	equ	11
+f_getdrive	equ	25
+f_resetdrive	equ	37
+f_maxmem	equ	53
+f_alloc	equ	55
+stack_size	equ	512
+
+; Floppy geometry and BIOS requests (eight 512-byte sectors per head).
+cylinder_limit           equ     40
+bios_read_track          equ     0208h
+bios_write_track         equ     0308h
+bios_verify_track        equ     0408h
+bios_format_track        equ     0508h
+
+; State bits carried across the buffer and disk-swap loops.
+flag_one_drive           equ     1
+flag_one_side            equ     2
+flag_mismatch_seen       equ     4
+flag_geometry_known      equ     16
+flag_two_heads           equ     64
+
+
+
+;-----------------------------------------------------------------------------
+; Raw disk operations and resident state
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; Entry uses the CP/M base page; drive arguments are parsed from its tail.
+;-----------------------------------------------------------------------------
+
+start:
+	jmp	init
+	db	'The IBM Personal Computer Diskette Compare Utility Version '
+	db	'1.10 (C)Copyright IBM Corp 1981, 1982 Licensed Material - '
+	db	'Program Property of IBM Author - David Litton '
+
+;-----------------------------------------------------------------------------
+; Read both diskettes in buffered batches and report track/side mismatches.
+;-----------------------------------------------------------------------------
+
+; Alternate which disk occupies the large buffer to reduce swaps on a
+; single-drive system.
+compare_again:
+	mov	dx,offset msg_insert_first
+	call	puts
+	test	byte ptr compare_flags,flag_one_drive
+	jz	prompt_initial_second
+	mov	dx,offset msg_press_key
+	call	puts
+	call	wait_key
+	jmp	buffer_first_diskette
+
+; On two drives prompt for the second disk once; single-drive use prompts at
+; each swap.
+prompt_initial_second:
+	call	prompt_second
+
+; Fill the large buffer from the first disk and remember its exclusive
+; ending cylinder.
+buffer_first_diskette:
+	mov	es,word ptr bulk_buffer_segment
+; Restart comparisons at the beginning of the newly filled large buffer.
+	mov	word ptr bulk_compare_segment,es
+	mov	dl,first_drive
+	mov	dh,cylinders_per_buffer
+	call	read_tracks
+; Small reads must stop at this same exclusive cylinder boundary.
+	mov	bulk_end_cylinder,ch
+	test	byte ptr compare_flags,flag_one_drive
+	jz	compare_second_diskette
+	call	prompt_second
+
+; Read a small batch from disk two, then compare it against the matching
+; large-buffer span.
+compare_second_diskette:
+	mov	es,word ptr small_buffer_segment
+; The second drive is a BIOS unit number, separate from the base page.
+	mov	dl,second_drive
+; Two single-sided cylinders or one double-sided cylinder fit the small
+; buffer.
+	mov	dh,small_buffer_cylinders
+	call	read_tracks                     ; Read the next 8 KiB span from the second diskette.
+	call	compare_buffers                 ; Compare that span with its corresponding part of disk one.
+; Continue at the first cylinder not yet read into the small buffer.
+	mov	ch,batch_end_cylinder
+; Forty cylinders exhaust the disk; no further swap is needed.
+	cmp	ch,cylinder_limit
+	jz	comparison_complete
+	mov	current_cylinder,ch
+	cmp	ch,bulk_end_cylinder
+; Consume the remainder of the large buffer before swapping its disk.
+	jnz	compare_second_diskette
+; The next large batch comes from disk two, reversing comparison roles.
+	mov	es,word ptr bulk_buffer_segment
+	mov	word ptr bulk_compare_segment,es
+	mov	dl,second_drive
+	mov	dh,cylinders_per_buffer
+	call	read_tracks
+	mov	bulk_end_cylinder,ch
+	test	byte ptr compare_flags,flag_one_drive
+	jz	compare_first_diskette
+	call	prompt_first
+
+; After buffering disk two, reverse the roles: small reads now come from
+; disk one.
+compare_first_diskette:
+	mov	es,word ptr small_buffer_segment
+	mov	dl,first_drive
+	mov	dh,small_buffer_cylinders
+	call	read_tracks
+	call	compare_buffers
+	mov	ch,batch_end_cylinder
+	cmp	ch,cylinder_limit
+	jz	comparison_complete
+	mov	current_cylinder,ch
+	cmp	ch,bulk_end_cylinder
+	jnz	compare_first_diskette
+	jmp	buffer_first_diskette
+
+; Only report success if no mismatch was recorded anywhere on either disk.
+comparison_complete:
+	test	byte ptr compare_flags,flag_mismatch_seen
+	jnz	ask_compare_another
+	mov	dx,offset msg_compare_ok
+
+show_compare_status:
+	call	puts
+
+ask_compare_another:
+	mov	dx,offset msg_compare_another
+	call	puts
+	call	wait_key
+	or	al,20h
+	cmp	al,6Eh
+	jnz	check_compare_yes
+	jmp	doexit
+
+check_compare_yes:
+	cmp	al,79h
+	jnz	ask_compare_another
+	mov	byte ptr current_cylinder,0h
+	test	byte ptr compare_flags,flag_one_side
+	jnz	reset_compare_flags
+	mov	byte ptr next_head,1h
+	test	byte ptr compare_flags,flag_two_heads
+	jz	reset_compare_flags
+	mov	al,cylinders_per_buffer
+	shl	al,1
+	and	al,0feh		; small reads consume pairs of head tracks
+	mov	cylinders_per_buffer,al
+	inc	byte ptr small_buffer_cylinders
+
+; Keep drive selection and [1]; clear mismatch and geometry state before the
+; next pair.
+reset_compare_flags:
+	and	byte ptr compare_flags,3h
+	mov	sp,offset stack_top
+	jmp	compare_again
+
+;-----------------------------------------------------------------------------
+; Display first diskette insertion prompt; enter common prompt code.
+;-----------------------------------------------------------------------------
+
+prompt_first:
+	mov	dx,offset msg_insert_first
+	jmp	show_insert_and_wait
+
+;-----------------------------------------------------------------------------
+; Display second diskette insertion prompt, then wait for a fresh keypress.
+;-----------------------------------------------------------------------------
+
+prompt_second:
+	mov	dx,offset msg_insert_second
+
+show_insert_and_wait:
+	call	puts
+	mov	dx,offset msg_press_key
+	call	puts
+
+	call	wait_key
+	ret
+
+;-----------------------------------------------------------------------------
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; ES=buffer, DL=drive, DH=track count. Read tracks and probe diskette
+; geometry.
+;-----------------------------------------------------------------------------
+
+; DH is a cylinder count on entry, then becomes the BIOS head number. CH
+; returns the exclusive end.
+read_tracks:
+	mov	byte ptr read_retries,0h
+	mov	bp,es
+	mov	cl,1h
+	mov	ch,current_cylinder
+	add	ch,dh
+	mov	batch_end_cylinder,ch
+	sub	ch,dh
+	xor	dh,dh
+	cmp	byte ptr batch_end_cylinder,cylinder_limit
+	jna	read_track_attempt
+	mov	byte ptr batch_end_cylinder,cylinder_limit
+
+read_track_attempt:
+	xor	bx,bx
+	mov	ax,bios_read_track
+	int	13h
+	jc	read_track_failed
+
+read_track_succeeded:
+	mov	byte ptr read_retries,0h
+	test	byte ptr compare_flags,flag_geometry_known
+	jnz	advance_read_buffer
+	test	byte ptr compare_flags,flag_one_side
+	jz	probe_second_side
+	jmp	select_single_sided
+
+; A successful read of cylinder zero/head one establishes double-sided
+; media.
+probe_second_side:
+	or	ch,ch
+	jnz	advance_read_buffer
+	cmp	dh,1h
+	jnz	advance_read_buffer
+	or	byte ptr compare_flags,flag_geometry_known + flag_two_heads
+	mov	ah,cylinders_per_buffer
+	shr	ah,1                            ; Double-sided cylinders occupy two 4 KiB head buffers.
+	mov	cylinders_per_buffer,ah
+	mov	batch_end_cylinder,ah
+; The small buffer now contains one cylinder instead of two.
+	dec	byte ptr small_buffer_cylinders
+	mov	byte ptr compare_side_count_char,32h
+	call	show_sides
+
+; Eight 512-byte sectors consume 100h paragraphs; increment the cylinder
+; when heads wrap.
+advance_read_buffer:
+	add	bp,100h
+	mov	es,bp
+	xchg	dh,next_head
+	or	dh,dh
+	jnz	read_track_attempt
+	inc	ch
+	cmp	ch,batch_end_cylinder
+	jnz	read_track_attempt
+	ret
+
+; Preserve the BIOS status over reset; retry four times before classifying
+; the failure.
+read_track_failed:
+	push	ax
+	xor	ax,ax
+	int	13h
+	pop	ax
+	cmp	ah,80h
+	jz	retry_disk_not_ready
+	inc	byte ptr read_retries
+	cmp	byte ptr read_retries,4h
+	jnz	read_track_attempt
+	call	check_geometry_error
+	jnc	report_read_error
+	test	byte ptr compare_flags,flag_geometry_known
+	jz	discard_side_probe_buffer
+	mov	dx,offset msg_incompatible_disks
+	jmp	show_compare_status
+
+retry_disk_not_ready:
+	push	dx
+	mov	error_drive_char,dl
+	add	byte ptr error_drive_char,41h
+	mov	dx,offset msg_not_ready
+	call	puts
+	mov	dx,offset error_drive_char
+	call	puts
+	mov	dx,offset msg_correct_then_key
+	call	puts
+	call	wait_key
+	pop	dx
+	jmp	read_track_attempt
+
+discard_side_probe_buffer:
+	sub	bp,100h
+	mov	es,bp
+
+; Skip head-one reads and keep the small buffer covering two single-sided
+; cylinders.
+select_single_sided:
+	or	byte ptr compare_flags,flag_geometry_known
+	xor	dh,dh
+	mov	byte ptr read_retries,0h
+	mov	byte ptr compare_side_count_char,31h
+	call	show_sides
+	jmp	advance_read_buffer
+
+report_read_error:
+	mov	error_drive_char,dl
+	add	byte ptr error_drive_char,41h
+	mov	side_digit_char,dh
+	or	byte ptr side_digit_char,30h
+	mov	word ptr track_tens_char,3030h
+	mov	ah,ch
+
+read_error_track_tens:
+	cmp	ah,0Ah
+	jc	show_read_error_location
+	inc	byte ptr track_tens_char
+	sub	ah,0Ah
+	jmp	read_error_track_tens
+
+show_read_error_location:
+	or	track_units_char,ah
+	push	dx
+	mov	dx,offset msg_read_error
+	call	puts
+	mov	dx,offset msg_track_side
+	call	puts
+	pop	dx
+	jmp	read_track_succeeded
+
+;-----------------------------------------------------------------------------
+; CH=track, DH=side, AH=BIOS status. CF marks a possible single-sided
+; diskette.
+;-----------------------------------------------------------------------------
+
+check_geometry_error:
+	or	ch,ch
+	jnz	other_geometry_error_ret
+	cmp	dh,1h
+	jnz	other_geometry_error_ret
+	cmp	ah,2h
+	jz	possible_single_side_ret
+	cmp	ah,4h
+	jnz	other_geometry_error_ret
+
+possible_single_side_ret:
+	stc
+	ret
+
+other_geometry_error_ret:
+	clc
+	ret
+
+;-----------------------------------------------------------------------------
+; Print the current one/two-side status message; preserve DX.
+;-----------------------------------------------------------------------------
+
+show_sides:
+	push	dx
+	mov	dx,offset msg_comparing_sides
+	call	puts
+	pop	dx
+	ret
+
+;-----------------------------------------------------------------------------
+; Compare buffered bytes with REPE CMPSB and report differences.
+;-----------------------------------------------------------------------------
+
+; DS:SI selects the resident small buffer; ES:DI the matching large span.
+compare_buffers:
+	mov	si,word ptr small_buffer_offset
+	mov	es,word ptr bulk_compare_segment
+	xor	di,di
+	mov	cx,2000h                        ; Each small-buffer comparison covers 8 KiB.
+
+compare_next_span:
+	jcxz	advance_compare_buffer
+	repe	cmpsb
+	jz	advance_compare_buffer
+	call	report_mismatch
+	jmp	compare_next_span
+
+; The caller consumed one 8 KiB span regardless of how many mismatches it
+; contained.
+advance_compare_buffer:
+	mov	ax,word ptr bulk_compare_segment
+	add	ax,200h                         ; Advance the large-buffer cursor by one 8 KiB span.
+	mov	word ptr bulk_compare_segment,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Report the track/side of a mismatch; adjust the remaining comparison span.
+;-----------------------------------------------------------------------------
+
+report_mismatch:
+	or	byte ptr compare_flags,flag_mismatch_seen
+	mov	dl,current_cylinder
+	mov	dh,30h
+	cmp	cx,0FFFh
+	ja	mismatch_first_span
+; A mismatch in the second span completes this small-buffer comparison.
+	xor	cx,cx
+	test	byte ptr compare_flags,flag_two_heads
+	jz	mismatch_next_cylinder
+	inc	dh                              ; For double-sided media this span belongs to head one.
+	jmp	format_mismatch_location
+
+; The second 4 KiB is head one on a double-sided disk, or the next cylinder
+; on a single-sided disk.
+mismatch_next_cylinder:
+	inc	dl
+	jmp	format_mismatch_location
+
+; After reporting a mismatch in the first 4 KiB, skip to the second span to
+; avoid duplicate reports.
+mismatch_first_span:
+	mov	bp,word ptr bulk_compare_segment
+	add	bp,100h
+	mov	es,bp
+	add	si,cx
+; Skip the remainder of the first span after reporting its first mismatch.
+	mov	cx,1000h
+	sub	si,cx
+	xor	di,di
+
+format_mismatch_location:
+	mov	side_digit_char,dh
+	mov	word ptr track_tens_char,3030h
+
+mismatch_track_tens:
+	cmp	dl,0Ah
+	jc	show_mismatch_location
+	inc	byte ptr track_tens_char
+	sub	dl,0Ah
+	jmp	mismatch_track_tens
+
+show_mismatch_location:
+	mov	track_units_char,dl
+	or	byte ptr track_units_char,30h
+	mov	dx,offset msg_compare_errors
+	call	puts
+	mov	dx,offset msg_track_side
+	call	puts
+	ret
+
+; ---- data ----
+	dseg
+bulk_buffer_segment	dw	0
+
+bulk_compare_segment	dw	0
+
+small_buffer_segment	dw	0
+
+small_buffer_offset	dw	0
+
+current_cylinder	db	0h
+
+; Head to use after the next exchange; zero permanently with [1].
+next_head	db	0h
+
+; Whole cylinders that fit; halved when a second head is detected.
+cylinders_per_buffer	db	0h
+
+; Exclusive cylinder limit for the current batch; clamped to 40.
+batch_end_cylinder	db	0h
+
+; Bits: one drive, [1], mismatch seen, geometry known and two heads.
+compare_flags	db	0h
+
+read_retries	db	0h
+
+; 2 for one-sided media, 1 for two-sided media; both occupy 8 KiB.
+small_buffer_cylinders	db	0h
+
+bulk_end_cylinder	db	0h
+
+msg_insert_first	db	0Dh,0Ah
+	db	'Insert first diskette in drive '
+
+first_prompt_drive	db	'@:'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_insert_second	db	0Dh,0Ah
+	db	'Insert second diskette in drive '
+
+second_prompt_drive	db	'@:'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_press_key	db	0Dh,0Ah
+	db	'Strike any key when ready'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_compare_ok	db	0Dh,0Ah
+	db	'Diskettes compare ok'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_read_error	db	0Dh,0Ah
+	db	'Unrecoverable read error on drive '
+
+error_drive_char	db	'@'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_track_side	db	'Track '
+
+track_tens_char	db	0h
+
+track_units_char	db	0h
+	db	', Side '
+
+side_digit_char	db	0h,0Dh,0Ah,7h
+	db	'$'
+
+msg_compare_errors	db	0Dh,0Ah
+	db	'Compare error(s) on '
+	db	0Dh,0Ah
+	db	'$'
+
+msg_compare_another	db	0Dh,0Ah
+	db	'Compare more diskettes (Y/N)?$'
+
+msg_comparing_sides	db	0Dh,0Ah
+	db	'Comparing '
+
+compare_side_count_char	db	0h
+	db	' side(s)'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_incompatible_disks	db	0Dh,0Ah
+	db	'Incompatible diskette or drive types'
+	db	0Dh,0Ah,7h
+	db	'$'
+
+msg_not_ready	db	0Dh,0Ah
+	db	'Not ready error reading drive $'
+
+msg_correct_then_key	db	0Dh,0Ah
+	db	'Correct, then strike any key'
+	db	0Dh,0Ah,7h
+	db	'$'
+
+;-----------------------------------------------------------------------------
+; Set the private stack before any BDOS calls; parse drives and [1].
+;-----------------------------------------------------------------------------
+
+	cseg
+init:
+	push	cs
+	pop	ds
+	push	ds
+	pop	es
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset stack_top
+	cld
+	call	parse_args
+	jmp	encode_drive_letters
+
+invalid_drive_exit:
+	mov	dx,offset msg_invalid_drive
+	call	puts
+	jmp	show_usage
+
+parameter_error:
+	mov	dx,offset msg_invalid_parameter
+	call	puts
+
+; As in MFORM, an empty command displays the banner and command syntax.
+show_usage:
+	mov	dx,offset msg_banner
+	call	puts
+	mov	dx,offset msg_usage
+	call	puts
+	jmp	doexit
+
+print_init_error_exit:
+	call	puts
+	jmp	doexit
+
+; Convert the one-based arguments to BIOS drive numbers and prompt letters.
+encode_drive_letters:
+	mov	al,first_drive
+	or	first_prompt_drive,al
+	dec	al
+	mov	first_drive,al
+	mov	ah,al
+	mov	al,second_drive
+	or	second_prompt_drive,al
+	dec	al
+	mov	second_drive,al
+	cmp	al,ah
+	jnz	allocate_compare_buffers
+	or	byte ptr compare_flags,flag_one_drive
+
+; The small buffer is resident; allocate the large buffer separately.
+allocate_compare_buffers:
+	call	alloc_buffer
+	jmp	begin_comparison
+
+begin_comparison:
+	mov	byte ptr small_buffer_cylinders,2h
+	jmp	compare_again
+
+	dseg
+msg_invalid_drive	db	0Dh,0Ah
+	db	'Invalid drive specification'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_insufficient_memory	db	0Dh,0Ah
+	db	'Insufficient memory'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_invalid_parameter	db	0Dh,0Ah
+	db	'Invalid parameter'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+	dseg
+msg_banner	db	0dh,0ah,'CP/M-86 DCOMP for the IBM PC',0dh,0ah,'$'
+msg_usage	db	'USAGE: DCOMP drive1: {drive2:} {[1]}',0dh,0ah
+	db	'  drive1:  First floppy drive, A: or B: (required)',0dh,0ah
+	db	'  drive2:  Second floppy drive (default: current drive)',0dh,0ah
+	db	'  [1]      Head zero only; closing ] is optional',0dh,0ah
+	db	'  Same drive twice: prompt for diskette swaps',0dh,0ah
+	db	'  Example: DCOMP A: B:[1]',0dh,0ah,'$'
+	cseg
+;-----------------------------------------------------------------------------
+; BDOS destroys BX, CX and ES in this kernel.  Keep disk coordinates, buffer
+; segments and comparison cursors intact; AL/AX alone carry the result.
+;-----------------------------------------------------------------------------
+bdos:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	int	i_bdos
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+; Print the dollar-terminated string at DS:DX, preserving AX and CX too.
+puts:
+	push	ax
+	push	cx
+	mov	cl,f_puts
+	call	bdos
+	pop	cx
+	pop	ax
+	ret
+
+; Discard type-ahead before a disk swap or Y/N response, then read with echo.
+; Function 6 consumes queued input without echo; function 1 waits for the key.
+wait_key:
+	push	cx
+	push	dx
+flush_key:
+	mov	cl,f_constat
+	call	bdos
+	or	al,al
+	jz	read_key
+	mov	dl,0ffh
+	mov	cl,f_rawio
+	call	bdos
+	jmp	flush_key
+read_key:
+	mov	cl,f_conin
+	call	bdos
+	pop	dx
+	pop	cx
+	ret
+
+; Forget both floppy login records after raw BIOS access, then let BDOS free
+; the program and its transfer block.  No return through a DOS PSP is used.
+doexit:
+	mov	dx,3
+	mov	cl,f_resetdrive
+	call	bdos
+	xor	dx,dx
+	mov	cl,f_reset
+	int	i_bdos
+
+;-----------------------------------------------------------------------------
+; Accept one or two A:/B: drives and [1] (or [1), separated by spaces or tabs.
+; Parse the bounded base-page tail ourselves: CP/M does not supply DOS's
+; invalid-drive status in AX.  Missing drives or bad arguments show usage.
+;-----------------------------------------------------------------------------
+parse_args:
+	int	11h
+	mov	cl,6
+	shr	al,cl
+	and	al,3
+	inc	al
+	cmp	al,2
+	jbe	drive_count_ready
+	mov	al,2		; only A:/B: floppy units are supported
+drive_count_ready:
+	mov	drive_count,al
+	mov	cl,f_getdrive
+	call	bdos
+	inc	al
+	mov	first_drive,al
+	mov	second_drive,al
+	mov	bl,0
+	xor	cx,cx
+	mov	cl,byte ptr .80h
+	mov	si,81h
+arg_next:
+	jcxz	args_done
+	lodsb
+	dec	cx
+	cmp	al,' '
+	jz	arg_next
+	cmp	al,9
+	jz	arg_next
+	cmp	al,'['
+	jz	arg_switch
+	and	al,0dfh
+	sub	al,'A'
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	inc	al
+	jcxz	arg_bad
+	cmp	byte ptr [si],':'
+	jnz	arg_bad
+	inc	si
+	dec	cx
+	cmp	bl,2
+	jnc	arg_bad
+	or	bl,bl
+	jnz	arg_second
+	mov	first_drive,al
+	jmp	arg_drive_done
+arg_second:
+	mov	second_drive,al
+arg_drive_done:
+	inc	bl
+	jmp	arg_delimiter
+arg_switch:
+	jcxz	arg_bad
+	lodsb
+	dec	cx
+	cmp	al,'1'
+	jnz	arg_bad
+	or	byte ptr compare_flags,flag_one_side
+	jcxz	args_done
+	cmp	byte ptr [si],']'
+	jnz	arg_delimiter
+	inc	si
+	dec	cx
+	jmp	arg_delimiter
+arg_delimiter:
+	jcxz	args_done
+	mov	al,[si]
+	cmp	al,'['
+	jz	arg_next
+	cmp	al,' '
+	jz	arg_next
+	cmp	al,9
+	jz	arg_next
+arg_bad:
+	jmp	parameter_error
+arg_bad_drive:
+	jmp	invalid_drive_exit
+args_done:
+	or	bl,bl
+	jnz	args_have_drive
+	jmp	show_usage
+args_have_drive:
+	mov	al,first_drive
+	dec	al
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	mov	al,second_drive
+	dec	al
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	mov	byte ptr next_head,1
+	test	byte ptr compare_flags,flag_one_side
+	jz	args_return
+	mov	byte ptr next_head,0
+args_return:
+	ret
+
+;-----------------------------------------------------------------------------
+; This kernel's function 53 finds a maximum block but does not reserve it;
+; function 55 reserves the returned size.  Keep both calls, check AL (the
+; kernel returns 00ffh on failure), and leave the allocation nonresident.
+; Round up to a 4 KiB boundary so an eight-sector BIOS transfer cannot cross
+; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+;-----------------------------------------------------------------------------
+alloc_buffer:
+	mov	dx,offset mem_block
+	mov	cl,f_maxmem
+	call	bdos
+	or	al,al
+	jnz	memory_error
+	mov	byte ptr mem_ext,0
+	mov	cl,f_alloc
+	call	bdos
+	or	al,al
+	jnz	memory_error
+	mov	dx,mem_segment
+	mov	bx,dx
+	add	dx,0ffh
+	and	dx,0ff00h
+	sub	bx,dx
+	neg	bx		; paragraphs lost to DMA alignment
+	mov	ax,mem_length
+	sub	ax,bx
+	jc	memory_error
+	mov	cl,8
+	shr	ax,cl
+	cmp	ax,80
+	jbe	buffer_sized
+	mov	ax,80
+buffer_sized:
+	cmp	ax,2
+	jc	memory_error
+	and	al,0feh		; small reads consume pairs of head tracks
+	mov	cylinders_per_buffer,al
+	mov	bulk_buffer_segment,dx
+	mov	ax,ds
+	mov	bx,offset small_buffer
+	mov	cl,4
+	shr	bx,cl
+	add	ax,bx
+	add	ax,0ffh
+	and	ax,0ff00h
+	mov	small_buffer_segment,ax
+	mov	bx,ds
+	sub	ax,bx
+	shl	ax,cl
+	mov	small_buffer_offset,ax
+	ret
+memory_error:
+	mov	dx,offset msg_insufficient_memory
+	jmp	print_init_error_exit
+
+	dseg
+first_drive	db	0
+second_drive	db	0
+drive_count	db	0
+; BDOS memory control block: segment, paragraph count, allocation lifetime.
+mem_block:
+mem_segment	dw	0
+mem_length	dw	5100h
+mem_ext	db	0
+
+; Private downward-growing stack, separate from the base page and buffers.
+stack_space	rs	stack_size
+stack_top:
+; Up to 4 KiB padding aligns the 8 KiB read buffer for BIOS DMA.
+small_buffer	rs	3000h
+	end

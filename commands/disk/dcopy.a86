@@ -1,0 +1,1057 @@
+;*****************************************************************************
+;
+;	DCOPY - CP/M-86 diskette copier for the IBM PC
+;
+;	Adapted from the PC DOS 1.10 utility by David Litton, IBM (1981-82).
+;	The original copyright text is retained below.
+;
+;	Build:	make dcopy.cmd
+;	Usage:	DCOPY drive1: {drive2:} {[1]}
+;
+;	drive1:	Source diskette drive, A: or B:.
+;	drive2:	Target diskette drive, A: or B:.
+;		drive1: is required; drive2: defaults to the current drive.
+;		The drives must be installed floppy units.  If both name
+;		the same drive, the command prompts for diskette swaps.
+;	[1]	Use head zero only; otherwise detect one or two sides.
+;		The closing bracket is optional: [1 is also accepted.
+;
+;	Drive letters are case-insensitive.  Separate arguments with spaces
+;	or tabs; [1] may appear before, between or after the drive arguments.
+;	The option may also follow a drive directly, as in A: B:[1].
+;	Answer Y to process another pair, or N to return to CP/M.
+;
+;	Examples:
+;		DCOPY A: B:	copy A: onto B:
+;		DCOPY A: A: [1]	use one drive, head zero only
+;		DCOPY A:		use A: and the current drive
+;		DCOPY		display command usage
+;
+;	BIOS INT 13h transfers raw tracks: 40 cylinders, eight 512-byte
+;	sectors per head, one or two heads.  No filesystem is interpreted.
+;	BDOS INT E0h handles console, current drive, memory and termination.
+;	All BDOS calls preserve ES and the live disk/comparison registers.
+;	The 512-byte private stack and program stay resident throughout.
+;
+;*****************************************************************************
+
+; One CODE group (8080 model), with DS-relative data just as in FUNCTION.
+cgroup	group	code,data
+	cseg
+	org	100h
+
+; ---- BDOS numbers and stack --------------------------------
+i_bdos	equ	0e0h
+f_reset	equ	0
+f_conin	equ	1
+f_rawio	equ	6
+f_puts	equ	9
+f_constat	equ	11
+f_getdrive	equ	25
+f_resetdrive	equ	37
+f_maxmem	equ	53
+f_alloc	equ	55
+stack_size	equ	512
+
+; Floppy geometry and BIOS requests (eight 512-byte sectors per head).
+cylinder_limit           equ     40
+bios_read_track          equ     0208h
+bios_write_track         equ     0308h
+bios_verify_track        equ     0408h
+bios_format_track        equ     0508h
+
+; State bits carried across the buffer and disk-swap loops.
+flag_one_drive           equ     1
+flag_one_side            equ     2
+flag_writing             equ     8
+flag_geometry_known      equ     16
+flag_errors_seen         equ     32
+flag_two_heads           equ     64
+flag_format_target       equ     128
+
+
+
+;-----------------------------------------------------------------------------
+; Raw disk operations and resident state
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; Entry uses the CP/M base page; drive arguments are parsed from its tail.
+;-----------------------------------------------------------------------------
+
+start:
+	jmp	init
+	db	'The IBM Personal Computer Diskette Copier Version 1.10 '
+	db	'(C)Copyright IBM Corp 1981, 1982 Licensed Material - '
+	db	'Program Property of IBM Author - David Litton '
+
+;-----------------------------------------------------------------------------
+; Prompt, read source tracks, write/verify target tracks, then offer another
+; copy.
+;-----------------------------------------------------------------------------
+
+; With two drives both disks stay inserted. A one-drive copy prompts before
+; each swap.
+copy_again:
+	mov	dx,offset msg_insert_source
+	call	puts
+	test	byte ptr copy_flags,flag_one_drive
+	jz	prompt_initial_target
+	mov	dx,offset msg_press_key
+	call	puts
+	call	wait_key
+	jmp	copy_buffer_batch
+
+prompt_initial_target:
+	call	prompt_target
+
+; Keep this source batch in memory while the same cylinders are written to
+; the target.
+copy_buffer_batch:
+	call	read_source_tracks
+	test	byte ptr copy_flags,flag_one_drive
+	jz	write_buffer_batch
+	call	prompt_target
+
+; A cylinder is complete only after every selected head has been written and
+; verified.
+write_buffer_batch:
+	call	write_target_tracks
+	cmp	byte ptr current_cylinder,cylinder_limit
+	jnz	prompt_source_if_needed
+	mov	dx,offset msg_target_maybe_unusable
+	test	byte ptr copy_flags,flag_errors_seen
+	jnz	show_completion_status
+	mov	dx,offset msg_copy_complete
+
+show_completion_status:
+	call	puts
+
+; Flush queued keystrokes so the key used for the disk swap cannot answer
+; this prompt.
+ask_copy_another:
+	mov	dx,offset msg_copy_another
+	call	puts
+	call	wait_key
+	or	al,20h
+	cmp	al,6Eh
+	jnz	check_copy_yes
+	jmp	doexit
+
+check_copy_yes:
+	cmp	al,79h
+	jnz	ask_copy_another
+	mov	sp,offset stack_top
+	mov	byte ptr current_cylinder,0h
+	test	byte ptr copy_flags,flag_one_side
+	jnz	reset_copy_flags
+	mov	byte ptr next_head,1h
+	test	byte ptr copy_flags,flag_two_heads
+	jz	reset_copy_flags
+	mov	al,cylinders_per_buffer
+	shl	al,1
+	mov	cylinders_per_buffer,al
+
+; Preserve drive selection and [1]; rediscover media geometry for the new
+; diskette.
+reset_copy_flags:
+	and	byte ptr copy_flags,3h
+	jmp	copy_again
+
+;-----------------------------------------------------------------------------
+; For one-drive copying, request the source diskette before the next batch.
+;-----------------------------------------------------------------------------
+
+prompt_source_if_needed:
+	test	byte ptr copy_flags,flag_one_drive
+	jz	copy_buffer_batch
+	call	prompt_source
+	jmp	copy_buffer_batch
+
+;-----------------------------------------------------------------------------
+; Display source insertion prompt; continue at the common prompt code.
+;-----------------------------------------------------------------------------
+
+prompt_source:
+	mov	dx,offset msg_insert_source
+	jmp	show_insert_and_wait
+
+;-----------------------------------------------------------------------------
+; Display target insertion prompt, then wait for a fresh keypress.
+;-----------------------------------------------------------------------------
+
+prompt_target:
+	mov	dx,offset msg_insert_target
+
+show_insert_and_wait:
+	call	puts
+	mov	dx,offset msg_press_key
+	call	puts
+
+	call	wait_key
+	ret
+
+;-----------------------------------------------------------------------------
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; Read source tracks through BIOS INT 13h; detect one or two sides and retry
+; errors.
+;-----------------------------------------------------------------------------
+
+; CH is the starting cylinder; the end cylinder is exclusive. Each head
+; occupies 4 KiB.
+read_source_tracks:
+	and	byte ptr copy_flags,0F7h
+	mov	byte ptr read_retries,0h
+	mov	dl,source_drive
+	xor	dh,dh
+	mov	cl,1h
+	mov	ch,current_cylinder
+	add	ch,cylinders_per_buffer
+; Exclusive end of this memory batch; never read beyond cylinder 39.
+	mov	batch_end_cylinder,ch
+	sub	ch,cylinders_per_buffer
+	mov	es,word ptr buffer_segment
+	mov	bp,es
+	cmp	byte ptr batch_end_cylinder,cylinder_limit
+	jna	read_track_attempt
+	mov	byte ptr batch_end_cylinder,cylinder_limit
+
+; BIOS reads eight 512-byte sectors at ES:0000, starting at sector one.
+read_track_attempt:
+	xor	bx,bx
+	mov	ax,bios_read_track
+	int	13h
+	jc	read_track_failed
+
+; Probe head one only on cylinder zero; subsequent cylinders use the
+; detected geometry.
+read_track_succeeded:
+	mov	byte ptr read_retries,0h
+	test	byte ptr copy_flags,flag_geometry_known
+	jnz	advance_read_buffer
+	test	byte ptr copy_flags,flag_one_side
+	jnz	select_single_sided
+	or	ch,ch
+	jnz	advance_read_buffer
+	cmp	dh,1h
+	jnz	advance_read_buffer
+	or	byte ptr copy_flags,flag_geometry_known + flag_two_heads
+	mov	ah,cylinders_per_buffer
+	shr	ah,1                            ; Two heads consume twice the buffer space per cylinder.
+	mov	cylinders_per_buffer,ah
+	mov	batch_end_cylinder,ah
+	mov	byte ptr copy_side_count_char,32h
+	call	show_sides
+
+; Advance ES by 100h paragraphs per head; advance CH only when the head
+; wraps to zero.
+advance_read_buffer:
+	add	bp,100h
+	mov	es,bp
+	xchg	dh,next_head
+	or	dh,dh
+	jnz	read_track_attempt
+	inc	ch
+	cmp	ch,batch_end_cylinder
+	jnz	read_track_attempt
+	ret
+
+; Reset the controller without losing AH, then distinguish not-ready from
+; exhausted retries.
+read_track_failed:
+	push	ax
+	xor	ax,ax
+	int	13h
+	pop	ax
+	cmp	ah,80h
+	jz	retry_source_not_ready
+	inc	byte ptr read_retries
+	cmp	byte ptr read_retries,4h
+	jnz	read_track_attempt
+	test	byte ptr copy_flags,flag_geometry_known
+	jnz	report_source_read_error
+	or	ch,ch
+	jnz	report_source_read_error
+	cmp	dh,1h
+	jnz	report_source_read_error
+	cmp	ah,2h
+	jz	discard_side_probe_buffer
+	cmp	ah,4h
+	jnz	report_source_read_error
+
+; Head one failed the geometry probe; undo its buffer advance before
+; selecting one side.
+discard_side_probe_buffer:
+	sub	bp,100h                         ; Undo the advance made before probing head one.
+	mov	es,bp
+
+; Do not treat a missing second head as data damage. Keep later reads on
+; head zero.
+select_single_sided:
+	or	byte ptr copy_flags,flag_geometry_known
+	xor	dh,dh
+	mov	byte ptr read_retries,0h
+	mov	byte ptr copy_side_count_char,31h
+	call	show_sides
+	jmp	advance_read_buffer
+
+report_source_read_error:
+	mov	ax,offset msg_read_error
+	call	report_disk_error
+	jmp	read_track_succeeded
+
+retry_source_not_ready:
+	call	handle_not_ready
+	jmp	read_track_attempt
+
+;-----------------------------------------------------------------------------
+; Print the current one/two-side status message; preserve DX.
+;-----------------------------------------------------------------------------
+
+show_sides:
+	push	dx
+	mov	dx,offset msg_copying_sides
+	call	puts
+	pop	dx
+	ret
+
+;-----------------------------------------------------------------------------
+; Write buffered tracks through INT 13h; format on demand and verify each
+; track.
+;-----------------------------------------------------------------------------
+
+write_target_tracks:
+; This PSP byte now holds the target drive, not a filename character.
+	mov	dl,target_drive
+	xor	dh,dh
+	mov	cl,1h
+	mov	ch,current_cylinder
+	mov	es,word ptr buffer_segment
+	mov	bp,es
+
+; Once formatting is enabled, format both target heads before writing the
+; next cylinder.
+prepare_target_track:
+	mov	byte ptr write_retries,0h
+	mov	byte ptr verify_retries,0h
+	test	byte ptr copy_flags,flag_format_target
+	jz	write_track_attempt
+	or	dh,dh
+	jnz	write_track_attempt
+	call	format_target_track
+
+write_track_attempt:
+	or	byte ptr copy_flags,flag_writing
+	xor	bx,bx
+	mov	ax,bios_write_track
+	int	13h
+	jc	write_track_failed
+	call	verify_target_track
+	cmp	byte ptr verify_retries,0h
+; Verification failed: rewrite the same buffered track before advancing.
+	jnz	write_track_attempt
+
+; The buffer advances once per head; the cylinder advances after the final
+; selected head.
+advance_target_side:
+	xchg	dh,next_head
+	or	dh,dh
+	jnz	advance_write_buffer
+	inc	ch
+
+advance_write_buffer:
+	add	bp,100h
+	mov	es,bp
+	cmp	ch,batch_end_cylinder
+	jnz	prepare_target_track
+	mov	ah,batch_end_cylinder
+	mov	current_cylinder,ah
+	ret
+
+; Write protection and not-ready remain retryable after the user corrects
+; the disk.
+write_track_failed:
+	push	ax
+	xor	ax,ax
+	int	13h
+	pop	ax
+	cmp	ah,80h
+	jz	retry_target_not_ready
+	cmp	ah,3h
+	jz	retry_write_protected
+	inc	byte ptr write_retries
+	cmp	byte ptr write_retries,4h
+	jnz	write_track_attempt
+	cmp	ah,2h
+	jz	try_formatting_target
+	cmp	ah,4h
+	jnz	report_target_write_error
+
+; A missing address mark or sector may mean an unformatted target; try
+; formatting it once.
+try_formatting_target:
+	test	byte ptr copy_flags,flag_format_target
+	jnz	check_incompatible_target
+	or	byte ptr copy_flags,flag_format_target
+	mov	ax,offset msg_formatting_copy
+	call	report_disk_error
+	or	dh,dh
+	jnz	rewind_target_to_side_zero
+	jmp	prepare_target_track
+
+; Formatting starts with head zero, so rewind the buffered head when the
+; failure was on head one.
+rewind_target_to_side_zero:
+	sub	bp,100h
+	mov	es,bp
+	xchg	dh,next_head
+	jmp	prepare_target_track
+
+report_target_write_error:
+	mov	ax,offset msg_write_error
+	call	report_disk_error
+	jmp	advance_target_side
+
+retry_target_not_ready:
+	call	handle_not_ready
+	jmp	write_track_attempt
+
+retry_write_protected:
+	mov	ax,offset msg_write_protected
+	call	report_disk_error
+	jmp	write_track_attempt
+
+; Failure specifically on cylinder zero, head one can indicate an
+; incompatible target drive.
+check_incompatible_target:
+	or	ch,ch
+	jnz	report_target_write_error
+	cmp	dh,1h
+	jnz	report_target_write_error
+	mov	dx,offset msg_incompatible_drives
+	call	puts
+	mov	dx,offset msg_target_unusable
+	jmp	show_completion_status
+
+;-----------------------------------------------------------------------------
+; BIOS verify (AH=04h), with retry and not-ready handling.
+;-----------------------------------------------------------------------------
+
+verify_target_track:
+	and	byte ptr copy_flags,0F7h
+	xor	bx,bx
+	mov	ax,bios_verify_track
+	int	13h
+	jc	verify_track_failed
+	mov	byte ptr verify_retries,0h
+
+verify_track_ret:
+	ret
+
+; Return with the retry counter nonzero to make the caller rewrite this
+; buffered track.
+verify_track_failed:
+	push	ax
+	xor	ax,ax
+	int	13h
+	pop	ax
+	cmp	ah,80h
+	jz	retry_verify_not_ready
+	inc	byte ptr verify_retries
+	cmp	byte ptr verify_retries,4h
+	jnz	verify_track_ret
+	mov	ax,offset msg_verify_error
+	call	report_disk_error
+; Drop verify caller return; resume the outer write loop at the next head.
+	pop	ax
+	jmp	advance_target_side
+
+retry_verify_not_ready:
+	call	handle_not_ready
+	jmp	verify_target_track
+
+;-----------------------------------------------------------------------------
+; Build cylinder/head fields in the sector-ID table and call BIOS format
+; (AH=05h).
+;-----------------------------------------------------------------------------
+
+; The sector-ID table stores cylinder, head, sector number and size for
+; eight sectors.
+format_target_track:
+	or	byte ptr copy_flags,flag_writing
+	push	es
+	push	cs
+	pop	es                              ; BIOS consumes the resident CHRN table.
+	push	dx
+	mov	byte ptr format_retries,0h
+	mov	al,ch
+	mov	ah,1h
+	test	byte ptr copy_flags,flag_two_heads
+	jnz	set_format_head
+	dec	ah
+
+set_format_head:
+	mov	dh,ah
+	mov	bx,offset buffer_segment
+
+; Replace only cylinder/head; keep each sector number and 512-byte size code
+; intact.
+fill_format_ids:
+	add	bx,4h
+	mov	[bx],ax
+	cmp	byte ptr 2h[bx],8h
+	jnz	fill_format_ids
+
+; ES points to the program segment here, because BIOS consumes the sector-ID
+; table.
+format_track_attempt:
+	mov	bx,offset format_id_table
+	mov	ax,bios_format_track
+	int	13h
+	jc	format_track_failed
+	mov	byte ptr format_retries,0h
+	mov	ax,word ptr format_id_table
+	dec	ah
+	jz	set_format_head                 ; The first pass formats head one; repeat for head zero.
+	pop	dx
+	pop	es
+	ret
+
+format_track_failed:
+	push	ax
+	xor	ax,ax
+	int	13h
+	pop	ax
+	cmp	ah,80h
+	jz	retry_format_not_ready
+	cmp	ah,3h
+	jz	retry_format_write_protect
+	inc	byte ptr format_retries
+	cmp	byte ptr format_retries,4h
+	jnz	format_track_attempt
+	mov	dx,offset msg_format_failed
+	jmp	show_completion_status
+
+retry_format_not_ready:
+	call	handle_not_ready
+	jmp	format_track_attempt
+
+retry_format_write_protect:
+	mov	ax,offset msg_write_protected
+	call	report_disk_error
+	jmp	format_track_attempt
+
+;-----------------------------------------------------------------------------
+; AX=message, CH=track, DH=side. Print error and track/side context;
+; preserve DX.
+;-----------------------------------------------------------------------------
+
+; A formatting announcement is informational; other errors mark the target
+; as possibly unusable.
+report_disk_error:
+	push	dx
+	mov	side_digit_char,dh
+	or	byte ptr side_digit_char,30h
+	mov	dx,ax
+	call	puts
+	cmp	dx,offset msg_write_protected
+	jz	wait_after_write_protect
+	cmp	dx,offset msg_formatting_copy
+	jz	report_disk_error_ret
+	mov	word ptr track_tens_char,3030h
+	mov	ah,ch
+
+; Build two decimal cylinder digits without a division instruction.
+count_track_tens:
+	cmp	ah,0Ah
+	jc	show_error_track_side
+	inc	byte ptr track_tens_char
+	sub	ah,0Ah
+	jmp	count_track_tens
+
+show_error_track_side:
+	or	track_units_char,ah
+	mov	dx,offset msg_track_side
+	call	puts
+; Remember that the final completion message must warn about target damage.
+	or	byte ptr copy_flags,flag_errors_seen
+
+report_disk_error_ret:
+	pop	dx
+	ret
+
+wait_after_write_protect:
+	call	wait_key
+	pop	dx
+	ret
+
+;-----------------------------------------------------------------------------
+; DL=drive. Request correction of a not-ready error and wait for a key;
+; preserve DX.
+;-----------------------------------------------------------------------------
+
+handle_not_ready:
+	push	dx
+	add	dl,41h
+	mov	error_drive_char,dl
+	mov	dx,offset msg_not_ready
+	call	puts
+	mov	dx,offset msg_reading
+	test	byte ptr copy_flags,flag_writing
+	jz	show_not_ready_operation
+	mov	dx,offset msg_writing
+
+show_not_ready_operation:
+	call	puts
+	mov	dx,offset msg_drive_suffix
+	call	puts
+	mov	dx,offset msg_correct_then_key
+	call	puts
+	call	wait_key
+	pop	dx
+	ret
+
+; ---- data ----
+	dseg
+current_cylinder	db	0h
+
+; Whole cylinders that fit; halved when a second head is detected.
+cylinders_per_buffer	db	0h
+
+; Exclusive cylinder limit for the current batch; clamped to 40.
+batch_end_cylinder	db	0h
+
+; Bits: one drive, [1], write context, geometry known, errors, two heads,
+; format target.
+copy_flags	db	0h
+
+read_retries	db	0h
+
+write_retries	db	0h
+
+verify_retries	db	0h
+
+format_retries	db	0h
+
+; Head to use after the next exchange; zero permanently with [1].
+next_head	db	0h
+
+buffer_segment	db	0h,0h,0h,1h
+
+format_id_table	db	0h,0h,1h,2h,0h,0h,2h,2h,0h,0h,3h,2h
+	db	0h,0h,4h,2h,0h,0h,5h,2h,0h,0h,6h,2h
+	db	0h,0h,7h,2h,0h,0h,8h,2h
+
+msg_formatting_copy	db	0Dh,0Ah
+	db	'Formatting while copying'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_insert_source	db	0Dh,0Ah
+	db	'Insert source diskette in drive '
+
+source_prompt_drive	db	'@:'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_insert_target	db	0Dh,0Ah
+	db	'Insert target diskette in drive '
+
+target_prompt_drive	db	'@:'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_press_key	db	0Dh,0Ah
+	db	'Strike any key when ready'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_copy_complete	db	0Dh,0Ah
+	db	'Copy complete'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_read_error	db	0Dh,0Ah
+	db	'Unrecoverable read error on source$'
+
+msg_write_error	db	0Dh,0Ah
+	db	'Unrecoverable write error on target$'
+
+msg_verify_error	db	0Dh,0Ah
+	db	'Unrecoverable verify error on target$'
+
+msg_track_side	db	0Dh,0Ah
+	db	'Track '
+
+track_tens_char	db	'0'
+
+track_units_char	db	'0, side '
+
+side_digit_char	db	'0'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_target_maybe_unusable	db	0Dh,0Ah
+	db	'Target diskette may be unusable'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_format_failed	db	0Dh,0Ah
+	db	'Unrecoverable format error on target'
+	db	0Dh,0Ah
+
+msg_target_unusable	db	'Target diskette unusable'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_write_protected	db	0Dh,0Ah
+	db	'Target diskette write protected'
+	db	0Dh,0Ah
+
+msg_correct_then_key	db	0Dh,0Ah
+	db	'Correct, then strike any key'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_copy_another	db	0Dh,0Ah
+	db	'Copy another (Y/N)?$'
+
+msg_copying_sides	db	0Dh,0Ah
+	db	'Copying '
+
+copy_side_count_char	db	0h
+	db	' side(s)'
+	db	0Dh,0Ah
+	db	'$'
+
+msg_incompatible_drives	db	0Dh,0Ah
+	db	'Incompatible drive types'
+	db	0Dh,0Ah,7h
+	db	'$'
+
+msg_not_ready	db	0Dh,0Ah
+	db	'Not ready error $'
+
+msg_reading	db	'reading$'
+
+msg_writing	db	'writing$'
+
+msg_drive_suffix	db	' drive '
+
+error_drive_char	db	0h,0Dh,0Ah
+	db	'$'
+	db	0h
+
+;-----------------------------------------------------------------------------
+; Set the private stack before any BDOS calls; parse drives and [1].
+;-----------------------------------------------------------------------------
+
+	cseg
+init:
+	push	cs
+	pop	ds
+	push	ds
+	pop	es
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset stack_top
+	cld
+	call	parse_args
+	jmp	encode_drive_letters
+
+invalid_drive_exit:
+	mov	dx,offset msg_invalid_drive
+	call	puts
+	jmp	show_usage
+
+parameter_error:
+	mov	dx,offset msg_invalid_parameter
+	call	puts
+
+; As in MFORM, an empty command displays the banner and command syntax.
+show_usage:
+	mov	dx,offset msg_banner
+	call	puts
+	mov	dx,offset msg_usage
+	call	puts
+	jmp	doexit
+
+print_init_error_exit:
+	call	puts
+	jmp	doexit
+
+; Convert the one-based arguments to BIOS drive numbers and prompt letters.
+encode_drive_letters:
+	mov	al,source_drive
+	or	source_prompt_drive,al
+	dec	al
+	mov	source_drive,al
+	mov	ah,al
+	mov	al,target_drive
+	or	target_prompt_drive,al
+	dec	al
+	mov	target_drive,al
+	cmp	al,ah
+	jnz	allocate_copy_buffer
+	or	byte ptr copy_flags,flag_one_drive
+
+; Keep the program and stack resident; transfer storage is a separate block.
+allocate_copy_buffer:
+	call	alloc_buffer
+	jmp	begin_copy
+
+begin_copy:
+	jmp	copy_again
+
+	dseg
+msg_insufficient_memory	db	0Dh,0Ah
+	db	'Insufficient memory'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_invalid_parameter	db	0Dh,0Ah
+	db	'Invalid parameter'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+msg_invalid_drive	db	0Dh,0Ah
+	db	'Invalid drive specification'
+	db	7h,0Dh,0Ah
+	db	'$'
+
+	dseg
+msg_banner	db	0dh,0ah,'CP/M-86 DCOPY for the IBM PC',0dh,0ah,'$'
+msg_usage	db	'USAGE: DCOPY drive1: {drive2:} {[1]}',0dh,0ah
+	db	'  drive1:  Source floppy drive, A: or B: (required)',0dh,0ah
+	db	'  drive2:  Target floppy drive (default: current drive)',0dh,0ah
+	db	'  [1]      Head zero only; closing ] is optional',0dh,0ah
+	db	'  Same drive twice: prompt for diskette swaps',0dh,0ah
+	db	'  Example: DCOPY A: B:[1]',0dh,0ah,'$'
+	cseg
+;-----------------------------------------------------------------------------
+; BDOS destroys BX, CX and ES in this kernel.  Keep disk coordinates, buffer
+; segments and comparison cursors intact; AL/AX alone carry the result.
+;-----------------------------------------------------------------------------
+bdos:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	int	i_bdos
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+; Print the dollar-terminated string at DS:DX, preserving AX and CX too.
+puts:
+	push	ax
+	push	cx
+	mov	cl,f_puts
+	call	bdos
+	pop	cx
+	pop	ax
+	ret
+
+; Discard type-ahead before a disk swap or Y/N response, then read with echo.
+; Function 6 consumes queued input without echo; function 1 waits for the key.
+wait_key:
+	push	cx
+	push	dx
+flush_key:
+	mov	cl,f_constat
+	call	bdos
+	or	al,al
+	jz	read_key
+	mov	dl,0ffh
+	mov	cl,f_rawio
+	call	bdos
+	jmp	flush_key
+read_key:
+	mov	cl,f_conin
+	call	bdos
+	pop	dx
+	pop	cx
+	ret
+
+; Forget both floppy login records after raw BIOS access, then let BDOS free
+; the program and its transfer block.  No return through a DOS PSP is used.
+doexit:
+	mov	dx,3
+	mov	cl,f_resetdrive
+	call	bdos
+	xor	dx,dx
+	mov	cl,f_reset
+	int	i_bdos
+
+;-----------------------------------------------------------------------------
+; Accept one or two A:/B: drives and [1] (or [1), separated by spaces or tabs.
+; Parse the bounded base-page tail ourselves: CP/M does not supply DOS's
+; invalid-drive status in AX.  Missing drives or bad arguments show usage.
+;-----------------------------------------------------------------------------
+parse_args:
+	int	11h
+	mov	cl,6
+	shr	al,cl
+	and	al,3
+	inc	al
+	cmp	al,2
+	jbe	drive_count_ready
+	mov	al,2		; only A:/B: floppy units are supported
+drive_count_ready:
+	mov	drive_count,al
+	mov	cl,f_getdrive
+	call	bdos
+	inc	al
+	mov	source_drive,al
+	mov	target_drive,al
+	mov	bl,0
+	xor	cx,cx
+	mov	cl,byte ptr .80h
+	mov	si,81h
+arg_next:
+	jcxz	args_done
+	lodsb
+	dec	cx
+	cmp	al,' '
+	jz	arg_next
+	cmp	al,9
+	jz	arg_next
+	cmp	al,'['
+	jz	arg_switch
+	and	al,0dfh
+	sub	al,'A'
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	inc	al
+	jcxz	arg_bad
+	cmp	byte ptr [si],':'
+	jnz	arg_bad
+	inc	si
+	dec	cx
+	cmp	bl,2
+	jnc	arg_bad
+	or	bl,bl
+	jnz	arg_second
+	mov	source_drive,al
+	jmp	arg_drive_done
+arg_second:
+	mov	target_drive,al
+arg_drive_done:
+	inc	bl
+	jmp	arg_delimiter
+arg_switch:
+	jcxz	arg_bad
+	lodsb
+	dec	cx
+	cmp	al,'1'
+	jnz	arg_bad
+	or	byte ptr copy_flags,flag_one_side
+	jcxz	args_done
+	cmp	byte ptr [si],']'
+	jnz	arg_delimiter
+	inc	si
+	dec	cx
+	jmp	arg_delimiter
+arg_delimiter:
+	jcxz	args_done
+	mov	al,[si]
+	cmp	al,'['
+	jz	arg_next
+	cmp	al,' '
+	jz	arg_next
+	cmp	al,9
+	jz	arg_next
+arg_bad:
+	jmp	parameter_error
+arg_bad_drive:
+	jmp	invalid_drive_exit
+args_done:
+	or	bl,bl
+	jnz	args_have_drive
+	jmp	show_usage
+args_have_drive:
+	mov	al,source_drive
+	dec	al
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	mov	al,target_drive
+	dec	al
+	cmp	al,drive_count
+	jnc	arg_bad_drive
+	mov	byte ptr next_head,1
+	test	byte ptr copy_flags,flag_one_side
+	jz	args_return
+	mov	byte ptr next_head,0
+args_return:
+	ret
+
+;-----------------------------------------------------------------------------
+; This kernel's function 53 finds a maximum block but does not reserve it;
+; function 55 reserves the returned size.  Keep both calls, check AL (the
+; kernel returns 00ffh on failure), and leave the allocation nonresident.
+; Round up to a 4 KiB boundary so an eight-sector BIOS transfer cannot cross
+; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+;-----------------------------------------------------------------------------
+alloc_buffer:
+	mov	dx,offset mem_block
+	mov	cl,f_maxmem
+	call	bdos
+	or	al,al
+	jnz	memory_error
+	mov	byte ptr mem_ext,0
+	mov	cl,f_alloc
+	call	bdos
+	or	al,al
+	jnz	memory_error
+	mov	dx,mem_segment
+	mov	bx,dx
+	add	dx,0ffh
+	and	dx,0ff00h
+	sub	bx,dx
+	neg	bx		; paragraphs lost to DMA alignment
+	mov	ax,mem_length
+	sub	ax,bx
+	jc	memory_error
+	mov	cl,8
+	shr	ax,cl
+	cmp	ax,80
+	jbe	buffer_sized
+	mov	ax,80
+buffer_sized:
+	cmp	ax,2
+	jc	memory_error
+	mov	cylinders_per_buffer,al
+	mov	word ptr buffer_segment,dx
+	ret
+memory_error:
+	mov	dx,offset msg_insufficient_memory
+	jmp	print_init_error_exit
+
+	dseg
+source_drive	db	0
+target_drive	db	0
+drive_count	db	0
+; BDOS memory control block: segment, paragraph count, allocation lifetime.
+mem_block:
+mem_segment	dw	0
+mem_length	dw	5100h
+mem_ext	db	0
+
+; Private downward-growing stack, separate from the base page and buffers.
+stack_space	rs	stack_size
+stack_top:
+
+	end
