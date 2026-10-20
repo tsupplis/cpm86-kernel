@@ -13,8 +13,15 @@ SNIPPETS=
 
 all: $(TOOLS) $(DATA) $(SNIPPETS)
 
+# HELP's native indexer requires CRLF. Convert a temporary copy so the
+# repository's LF text remains editable without rebuilding a malformed index.
 help.hlp: help.cmd help.dat
-	emu2 help.cmd '[C]'
+	@tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
+	cp help.cmd "$$tmp/help.cmd"; \
+	cp help.dat "$$tmp/help.dat"; \
+	unix2dos "$$tmp/help.dat"; \
+	(cd "$$tmp" && emu2 help.cmd '[C]') && cp "$$tmp/help.hlp" $@
 	@test -s $@
 
 # BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from help.mp2:

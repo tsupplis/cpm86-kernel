@@ -3,7 +3,7 @@ LINK86=pcdev_linkcmd
 ASM86=cpm86_asm86
 H862BIN=python3 ../../tools/h862bin.py
 
-TOOLS=dskmaint.cmd dskmorg.cmd
+TOOLS=dskmaint.cmd dskmorg.cmd dform.cmd
 
 # The two images DSKMAINT writes to track 0, as flat binaries.
 IMAGES=bootsect.bin loader.bin
@@ -18,6 +18,8 @@ all: $(TOOLS) $(SNIPPETS)
 dskmaint.obj: dskmaint.a86 $(INCS)
 
 dskmorg.obj: dskmorg.a86 $(INCS)
+
+dform.obj: dform.a86 $(INCS)
 
 # bootsect and loader are assembled by themselves (ASM-86, not RASM-86):
 # BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
@@ -56,7 +58,7 @@ loader.h86: loader.a86
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 REF=../../base/dskmaint.cmd
 
-check: dskmorg.cmd
+check: dskmorg.cmd check-dform
 	cmp $< $(REF)
 	@echo "PASS: dskmaint.cmd is byte-identical to $(REF)"
 
@@ -64,3 +66,8 @@ check: dskmorg.cmd
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
 	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS)
+
+check-dform: dform.cmd $(IMAGES)
+	python3 tests/check_dform.py
+
+.PHONY: all check check-dform clean

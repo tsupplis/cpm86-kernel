@@ -1,0 +1,591 @@
+;*****************************************************************************
+;
+;	DFORM - command-line CP/M-86 floppy formatter for the IBM PC
+;
+;	Formatting algorithm and boot images from DSKMAINT (Digital Research,
+;	1983). Uses the same bootsect.inc and loader.inc as the reconstruction.
+;
+;	Build:	make dform.cmd		Check: make check-dform
+;	Usage:	DFORM drive: { [options] ... }
+;
+;	drive:	Required installed floppy drive, A: or B:.
+;	1	Single-sided, 160 KiB (40 cylinders, eight 512-byte sectors).
+;	2	Double-sided, 320 KiB; the default if neither 1 nor 2 appears.
+;	V	Verify every track after formatting and writing the boot track.
+;
+;	Combine options or use separate groups. The closing ] is optional;
+;	DFORM A:[1V], DFORM A: [1] [V and DFORM A: [1V are equivalent.
+;	Letters are case-insensitive. Unknown options and conflicting 1/2
+;	selections print usage. An empty command also prints usage and exits.
+;	Formatting always requires Y confirmation; N or Ctrl-C cancels.
+;
+;	A fresh disk contains the DSKMAINT boot sector and loader, but CPM.SYS
+;	must still be copied to it. Tracks follow DSKMAINT's order: head zero
+;	cylinders 0..39, then head one cylinders 39..0. No FAT is generated.
+;
+;	CP/M-86 1.1 only: ROM BIOS INT 13h, not a Concurrent CP/M XIOS backend.
+;	The 512-byte private stack and aligned 4 KiB track buffer stay resident.
+;	All exits restore the BIOS parameter vector before returning to BDOS.
+;	Raw BDOS console I/O avoids an implicit Ctrl-C exit during formatting.
+;
+;*****************************************************************************
+cgroup	group	code,data
+	cseg
+	org	100h
+
+i_bdos		equ	0e0h
+f_reset		equ	0
+f_rawio		equ	6
+f_version	equ	12
+f_resetdrive	equ	37
+opt_single	equ	1
+opt_double	equ	2
+opt_verify	equ	4
+stack_size	equ	512
+
+start:
+	push	cs
+	pop	ds
+	pushf
+	pop	bx
+	cli
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset stack_top
+	push	bx
+	popf
+	cld
+	mov	dx,offset msg_banner
+	call	puts
+	call	parse_args
+
+; The ROM BIOS backend and its vector patch belong to single-user CP/M-86.
+; Do not infer a compatible XIOS from a later BDOS version number.
+	mov	cl,f_version
+	call	bdos
+	cmp	al,22h
+	jz	version_ok
+	jmp	wrong_os
+version_ok:
+	or	ah,ah
+	jz	system_ok
+	jmp	wrong_os
+system_ok:
+	int	11h
+	test	al,1
+	jnz	floppy_present
+	jmp	bad_drive
+floppy_present:
+	mov	cl,6
+	shr	al,cl
+	and	al,3
+	inc	al
+	cmp	drive,al
+	jc	installed_drive
+	jmp	bad_drive
+installed_drive:
+
+; Align within an 8 KiB resident reservation; one 4 KiB track fits after
+; rounding up, and never straddles a physical 64 KiB BIOS DMA boundary.
+	mov	ax,offset buffer_space
+	add	ax,15
+	mov	cl,4
+	shr	ax,cl
+	mov	bx,ds
+	add	ax,bx
+	add	ax,0ffh
+	and	ax,0ff00h
+	mov	buffer_segment,ax
+	mov	dx,offset msg_double
+	cmp	byte ptr sides,1
+	jz	show_capacity
+	mov	dx,offset msg_single
+show_capacity:
+	call	puts
+	mov	dx,offset msg_no_verify
+	test	byte ptr options,opt_verify
+	jz	show_verify_option
+	mov	dx,offset msg_with_verify
+show_verify_option:
+	call	puts
+	mov	dx,offset msg_confirm
+	call	puts
+	call	read_confirm
+	cmp	al,'Y'
+	jz	format_disk
+	jmp	cancelled
+
+;-----------------------------------------------------------------------------
+; The replacement table is byte-for-byte DSKMAINT's eight-sector table.
+; Keep it installed through format, boot-track write and optional verify.
+;-----------------------------------------------------------------------------
+format_disk:
+	call	install_vector
+	mov	dx,offset msg_formatting
+	call	puts
+	mov	byte ptr track,0
+format_loop:
+	call	make_ids
+	mov	byte ptr operation,5
+	call	disk_io
+	inc	byte ptr track
+	mov	al,track
+	cmp	al,track_count
+	jnz	format_loop
+
+; Build the exact DSKMAINT track-zero image: E5 fill, boot code at zero,
+; side flag at 1FFh and loader at 900h (sector five, offset 100h).
+	mov	dx,offset msg_writing
+	call	puts
+	mov	es,word ptr buffer_segment
+	xor	di,di
+	mov	cx,1000h
+	mov	al,0e5h
+	cld
+	rep	stosb
+	xor	di,di
+	mov	si,offset bootsect
+	mov	cx,boot_end-bootsect
+	rep	movsb
+	mov	al,sides
+	mov	es:byte ptr .1ffh,al
+	mov	si,offset loader
+	mov	di,900h
+	mov	cx,loader_end-loader
+	rep	movsb
+	mov	byte ptr track,0
+	mov	byte ptr operation,3
+	call	disk_io
+	test	byte ptr options,opt_verify
+	jz	format_complete
+
+	mov	dx,offset msg_verifying
+	call	puts
+	mov	byte ptr track,0
+	mov	byte ptr operation,4
+verify_loop:
+	call	disk_io
+	inc	byte ptr track
+	mov	al,track
+	cmp	al,track_count
+	jnz	verify_loop
+format_complete:
+	mov	dx,offset msg_complete
+	call	puts
+	jmp	cleanup
+
+;-----------------------------------------------------------------------------
+; Parse the bounded CP/M base-page tail. Drive comes first; options are one
+; or more bracket groups, with an optional closing bracket on each group.
+; A group may directly follow the drive or another closed group.
+;-----------------------------------------------------------------------------
+parse_args:
+	xor	cx,cx
+	mov	cl,byte ptr .80h
+	mov	si,81h
+	call	skip_spaces
+	jnz	have_drive
+	jmp	usage
+have_drive:
+	lodsb
+	dec	cx
+	and	al,0dfh
+	sub	al,'A'
+	cmp	al,2
+	jc	letter_ok
+	jmp	bad_drive
+letter_ok:
+	mov	drive,al
+	add	al,'A'
+	mov	prompt_drive,al
+	jcxz	bad_syntax
+	lodsb
+	dec	cx
+	cmp	al,':'
+	jnz	bad_syntax
+next_group:
+	call	skip_spaces
+	jz	args_done
+	lodsb
+	dec	cx
+	cmp	al,'['
+	jnz	bad_syntax
+	xor	bl,bl		; a group must contain at least one option
+next_option:
+	jcxz	group_end
+	mov	al,[si]
+	cmp	al,']'
+	jz	close_group
+	cmp	al,' '
+	jz	group_end
+	cmp	al,9
+	jz	group_end
+	lodsb
+	dec	cx
+	inc	bl
+	cmp	al,'1'
+	jz	option_one
+	cmp	al,'2'
+	jz	option_two
+	and	al,0dfh
+	cmp	al,'V'
+	jnz	bad_syntax
+	or	byte ptr options,opt_verify
+	jmp	next_option
+option_one:
+	or	byte ptr options,opt_single
+	jmp	next_option
+option_two:
+	or	byte ptr options,opt_double
+	jmp	next_option
+close_group:
+	inc	si
+	dec	cx
+group_end:
+	or	bl,bl
+	jz	bad_syntax
+	jmp	next_group
+bad_syntax:
+	mov	dx,offset msg_bad_syntax
+	call	puts
+	jmp	usage
+args_done:
+	mov	al,options
+	and	al,3
+	cmp	al,3
+	jz	bad_syntax
+	mov	byte ptr sides,1
+	mov	byte ptr track_count,80
+	test	al,opt_single
+	jz	args_return
+	mov	byte ptr sides,0
+	mov	byte ptr track_count,40
+args_return:
+	ret
+
+; Return ZF set at end of tail, clear if SI points at a non-space character.
+skip_spaces:
+	jcxz	spaces_end
+	mov	al,[si]
+	cmp	al,' '
+	jz	skip_one
+	cmp	al,9
+	jnz	spaces_return
+skip_one:
+	inc	si
+	dec	cx
+	jmp	skip_spaces
+spaces_end:
+	xor	al,al
+spaces_return:
+	ret
+
+bad_drive:
+	mov	dx,offset msg_bad_drive
+	call	puts
+usage:
+	mov	dx,offset msg_usage
+	call	puts
+	jmp	cleanup
+wrong_os:
+	mov	dx,offset msg_wrong_os
+	call	puts
+	jmp	cleanup
+cancelled:
+	mov	dx,offset msg_cancelled
+	call	puts
+	jmp	cleanup
+
+;-----------------------------------------------------------------------------
+; Raw console I/O has no automatic Ctrl-C termination. Flush type-ahead,
+; then accept Y/N without echoing anything else. Ctrl-C uses normal cleanup.
+;-----------------------------------------------------------------------------
+read_confirm:
+	mov	cl,f_rawio
+flush_input:
+	mov	dl,0ffh
+	call	bdos
+	or	al,al
+	jnz	flush_input
+wait_confirm:
+	mov	dl,0ffh
+	call	bdos
+	or	al,al
+	jz	wait_confirm
+	cmp	al,3
+	jz	cancelled
+	and	al,0dfh
+	cmp	al,'Y'
+	jz	echo_confirm
+	cmp	al,'N'
+	jnz	wait_confirm
+echo_confirm:
+	push	ax
+	mov	dl,al
+	call	bdos
+	mov	dx,offset msg_newline
+	call	puts
+	pop	ax
+	ret
+
+; DS:DX dollar string. Use raw function 6 even with the vector installed;
+; neither type-ahead nor Ctrl-C can bypass cleanup inside a print call.
+puts:
+	push	ax
+	push	cx
+	push	dx
+	push	si
+	mov	si,dx
+	mov	cl,f_rawio
+puts_next:
+	lodsb
+	cmp	al,'$'
+	jz	puts_return
+	mov	dl,al
+	call	bdos
+	jmp	puts_next
+puts_return:
+	pop	si
+	pop	dx
+	pop	cx
+	pop	ax
+	ret
+
+; AX carries the BDOS result; preserve ES and every disk/buffer cursor.
+bdos:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	int	i_bdos
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	cld
+	ret
+
+;-----------------------------------------------------------------------------
+; BIOS entry saves the request registers, ES and DS; AX/CF return status.
+; Rebuild the request on each retry rather than trusting firmware registers.
+;-----------------------------------------------------------------------------
+bios:
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	bp
+	push	ds
+	push	es
+	int	13h
+	pop	es
+	pop	ds
+	pop	bp
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	ret
+
+; DSKMAINT's logical track order reverses cylinders on the second head.
+track_chs:
+	mov	ch,track
+	xor	dh,dh
+	cmp	ch,40
+	jc	chs_return
+	neg	ch
+	add	ch,79
+	mov	dh,1
+chs_return:
+	ret
+
+make_ids:
+	call	track_chs
+	mov	dl,ch
+	mov	es,word ptr buffer_segment
+	xor	di,di
+	mov	bx,201h
+	mov	cx,8
+	cld
+id_loop:
+	mov	ax,dx
+	stosw
+	mov	ax,bx
+	stosw
+	inc	bx
+	loop	id_loop
+	ret
+
+disk_io:
+	mov	byte ptr retries,5
+io_attempt:
+	mov	cl,f_rawio
+	mov	dl,0ffh
+	call	bdos
+	cmp	al,3
+	jnz	io_request
+	jmp	cancelled
+io_request:
+	call	track_chs
+	mov	cl,1
+	mov	dl,drive
+	xor	bx,bx
+	mov	es,word ptr buffer_segment
+	mov	ah,operation
+	mov	al,8
+	mov	byte ptr disk_touched,1
+	call	bios
+	jc	io_failed
+	cld
+	ret
+io_failed:
+	mov	last_status,ah
+	xor	ah,ah
+	mov	dl,drive
+	call	bios
+	dec	byte ptr retries
+	jnz	io_attempt
+
+; Report the final BIOS status, then restore the parameter vector and exit.
+	mov	al,last_status
+	mov	ah,al
+	mov	cl,4
+	shr	al,cl
+	call	hex_digit
+	mov	status_hi,al
+	mov	al,ah
+	and	al,0fh
+	call	hex_digit
+	mov	status_lo,al
+	mov	dx,offset msg_io_error
+	call	puts
+	jmp	cleanup
+hex_digit:
+	add	al,'0'
+	cmp	al,'9'
+	jbe	hex_return
+	add	al,7
+hex_return:
+	ret
+
+;-----------------------------------------------------------------------------
+; Patch the four-byte IVT pointer atomically, preserving interrupt state.
+; Never leave our table installed on success, cancellation or disk errors.
+;-----------------------------------------------------------------------------
+install_vector:
+	xor	ax,ax
+	mov	es,ax
+	mov	ax,es:word ptr .78h
+	mov	old_offset,ax
+	mov	ax,es:word ptr .7ah
+	mov	old_segment,ax
+	pushf
+	cli
+	mov	ax,offset disk_params
+	mov	es:word ptr .78h,ax
+	mov	ax,ds
+	mov	es:word ptr .7ah,ax
+	mov	byte ptr vector_active,1
+	popf
+	xor	ah,ah
+	mov	dl,drive
+	call	bios
+	ret
+
+cleanup:
+	cmp	byte ptr vector_active,0
+	jz	cleanup_login
+	xor	ax,ax
+	mov	es,ax
+	pushf
+	cli
+	mov	ax,old_offset
+	mov	es:word ptr .78h,ax
+	mov	ax,old_segment
+	mov	es:word ptr .7ah,ax
+	popf
+	mov	byte ptr vector_active,0
+	xor	ah,ah
+	mov	dl,drive
+	call	bios
+cleanup_login:
+	cmp	byte ptr disk_touched,0
+	jz	quit
+	mov	dx,1
+	mov	cl,drive
+	shl	dx,cl
+	mov	cl,f_resetdrive
+	call	bdos
+quit:
+	xor	dx,dx
+	mov	cl,f_reset
+	int	i_bdos
+
+; ---- data ----
+	dseg
+options		db	0
+drive		db	0
+sides		db	1
+track_count	db	80
+track		db	0
+operation	db	0
+retries		db	0
+last_status	db	0
+vector_active	db	0
+disk_touched	db	0
+buffer_segment	dw	0
+old_offset	dw	0
+old_segment	dw	0
+; Same bytes as the parameter table embedded in DSKMAINT.
+disk_params	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+
+msg_banner	db	13,10,'CP/M-86 DFORM for the IBM PC',13,10,'$'
+msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10
+	db	'  A: or B:  Target floppy drive (required)',13,10
+	db	'  1         Single-sided, 160K',13,10
+	db	'  2         Double-sided, 320K (default)',13,10
+	db	'  V         Verify after formatting',13,10
+	db	'  Combine options: [1V] or [1] [V; closing ] is optional.',13,10
+	db	'  Examples: DFORM A:[1V]   DFORM B: [V',13,10,'$'
+msg_single	db	'160K, single-sided; $'
+msg_double	db	'320K, double-sided; $'
+msg_with_verify	db	'verification enabled.',13,10,'$'
+msg_no_verify	db	'verification disabled.',13,10,'$'
+msg_confirm	db	'Format drive '
+prompt_drive	db	'A'
+	db	': (all data will be lost). Continue (Y/N)? $'
+msg_newline	db	13,10,'$'
+msg_formatting	db	'Formatting...',13,10,'$'
+msg_writing	db	'Writing boot track...',13,10,'$'
+msg_verifying	db	'Verifying...',13,10,'$'
+msg_complete	db	'Format complete.',13,10,'$'
+msg_cancelled	db	13,10,'Cancelled.',13,10,'$'
+msg_bad_syntax	db	'Invalid parameter.',13,10,'$'
+msg_bad_drive	db	'Invalid drive specification.',13,10,'$'
+msg_wrong_os	db	'DFORM requires single-user CP/M-86 1.1 (BDOS 2.2).',13,10,'$'
+msg_io_error	db	'Disk operation failed; BIOS status '
+status_hi	db	'0'
+status_lo	db	'0'
+	db	'.',13,10,'$'
+
+; Shared generated images; lengths follow the source images automatically.
+	include	bootsect.inc
+boot_end:
+	include	loader.inc
+loader_end:
+
+stack_space	rs	stack_size
+stack_top:
+; Alignment can consume up to 4095 bytes before the 4096-byte track buffer.
+buffer_space	rs	2000h
+	end

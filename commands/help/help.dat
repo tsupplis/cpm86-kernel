@@ -155,6 +155,74 @@
 
   and control returns to system command level.
 
+///1dcomp
+  Syntax:
+
+  DCOMP drive1: {drive2:} {[1]}
+
+  Purpose:
+
+      DCOMP compares every sector of two floppy diskettes and reports
+  differences by track and side. It compares raw disk contents, including
+  the boot area and unused sectors; it does not interpret a filesystem.
+
+  Arguments and options:
+
+  drive1:   First installed floppy drive, A: or B: (required).
+  drive2:   Second floppy drive; defaults to the current CP/M drive.
+  [1]       Compare head zero only. The closing ] may be omitted.
+
+      Specify the same drive twice to compare diskettes by swapping them
+  at the prompts. The option may follow a drive directly, as in B:[1].
+  Answer Y to compare another pair, or N to exit. An empty or invalid
+  command line displays usage without starting disk operations.
+
+      This build is for CP/M-86 1.1 on the IBM PC. It uses ROM BIOS disk
+  calls and supports 40 cylinders with eight 512-byte sectors per head:
+  160K single-sided or 320K double-sided media. BDOS 3.x/XIOS support is
+  not implemented.
+
+  Examples:
+
+      A>DCOMP A: B:
+      A>DCOMP A: A:[1]
+      A>DCOMP A: B:[1
+
+///1dcopy
+  Syntax:
+
+  DCOPY drive1: {drive2:} {[1]}
+
+  Purpose:
+
+      DCOPY copies an entire floppy diskette from drive1: onto drive2:,
+  replacing the target contents. It copies raw sectors, including the
+  boot area and unused sectors, and verifies the writes. It can format
+  target tracks while copying when the original utility's retry logic
+  detects that formatting is needed. No filesystem is interpreted.
+
+  Arguments and options:
+
+  drive1:   Source installed floppy drive, A: or B: (required).
+  drive2:   Target floppy drive; defaults to the current CP/M drive.
+  [1]       Copy head zero only. The closing ] may be omitted.
+
+      Specify the same drive twice for a one-drive copy; insert source
+  and target diskettes as prompted. The option may follow a drive
+  directly, as in B:[1]. Answer Y to copy another pair, or N to exit.
+  An empty or invalid command line displays usage without copying.
+
+      This build is for CP/M-86 1.1 on the IBM PC. It uses ROM BIOS disk
+  calls and supports 40 cylinders with eight 512-byte sectors per head:
+  160K single-sided or 320K double-sided media. BDOS 3.x/XIOS support is
+  not implemented.
+
+  Examples:
+
+      A>DCOPY A: B:
+      A>DCOPY A: A:[1]
+      A>DCOPY A: B:[1
+
 ///1ddt86
   Syntax:
 
@@ -183,6 +251,44 @@
       B>DDT86 PROGRAM1
       A>DDT86 PROGRAM2.CMD
       B>DDT86 A:PROGRAM3.CMD
+
+///1dform
+  Syntax:
+
+  DFORM drive: { [options] ... }
+
+  Purpose:
+
+      DFORM formats one floppy diskette using the same track layout,
+  boot sector and loader as DSKMAINT. The target drive is required and
+  must be an installed A: or B: floppy. All existing contents are replaced.
+  The command displays the selected capacity and verification setting,
+  and requires Y confirmation before formatting. N or Ctrl-C cancels.
+
+  Options:
+
+  1         Single-sided, 160K: 40 cylinders, eight 512-byte sectors.
+  2         Double-sided, 320K: the default if neither 1 nor 2 is given.
+  V         Verify every track after formatting and writing the boot track.
+            Without V, no verification pass is performed.
+
+      Combine options in one bracket group or use separate groups.
+  The closing ] is optional. Drive letters and options are case-insensitive.
+  Conflicting 1/2 options, unknown options and other incorrect arguments
+  display usage and exit. An empty command line also displays usage.
+
+      This build requires single-user CP/M-86 1.1 on an IBM PC. It does
+  not support Concurrent CP/M/XIOS or nine-sector 180K/360K formats.
+  The formatted disk contains DSKMAINT's boot code and loader; copy
+  CPM.SYS to the disk with PIP's [R] option to complete a boot disk.
+
+  Examples:
+
+      A>DFORM A:
+      A>DFORM B:[1V]
+      A>DFORM A: [V
+      A>DFORM A: [1] [V]
+      A>DFORM A: [1] [V
 
 ///1dir/dirs
   Syntax:
