@@ -95,7 +95,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `function` | Original | Reverse engineered from CP/M-86 and adapted |
 | `gencmd` | Original | Adapted from CCP/M-86 3.1 |
 | `gendef` | Patched (DR rec.) | — |
-| `hdmaint` | Updated 1.0→1.1 | TBD, Reverse engineered from CP/M-86 and adapted |
+| `hdmaint` | Updated 1.0→1.1 | Reverse engineered from CP/M-86 and adapted |
 | `help` | Original | Adapted from CCP/M-86 3.1 |
 | `help.hlp` | Original | Rebuilt for every core distribution; includes new tools too |
 | `mform` | Original| Reverse engineered from CP/M-86 and adapted |

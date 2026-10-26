@@ -1,0 +1,3919 @@
+;-----------------------------------------------------------------------------
+; HDMAINT 1.1 - Hard Disk Maintenance for Concurrent CP/M-86 and CP/M-86.
+; Copyright (C) 1983 Digital Research.
+;
+; Reconstructed from base/hdmaint.cmd. hdmtorg.a86 is the invariant copy;
+; hdmaint.a86 is the maintained source. make check compares the complete CMD.
+; The CP/M and Concurrent repositories currently contain identical originals.
+;
+; Accepted systems: CP/M-86 2.2 (0022h) and Concurrent CP/M-86 3.1 (1431h).
+; Main functions: partition display/create/delete, boot partition selection,
+; CP/M volume verification, directory size and write-verification options.
+;
+; CODE starts at zero. DATA contains the loader base page, two disk records,
+; a selected-record copy, serialized boot payloads, a private stack and menus.
+; EXTRA has no file bytes but requests 800h paragraphs. Startup aligns its DMA
+; segment to a 16K boundary within this 32K allocation, for BIOS transfers.
+;
+; All host program instructions use mnemonics. Embedded disk sectors are DATA
+; payloads: generated includes hold images from mbr.a86, bootsect.a86 and
+; loader.a86. Their instruction sources retain the original disk-image layout.
+; They are written to the target disk, not executed by the utility. The menu
+; streams below use FFh + a near CODE callback, with symbolic DATA operands.
+; Original behavior and unused helpers are retained. Verification compares
+; bytes without executing the destructive partition/creation operations.
+;-----------------------------------------------------------------------------
+
+; Absolute BIOS reset target; no bytes are emitted in this segment.
+	cseg	0ffffh
+	org	0
+bios_reset:
+
+	cseg
+	org	0
+
+bios_warm_boot	equ	72h
+bios_disk_control	equ	476h
+int13_vector	equ	4ch
+cpm_key_vector	equ	380h
+cpm_key_offset	equ	254eh
+ccpm_console_table	equ	0c14h
+pd_uda	equ	10h
+record_size	equ	4a7h
+mbr_partition_offset	equ	1beh
+cpm_partition_type	equ	0dbh
+sector_signature	equ	0aa55h
+f_reset	equ	0h
+f_rawio	equ	6h
+f_print	equ	9h
+f_version	equ	0ch
+f_queue_open	equ	87h
+f_queue_read	equ	89h
+f_queue_write	equ	8bh
+f_console	equ	99h
+f_sysdata	equ	9ah
+f_process	equ	9ch
+i_bdos	equ	0e0h
+i_xios	equ	0e6h
+
+; Preserve the original redundant CS prefix on the indirect callback CALL.
+	codemacro cs_prefix operand:mb
+	segfix operand
+	endm
+
+entry:
+	jmps	start
+	db	'Copyright (C) 1983 Digital Research'
+
+;-----------------------------------------------------------------------------
+; Set SS:SP to the private DATA stack; align the EXTRA buffer. Preserve flags
+; across the stack switch, then dispatch on the exact BDOS version word.
+;-----------------------------------------------------------------------------
+start:
+	pushf
+	pop	bx
+	cli
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset stack_top
+	push	bx
+	popf
+	mov	ax,es
+	add	ax,3ffh
+	and	ax,0fc00h
+	mov	es,ax
+	mov	dma_segment,ax
+	mov	cl,f_version
+	int	i_bdos
+	cmp	ax,1431h
+	jz	init_concurrent
+	cmp	ax,22h
+	jnz	wrong_version
+	jmp	init_cpm
+wrong_version:
+	mov	dx,offset msg_version
+	mov	cl,f_print
+	int	i_bdos
+	jmp	reset_process
+
+;-----------------------------------------------------------------------------
+; Concurrent path: reject remote consoles (number >=4), initialize disk access,
+; claim the dynamic console and MXdisk queue, and reject open files.
+;-----------------------------------------------------------------------------
+init_concurrent:
+	mov	cl,f_console
+	int	i_bdos
+	cmp	ax,4h
+	jc	check_concurrent_disk
+	mov	dx,offset msg_remote_console
+	mov	cl,f_print
+	int	i_bdos
+	jmp	reset_process
+check_concurrent_disk:
+	mov	al,1h
+	mov	concurrent_os,al
+	call	initialize_disk_gateway
+	or	al,al
+	jnz	wrong_version
+	call	get_disk_count
+	mov	disk_count,al
+	or	al,al
+	jnz	lock_console_and_disk
+no_hard_disk:
+	mov	dx,offset msg_no_disk
+	mov	cl,f_print
+	int	i_bdos
+early_exit:
+	jmp	reset_process
+lock_console_and_disk:
+	call	claim_console
+	or	al,al
+	jnz	early_exit
+	mov	cl,f_process
+	int	i_bdos
+	mov	ax,es:pd_uda[bx]
+	mov	uda_segment,ax
+	mov	cl,87h
+	mov	dx,offset disk_queue
+	int	i_bdos
+	mov	cl,89h
+	mov	dx,offset disk_queue
+	int	i_bdos
+	call	xios_inhibit_abort
+	call	disable_disk_polling
+	call	check_open_files
+	or	al,al
+	jz	lock_console_and_disk_at_00cd
+	mov	cl,8bh
+	mov	dx,offset disk_queue
+	int	i_bdos
+	call	restore_console
+	mov	dx,offset msg_open_files
+	mov	cl,f_print
+	int	i_bdos
+	jmp	reset_process
+lock_console_and_disk_at_00cd:
+	mov	al,20h
+	int	i_xios
+	mov	floppy_count,al
+	jmp	install_function_keys
+
+;-----------------------------------------------------------------------------
+; Claim the console mutex, find its CCB and require dynamic mode. Save its
+; status and function-key pointer, then inhibit console switching.
+;-----------------------------------------------------------------------------
+claim_console:
+	mov	cl,f_console
+	int	i_bdos
+	mov	console_number,ax
+	add	al,30h
+	mov	console_queue_digit,al
+	mov	cl,87h
+	mov	dx,offset console_queue
+	int	i_bdos
+	mov	cl,89h
+	mov	dx,offset console_queue
+	int	i_bdos
+	mov	cl,f_sysdata
+	int	i_bdos
+	mov	si,ccpm_console_table
+	mov	si,es:[si]
+	mov	ax,console_number
+	mov	ah,2ch
+	mul	ah
+	add	ax,si
+	add	ax,0eh
+	mov	si,ax
+	mov	ax,es:[si]
+	and	ax,0f000h
+	jz	claim_console_at_011b
+	mov	dx,offset msg_static_console
+	mov	cl,f_print
+	int	i_bdos
+	mov	al,0ffh
+	ret
+claim_console_at_011b:
+	mov	word ptr console_status_segment,es
+	mov	console_status_offset,si
+	mov	ax,es:[si]
+	mov	saved_console_status,ax
+	mov	es:word ptr [si],8h
+	mov	si,offset concurrent_console_setup
+	call	print_template
+	mov	cx,console_number
+	mov	al,1fh
+	int	i_xios
+	mov	key_table_offset,bx
+	mov	word ptr key_table_segment,es
+	xor	al,al
+	ret
+
+;-----------------------------------------------------------------------------
+; CP/M 2.2 path: initialize the BIOS disk gateway and obtain the XIOS key-table
+; pointer through the INT E0h vector segment and fixed offset 254Eh.
+;-----------------------------------------------------------------------------
+init_cpm:
+	xor	al,al
+	mov	concurrent_os,al
+	call	initialize_disk_gateway
+	or	al,al
+	jz	check_cpm_disk
+	jmp	wrong_version
+check_cpm_disk:
+	call	get_disk_count
+	mov	disk_count,al
+	or	al,al
+	jnz	locate_cpm_keys
+	jmp	no_hard_disk
+locate_cpm_keys:
+	mov	si,offset cpm_console_setup
+	call	print_template
+	mov	ax,0h
+	mov	es,ax
+	mov	bp,cpm_key_vector
+	mov	ax,es:2h[bp]
+	mov	key_table_segment,ax
+	mov	es,ax
+	mov	bp,cpm_key_offset
+	mov	ax,es:0h[bp]
+	mov	key_table_offset,ax
+
+;-----------------------------------------------------------------------------
+; Save ten 20-byte function-key definitions and install the utility key map.
+; Build one 4A7h-byte descriptor for each detected hard disk.
+;-----------------------------------------------------------------------------
+install_function_keys:
+	mov	es,word ptr key_table_segment
+	mov	bx,key_table_offset
+	mov	ax,ds
+	mov	es,ax
+	mov	di,offset saved_key_definitions
+	lds	si,dword ptr key_table_offset
+	mov	cx,64h
+	rep	movsw
+	mov	ax,es
+	mov	ds,ax
+	mov	si,offset utility_key_definitions
+	les	di,dword ptr key_table_offset
+	mov	cx,64h
+	rep	movsw
+	mov	al,disk_count
+	xor	ah,ah
+	mov	cx,ax
+scan_disk:
+	push	cx
+	mov	al,disk_count
+	xor	ah,ah
+	sub	al,cl
+	push	ax
+	mov	bx,4a7h
+	mul	bx
+	add	ax,offset first_disk
+	mov	bx,ax
+	pop	ax
+	mov	[bx],al
+	add	al,floppy_count
+	inc	ax
+	add	al,41h
+	mov	1h[bx],al
+	push	bx
+	xor	dh,dh
+	mov	dl,[bx]
+	add	bx,9fh
+	push	bx
+	mov	ax,ds
+	mov	es,ax
+	call	get_geometry
+	pop	bx
+	or	al,al
+	jz	disk_geometry_ready
+	mov	byte ptr [bx],0h
+	dec	byte ptr disk_count
+	mov	al,disk_count
+	or	al,al
+	jnz	scan_disk_at_0201
+	mov	cl,9h
+	mov	dx,offset msg_no_disk
+	int	i_bdos
+	jmp	restore_and_exit
+scan_disk_at_0201:
+	jmp	next_disk
+
+;-----------------------------------------------------------------------------
+; Decode BIOS geometry, draw the initial frame, then read the disk MBR.
+; An invalid AA55h signature produces an empty table in the in-memory copy.
+;-----------------------------------------------------------------------------
+disk_geometry_ready:
+	mov	al,[bx]
+	inc	al
+	mul	byte ptr 1h[bx]
+	mov	bp,sp
+	xchg	bx,0h[bp]
+	mov	4h[bx],ax
+	xchg	bx,0h[bp]
+	mov	ax,2h[bx]
+	inc	ax
+	pop	bx
+	push	bx
+	mov	0eh[bx],ax
+	cmp	byte ptr frame_drawn,0h
+	jnz	read_disk_partitions
+	call	draw_frame
+	mov	byte ptr frame_drawn,0ffh
+read_disk_partitions:
+	pop	bx
+	push	bx
+	xor	dh,dh
+	mov	dl,[bx]
+	add	bx,0a7h
+	mov	ax,ds
+	mov	es,ax
+	call	read_mbr
+	pop	bx
+	or	al,al
+	jz	check_mbr_signature
+	mov	byte ptr error_number,1h
+	jmp	fatal_error
+check_mbr_signature:
+	push	bx
+	add	bx,2a5h
+	mov	ax,0aa55h
+	cmp	ax,[bx]
+	jz	decode_partitions
+	mov	cx,40h
+	mov	si,265h
+check_mbr_signature_at_025e:
+	pop	bx
+	push	bx
+	mov	byte ptr [bx+si],0h
+	inc	si
+	loop	check_mbr_signature_at_025e
+	mov	word ptr 2a5h[bx],0aa55h
+
+;-----------------------------------------------------------------------------
+; Sort the four partition entries and unpack their 10-bit cylinder limits.
+;-----------------------------------------------------------------------------
+decode_partitions:
+	pop	bx
+	push	bx
+	mov	byte ptr 2h[bx],0ffh
+	call	sort_partitions
+	mov	al,268h[bx]
+	mov	ah,267h[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	18h[bx],ax
+	mov	al,26ch[bx]
+	mov	ah,26bh[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	1ah[bx],ax
+	mov	al,278h[bx]
+	mov	ah,277h[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	1ch[bx],ax
+	mov	al,27ch[bx]
+	mov	ah,27bh[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	1eh[bx],ax
+	mov	al,288h[bx]
+	mov	ah,287h[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	20h[bx],ax
+	mov	al,28ch[bx]
+	mov	ah,28bh[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	22h[bx],ax
+	mov	al,298h[bx]
+	mov	ah,297h[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	24h[bx],ax
+	mov	al,29ch[bx]
+	mov	ah,29bh[bx]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	26h[bx],ax
+
+;-----------------------------------------------------------------------------
+; Build free cylinder intervals, leaving a minimum ten-cylinder candidate.
+; Identify CP/M type DBh and remember its partition-entry offset.
+;-----------------------------------------------------------------------------
+build_free_extents:
+	pop	bx
+	push	bx
+	mov	di,28h
+	add	di,bx
+	mov	cx,ds
+	mov	es,cx
+	mov	cx,0ah
+	mov	ax,0ffffh
+	rep	stosw
+	mov	word ptr 0ch[bx],0h
+	mov	byte ptr 3h[bx],0h
+	mov	byte ptr 15h[bx],0h
+	mov	si,265h
+	mov	di,28h
+	mov	dx,0h
+scan_partition_entry:
+	mov	al,4h[bx+si]
+	or	al,al
+	jz	scan_partition_entry_at_0388
+	mov	al,3h[bx+si]
+	mov	ah,2h[bx+si]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	cx,ax
+	mov	al,7h[bx+si]
+	mov	ah,6h[bx+si]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	push	ax
+	sub	ax,cx
+	inc	ax
+	add	ax,0ch[bx]
+	mov	0ch[bx],ax
+	pop	ax
+	cmp	byte ptr 4h[bx+si],0dbh
+	jnz	scan_partition_entry_at_0373
+	mov	16h[bx],si
+	mov	10h[bx],ax
+	mov	2c8h[bx],cx
+	mov	byte ptr 3h[bx],0ffh
+	jmp	scan_partition_entry_at_0388
+scan_partition_entry_at_0373:
+	sub	cx,0ah
+	cmp	cx,dx
+	jl	scan_partition_entry_at_0385
+	add	cx,9h
+	mov	[bx+di],dx
+	mov	2h[bx+di],cx
+	add	di,4h
+scan_partition_entry_at_0385:
+	inc	ax
+	mov	dx,ax
+scan_partition_entry_at_0388:
+	add	si,10h
+	cmp	si,2a5h
+	jnz	scan_partition_entry
+check_last_extent:
+	mov	cx,0eh[bx]
+	sub	cx,0ah
+	cmp	cx,dx
+	jl	check_last_extent_at_03a6
+	add	cx,9h
+	mov	[bx+di],dx
+	mov	2h[bx+di],cx
+	add	di,4h
+check_last_extent_at_03a6:
+	mov	byte ptr 12h[bx],0h
+	cmp	di,28h
+	jz	initialize_bad_cylinders
+	cmp	byte ptr 3h[bx],0h
+	jnz	check_last_extent_at_03c1
+	cmp	byte ptr 299h[bx],0h
+	jnz	initialize_bad_cylinders
+	mov	word ptr 16h[bx],295h
+check_last_extent_at_03c1:
+	mov	byte ptr 12h[bx],0ffh
+
+;-----------------------------------------------------------------------------
+; Initialize the bad-cylinder list, then validate any existing CP/M label
+; using its checksum and the default 31-byte identity string.
+;-----------------------------------------------------------------------------
+initialize_bad_cylinders:
+	mov	di,3ch
+	add	di,bx
+	mov	ax,ds
+	mov	es,ax
+	mov	ax,0ffffh
+	mov	cx,30h
+	rep	stosw
+	cmp	byte ptr 3h[bx],0h
+	jz	use_default_label
+read_existing_label:
+	pop	bx
+	push	bx
+	mov	dl,[bx]
+	xor	dh,dh
+	add	bx,2a7h
+	mov	cx,21h[bx]
+	mov	ax,ds
+	mov	es,ax
+	call	read_label
+	or	al,al
+	jz	validate_existing_label
+	pop	bx
+	push	bx
+	jmp	invalid_existing_label
+validate_existing_label:
+	pop	bx
+	push	bx
+	call	label_checksum
+	cmp	ax,2a7h[bx]
+	jnz	invalid_existing_label
+	mov	ax,ds
+	mov	es,ax
+	mov	si,bx
+	add	si,2a9h
+	mov	di,offset default_identity
+	mov	cx,1fh
+	repe	cmpsb
+	jz	valid_existing_label
+invalid_existing_label:
+	mov	byte ptr 15h[bx],0h
+	jmp	use_default_label
+valid_existing_label:
+	mov	byte ptr 15h[bx],0ffh
+	inc	byte ptr cpm_volume_count
+	call	decode_label
+	jmp	next_disk
+
+;-----------------------------------------------------------------------------
+; Use a pristine CP/M label when the existing system area is not valid.
+;-----------------------------------------------------------------------------
+use_default_label:
+	mov	di,2a7h
+	mov	si,offset default_label
+	mov	cx,200h
+use_default_label_at_0436:
+	mov	al,[si]
+	mov	[bx+di],al
+	inc	si
+	inc	di
+	loop	use_default_label_at_0436
+next_disk:
+	pop	bx
+	pop	cx
+	dec	cx
+	jz	main_menu
+	jmp	scan_disk
+
+;-----------------------------------------------------------------------------
+; Main menu. Enable verify/options only when a valid CP/M volume exists.
+; Menu targets reset SP where needed to discard the previous interaction stack.
+;-----------------------------------------------------------------------------
+main_menu:
+	mov	sp,offset stack_top
+main_menu_at_0449:
+	call	clear_work_area
+	mov	si,offset main_screen
+	call	print_template
+	mov	ax,101h
+	mov	cl,cpm_volume_count
+	or	cl,cl
+	jz	main_menu_at_0460
+	or	ax,44h
+main_menu_at_0460:
+	mov	bx,offset main_actions
+	call	dispatch_menu
+	jmps	main_menu_at_0449
+
+;-----------------------------------------------------------------------------
+; Choose a physical disk if two are present, then copy its full descriptor
+; into selected_disk before displaying the partition operations.
+;-----------------------------------------------------------------------------
+select_partition_disk:
+	mov	sp,offset stack_top
+	mov	al,disk_count
+	cmp	al,1h
+	jz	select_partition_disk_at_0481
+	call	clear_work_area
+	mov	si,offset partition_disk_title
+	call	print_template
+	call	choose_disk
+	jmp	partition_menu
+select_partition_disk_at_0481:
+	mov	al,disk1_geometry
+	or	al,al
+	jz	select_partition_disk_at_048e
+	call	select_first_disk
+	jmp	partition_menu
+select_partition_disk_at_048e:
+	call	select_second_disk
+	jmp	partition_menu
+partition_menu:
+	mov	sp,offset stack_top
+	call	clear_work_area
+	call	display_partitions
+	mov	si,offset partition_screen
+	call	print_template
+	mov	ax,200h
+	mov	cl,selected_has_cpm
+	or	cl,cl
+	jz	partition_menu_at_04b1
+	or	ax,2h
+partition_menu_at_04b1:
+	mov	cl,can_create
+	or	cl,cl
+	jz	partition_menu_at_04bc
+	or	ax,20h
+partition_menu_at_04bc:
+	mov	cl,selected_disk
+	or	cl,cl
+	jnz	partition_menu_at_04c7
+	or	ax,8h
+partition_menu_at_04c7:
+	mov	bx,offset partition_actions
+	call	dispatch_menu
+partition_menu_at_04cd:
+	jmp	main_menu
+
+;-----------------------------------------------------------------------------
+; Create/replace a CP/M partition. Confirm deletion if a CP/M partition exists,
+; then obtain an acceptable starting cylinder and partition length.
+;-----------------------------------------------------------------------------
+create_partition:
+	mov	sp,offset stack_top
+	mov	al,selected_has_cpm
+	or	al,al
+	jz	initialize_new_partition
+	call	warn_delete
+	mov	ax,140h
+	mov	bx,offset replace_actions
+	call	dispatch_menu
+create_partition_at_04e6:
+	call	clear_work_area
+	call	display_partitions
+initialize_new_partition:
+	call	default_partition
+	jmp	choose_start_cylinder
+
+;-----------------------------------------------------------------------------
+; Starting cylinder must leave at least ten cylinders inside a free extent.
+; The no-input F10 result is FFFFh and accepts the proposed value.
+;-----------------------------------------------------------------------------
+choose_start_cylinder:
+	call	clear_partition_display
+edit_start_cylinder:
+	mov	sp,offset stack_top
+	call	limit_default_size
+	call	calculate_dpb
+	call	display_partitions
+	mov	si,offset start_screen
+	call	print_template
+	call	read_number
+	push	ax
+	cmp	ax,0ffffh
+	jnz	edit_start_cylinder_at_0513
+	mov	ax,partition_start
+edit_start_cylinder_at_0513:
+	mov	bx,offset free_extents
+edit_start_cylinder_at_0516:
+	cmp	ax,[bx]
+	jl	edit_start_cylinder_at_0543
+	add	ax,9h
+	cmp	ax,2h[bx]
+	jg	edit_start_cylinder_at_0537
+	sub	ax,9h
+	mov	partition_start,ax
+	mov	ax,2h[bx]
+	mov	maximum_end_cylinder,ax
+	pop	ax
+	cmp	ax,0ffffh
+	jz	edit_start_cylinder_at_054d
+	jmp	edit_start_cylinder
+edit_start_cylinder_at_0537:
+	sub	ax,9h
+	add	bx,4h
+	cmp	bx,0a93h
+	jnz	edit_start_cylinder_at_0516
+edit_start_cylinder_at_0543:
+	mov	ax,partition_start
+	call	beep
+	pop	ax
+	jmp	edit_start_cylinder
+edit_start_cylinder_at_054d:
+	call	cursor_off
+	jmp	choose_partition_size
+beep:
+	mov	al,7h
+	call	console_out
+	ret
+
+;-----------------------------------------------------------------------------
+; Choose partition size, constrained to the selected free extent. Display the
+; CP/M-86 8 MB compatibility limit, then calculate the volume parameters.
+;-----------------------------------------------------------------------------
+choose_partition_size:
+	call	limit_default_size
+	call	clear_partition_display
+	mov	byte ptr editing_size,0ffh
+edit_partition_size:
+	call	calculate_dpb
+	call	display_partitions
+	mov	si,offset size_screen
+	call	print_template
+	call	read_number
+	cmp	ax,0ffffh
+	jz	accept_partition_size
+	cmp	ax,0ah
+	jl	edit_partition_size_at_0596
+	add	ax,partition_start
+	dec	ax
+	cmp	ax,maximum_end_cylinder
+	jg	edit_partition_size_at_0596
+	mov	partition_end,ax
+	inc	ax
+	sub	ax,partition_start
+	mov	partition_cylinders_count,ax
+	jmp	edit_partition_size
+edit_partition_size_at_0596:
+	call	beep
+	jmp	edit_partition_size
+accept_partition_size:
+	call	cursor_off
+	call	calculate_dpb
+	mov	byte ptr editing_size,0h
+	call	create_options
+	jmp	create_volume
+
+;-----------------------------------------------------------------------------
+; Prepare the default label and select the largest free extent. Preserve the
+; original free-extent scan and its error handling rather than repairing it.
+;-----------------------------------------------------------------------------
+default_partition:
+	cld
+	mov	ax,ds
+	mov	es,ax
+	mov	si,offset default_label
+	mov	di,offset volume_label
+	mov	cx,200h
+	rep	movsb
+	mov	bx,cpm_partition_offset
+	add	bx,offset selected_disk
+	mov	byte ptr [bx],0h
+	mov	byte ptr 4h[bx],0dbh
+	sub	bx,0cbch
+	mov	ax,bx
+	mov	bl,10h
+	div	bl
+	shl	ax,1
+	shl	ax,1
+	add	ax,offset partition_cylinders
+	mov	current_extent_pointer,ax
+	cmp	byte ptr selected_has_cpm,0h
+	jz	default_partition_at_05f8
+	mov	bx,ax
+	mov	ax,2h[bx]
+	sub	ax,[bx]
+	inc	ax
+	sub	ax,assigned_cylinders
+	neg	ax
+	mov	other_assigned_cylinders,ax
+default_partition_at_05f8:
+	mov	word ptr [bx],0h
+	mov	word ptr 2h[bx],0h
+	mov	dx,0h
+	mov	bp,0a7fh
+default_partition_at_0607:
+	mov	ax,2h[bp]
+	cmp	ax,0ffffh
+	jz	default_partition_at_0630
+	sub	ax,0h[bp]
+	cmp	ax,dx
+	jng	default_partition_at_062c
+	mov	dx,ax
+	mov	ax,0h[bp]
+	mov	[bx],ax
+	mov	partition_start,ax
+	mov	ax,2h[bp]
+	mov	2h[bx],ax
+	mov	maximum_end_cylinder,ax
+	mov	partition_end,ax
+default_partition_at_062c:
+	inc	bp
+	inc	bp
+	jmps	default_partition_at_0607
+default_partition_at_0630:
+	mov	partition_cylinders_count,dx
+	mov	byte ptr volume_flags,0h
+	cmp	dx,0ah
+	jnl	default_partition_at_0646
+	mov	byte ptr error_number,5h
+	jmp	fatal_error
+default_partition_at_0646:
+	mov	ax,4007h
+	xor	dx,dx
+	mov	bl,last_head
+	inc	bl
+	xor	bh,bh
+	div	bx
+	mov	bx,11h
+	xor	dx,dx
+	div	bx
+	add	ax,2h
+	mov	maximum_cpm22_cylinders,ax
+	mov	byte ptr label_valid,0ffh
+	ret
+
+;-----------------------------------------------------------------------------
+; Clamp the initial size to the CP/M 2.2 limit and the free-extent endpoint.
+;-----------------------------------------------------------------------------
+limit_default_size:
+	mov	ax,partition_start
+	add	ax,maximum_cpm22_cylinders
+	dec	ax
+	cmp	ax,maximum_end_cylinder
+	jng	limit_default_size_at_0679
+	mov	ax,maximum_end_cylinder
+limit_default_size_at_0679:
+	mov	partition_end,ax
+	sub	ax,partition_start
+	inc	ax
+	mov	partition_cylinders_count,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Derive CP/M DPB fields from geometry and volume size: block shift/mask,
+; extent mask, DSM, DRM, allocation bitmap and reserved-track offset. Also
+; calculate directory bounds, spare blocks and the bad-block table parameters.
+;-----------------------------------------------------------------------------
+calculate_dpb:
+	mov	al,last_head
+	inc	al
+	mov	head_count,al
+	mov	al,sectors_per_track
+	mov	physical_spt,al
+	mov	byte ptr records_per_sector,4h
+	mul	byte ptr records_per_sector
+	mov	dpb_spt,ax
+	mov	ax,partition_cylinders_count
+	sub	ax,2h
+	xor	dx,dx
+	mov	bx,sectors_per_cylinder
+	shr	bx,1
+	mul	bx
+	mov	allocation_records,ax
+	cmp	ax,400h
+	jng	calculate_dpb_at_06cf
+	mov	word ptr directory_size_kb,9h
+	mov	byte ptr dpb_bsh,5h
+	mov	byte ptr dpb_blm,1fh
+	mov	byte ptr dpb_exm,1h
+	jmp	calculate_dpb_at_06e4
+calculate_dpb_at_06cf:
+	mov	word ptr directory_size_kb,2h
+	mov	byte ptr dpb_bsh,4h
+	mov	byte ptr dpb_blm,0fh
+	mov	byte ptr dpb_exm,0h
+calculate_dpb_at_06e4:
+	mov	al,dpb_blm
+	shr	al,1
+	shr	al,1
+	shr	al,1
+	xor	ah,ah
+	not	ax
+	mov	bx,ax
+	and	ax,allocation_records
+	mov	allocation_records,ax
+calculate_dpb_at_06fa:
+	shr	bx,1
+	jc	calculate_dpb_at_0702
+	shr	ax,1
+	jmps	calculate_dpb_at_06fa
+calculate_dpb_at_0702:
+	dec	ax
+	mov	dpb_dsm,ax
+	or	ah,ah
+	jnz	calculate_dpb_at_0714
+	mov	al,dpb_exm
+	shl	al,1
+	or	al,1h
+	mov	dpb_exm,al
+calculate_dpb_at_0714:
+	mov	ax,allocation_records
+	shr	ax,1
+	shr	ax,1
+	shr	ax,1
+	mov	bl,dpb_blm
+	xor	bh,bh
+	shl	bx,1
+	shl	bx,1
+	or	bx,3h
+	push	bx
+	add	ax,bx
+	not	bx
+	and	ax,bx
+	cmp	ax,400h
+	jng	calculate_dpb_at_073a
+	mov	ax,400h
+calculate_dpb_at_073a:
+	mov	directory_entries,ax
+	shl	ax,1
+	mov	maximum_directory_entries,ax
+	mov	byte ptr directory_expanded,0h
+	pop	cx
+	inc	cx
+	xor	dx,dx
+	div	cx
+	mov	cx,ax
+	xor	ax,ax
+calculate_dpb_at_0751:
+	shr	ax,1
+	or	ax,8000h
+	loop	calculate_dpb_at_0751
+	mov	dpb_al0,ah
+	mov	dpb_al1,al
+	mov	ax,directory_entries
+	dec	ax
+	mov	dpb_drm,ax
+	mov	word ptr dpb_cks,8000h
+	mov	al,head_count
+	xor	ah,ah
+	xor	dx,dx
+	mov	cx,partition_start
+	inc	cx
+	mul	cx
+	mov	dpb_off,ax
+	mov	bx,current_extent_pointer
+	mov	ax,partition_start
+	mov	[bx],ax
+	mov	ax,partition_end
+	mov	2h[bx],ax
+	mov	byte ptr large_volume,0h
+	mov	ax,partition_cylinders_count
+	cmp	ax,maximum_cpm22_cylinders
+	jng	calculate_dpb_at_079f
+	mov	byte ptr large_volume,0ffh
+calculate_dpb_at_079f:
+	mov	ax,partition_cylinders_count
+	add	ax,other_assigned_cylinders
+	mov	assigned_cylinders,ax
+	mov	word ptr logical_block_records,10h
+	mov	word ptr remap_table_entries,0dch
+	mov	word ptr bad_block_count,0h
+	mov	ax,partition_cylinders_count
+	dec	ax
+	mov	bl,physical_spt
+	xor	bh,bh
+	xor	dx,dx
+	mul	bx
+	mov	bl,head_count
+	mul	bx
+	shr	ax,1
+	shr	ax,1
+	mov	last_spare_block,ax
+	mov	ax,maximum_directory_entries
+	mov	cl,6h
+	shr	ax,cl
+	dec	ax
+	mov	last_directory_block,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Create the volume: remove its old partition entry, write the system track,
+; initialize directory blocks, destructively test data blocks, then write the
+; checksummed label and MBR. The prompts and confirmations are original.
+;-----------------------------------------------------------------------------
+create_volume:
+	call	clear_work_area
+	mov	si,offset create_screen
+	call	print_template
+	call	poll_create_abort
+	mov	al,selected_has_cpm
+	or	al,al
+	jz	create_volume_at_07fe
+	mov	si,offset delete_progress
+	call	print_template
+	call	delete_cpm_entry
+create_volume_at_07fe:
+	call	encode_partition
+	call	calculate_bad_block_capacity
+	call	poll_create_abort
+	mov	si,offset create_progress
+	call	print_template
+	mov	ax,partition_start
+	mov	create_cylinder,ax
+	call	write_system_track
+	or	al,al
+	jz	create_directory
+	jmp	bad_system_cylinder
+create_directory:
+	inc	word ptr create_cylinder
+	mov	word ptr create_block,0h
+create_directory_at_0827:
+	call	poll_create_abort
+	call	test_block
+	or	al,al
+	jz	create_directory_at_0834
+	jmp	bad_system_cylinder
+create_directory_at_0834:
+	mov	ax,create_block
+	cmp	ax,last_directory_block
+	jz	test_data_area
+	inc	word ptr create_block
+	jmp	create_directory_at_0827
+test_data_area:
+	call	calculate_bad_block_capacity
+	mov	word ptr create_bad_count,0h
+	mov	si,offset test_progress
+	call	print_template
+	mov	ax,partition_start
+	inc	ax
+	mov	create_cylinder,ax
+test_data_area_at_085a:
+	mov	si,offset cylinder_progress
+	call	print_template
+	call	test_cylinder
+	mov	ax,create_cylinder
+	cmp	ax,partition_end
+	jz	commit_volume
+	inc	word ptr create_cylinder
+	jmps	test_data_area_at_085a
+commit_volume:
+	call	finalize_bad_blocks
+	mov	si,offset enable_progress
+	call	print_template
+	mov	bx,offset selected_disk
+	call	label_checksum
+	mov	volume_label,ax
+	call	poll_create_abort
+	call	write_label
+	or	al,al
+	jz	commit_volume_at_0896
+	mov	byte ptr error_number,4h
+	jmp	fatal_error
+commit_volume_at_0896:
+	call	poll_create_abort
+	call	write_mbr
+	or	al,al
+	jz	commit_volume_at_08a8
+	mov	byte ptr error_number,2h
+	jmp	fatal_error
+commit_volume_at_08a8:
+	mov	si,offset create_complete
+	call	print_template
+	mov	ax,100h
+	mov	bx,offset create_actions
+	call	dispatch_menu
+commit_volume_at_08b7:
+	jmp	request_reboot
+
+;-----------------------------------------------------------------------------
+; Test each logical block belonging to the current cylinder.
+;-----------------------------------------------------------------------------
+test_cylinder:
+	call	poll_create_abort
+	mov	ax,create_cylinder
+	call	cylinder_to_blocks
+	mov	create_block,ax
+test_cylinder_at_08c6:
+	push	cx
+	call	test_block
+	inc	word ptr create_block
+	pop	cx
+	loop	test_cylinder_at_08c6
+	ret
+
+;-----------------------------------------------------------------------------
+; Write/read-compare a B66Dh pattern, then E5E5h. Record failures for later
+; replacement-block mapping, bounded by the reserved bad-block capacity.
+;-----------------------------------------------------------------------------
+test_block:
+	mov	es,word ptr dma_segment
+	mov	di,0h
+	mov	cx,400h
+	mov	ax,0b66dh
+	rep	stosw
+	mov	bx,0h
+	mov	dl,selected_disk
+	xor	dh,dh
+	mov	cx,offset volume_label
+	mov	ax,create_block
+	call	write_block
+	or	al,al
+	jnz	record_bad_block
+	mov	es,word ptr dma_segment
+	mov	di,0h
+	mov	cx,400h
+	mov	ax,0e5e5h
+	rep	stosw
+	mov	bx,0h
+	mov	dl,selected_disk
+	xor	dh,dh
+	mov	cx,offset volume_label
+	mov	ax,create_block
+	call	write_block
+	or	al,al
+	jz	record_bad_block_at_0967
+record_bad_block:
+	inc	word ptr create_bad_count
+	mov	si,offset bad_block_progress
+	call	print_template
+	mov	si,bad_block_count
+	cmp	si,bad_block_capacity
+	jz	too_many_bad_blocks
+	add	si,si
+	mov	bx,offset bad_block_table
+	mov	ax,create_block
+	mov	[bx+si],ax
+	inc	word ptr bad_block_count
+	dec	word ptr last_spare_block
+	cmp	ax,last_spare_block
+	jl	record_bad_block_at_0965
+	mov	bx,offset bad_block_table
+	mov	si,original_spare_base
+	sub	si,create_block
+	dec	si
+	add	si,si
+	mov	di,bad_block_count
+	dec	di
+	add	di,di
+	mov	ax,[bx+si]
+	mov	[bx+di],ax
+	mov	word ptr [bx+si],0ffffh
+record_bad_block_at_0965:
+	mov	al,0ffh
+record_bad_block_at_0967:
+	ret
+too_many_bad_blocks:
+	mov	byte ptr error_number,5h
+	jmp	fatal_error
+
+;-----------------------------------------------------------------------------
+; Encode start/end CHS and sector counts into the CP/M partition entry.
+; Cylinder zero skips the MBR sector. Retain the AA55h signature.
+;-----------------------------------------------------------------------------
+encode_partition:
+	mov	bx,cpm_partition_offset
+	add	bx,offset selected_disk
+	mov	byte ptr [bx],0h
+	mov	ax,partition_start
+	ror	ah,1
+	ror	ah,1
+	or	ax,ax
+	jnz	encode_partition_at_0988
+	inc	ah
+encode_partition_at_0988:
+	inc	ah
+	xor	dl,dl
+	mov	1h[bx],dl
+	mov	2h[bx],ah
+	mov	3h[bx],al
+	mov	byte ptr 4h[bx],0dbh
+	mov	ax,partition_end
+	ror	ah,1
+	ror	ah,1
+	add	ah,physical_spt
+	mov	dl,last_head
+	mov	5h[bx],dl
+	mov	6h[bx],ah
+	mov	7h[bx],al
+	mov	bp,bx
+	mov	ax,partition_start
+	mov	bl,head_count
+	xor	bh,bh
+	xor	dx,dx
+	mul	bx
+	push	bx
+	mov	bl,physical_spt
+	xor	bh,bh
+	mul	bx
+	xor	cx,cx
+	or	ax,ax
+	jnz	encode_partition_at_09d1
+	inc	cx
+	inc	ax
+encode_partition_at_09d1:
+	mov	ds:8h[bp],ax
+	mov	ax,partition_cylinders_count
+	xor	dx,dx
+	mul	bx
+	pop	bx
+	mul	bx
+	sub	ax,cx
+	mov	ds:0ch[bp],ax
+	mov	word ptr mbr_signature,0aa55h
+	ret
+
+;-----------------------------------------------------------------------------
+; Calculate how many bad-block entries fit the reserved replacement area.
+;-----------------------------------------------------------------------------
+calculate_bad_block_capacity:
+	mov	ax,last_spare_block
+	mov	original_spare_base,ax
+	mov	al,dpb_bsh
+	cmp	al,4h
+	jz	calculate_bad_block_capacity_at_09fe
+	mov	ax,8h
+	jmps	calculate_bad_block_capacity_at_0a01
+calculate_bad_block_capacity_at_09fe:
+	mov	ax,1h
+calculate_bad_block_capacity_at_0a01:
+	xor	dx,dx
+	mov	bl,head_count
+	xor	bh,bh
+	mul	bx
+	mov	bl,sectors_per_track
+	mul	bx
+	mov	bx,logical_block_records
+	shr	bx,1
+	shr	bx,1
+	div	bx
+	mov	bad_block_capacity,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Finalize remap-table size, replacement mapping and the allocation limit.
+;-----------------------------------------------------------------------------
+finalize_bad_blocks:
+	mov	al,physical_spt
+	xor	ah,ah
+	mul	byte ptr head_count
+	shr	ax,1
+	shr	ax,1
+	add	ax,bad_block_count
+	mov	remap_table_entries,ax
+	mov	ax,original_spare_base
+	dec	ax
+	mov	last_spare_block,ax
+	mov	ax,bad_block_count
+	cmp	byte ptr dpb_bsh,4h
+	jz	finalize_bad_blocks_at_0a47
+	inc	ax
+	shr	ax,1
+finalize_bad_blocks_at_0a47:
+	sub	ax,dpb_dsm
+	neg	ax
+	mov	dpb_dsm,ax
+	ret
+
+;-----------------------------------------------------------------------------
+; During creation, key X offers a continue/stop confirmation; other keys beep.
+;-----------------------------------------------------------------------------
+poll_create_abort:
+	mov	cl,6h
+	mov	dl,0ffh
+	int	i_bdos
+	or	al,al
+	jz	poll_create_abort_at_0a62
+	cmp	al,58h
+	jnz	poll_create_abort_at_0a63
+	call	confirm_create_abort
+poll_create_abort_at_0a62:
+	ret
+poll_create_abort_at_0a63:
+	mov	al,7h
+	call	console_out
+	jmps	poll_create_abort_at_0a62
+confirm_create_abort:
+	mov	si,offset create_abort_screen
+	call	print_template
+	mov	ax,140h
+	mov	bx,offset create_abort_actions
+	call	dispatch_menu
+	ret
+resume_create:
+	mov	si,offset create_resume_screen
+	call	print_template
+	ret
+stop_create:
+	jmp	request_reboot
+
+;-----------------------------------------------------------------------------
+; A bad system cylinder cannot be remapped. Record it and offer a different
+; starting cylinder or stop the creation operation.
+;-----------------------------------------------------------------------------
+bad_system_cylinder:
+	mov	bx,offset bad_cylinders
+	mov	cx,30h
+bad_system_cylinder_at_0a8a:
+	mov	ax,[bx]
+	cmp	ax,0ffffh
+	jz	bad_system_cylinder_at_0a9d
+	inc	bx
+	inc	bx
+	loop	bad_system_cylinder_at_0a8a
+	mov	byte ptr error_number,5h
+	jmp	fatal_error
+bad_system_cylinder_at_0a9d:
+	mov	ax,create_cylinder
+	mov	[bx],ax
+	mov	si,offset bad_system_screen
+	call	print_template
+	mov	ax,140h
+	mov	bx,offset bad_system_actions
+	call	dispatch_menu
+bad_system_cylinder_at_0ab1:
+	jmp	fatal_error
+retry_start_cylinder:
+	mov	ax,partition_start
+	cmp	ax,create_cylinder
+	jz	retry_start_cylinder_at_0abe
+	inc	ax
+retry_start_cylinder_at_0abe:
+	inc	ax
+	mov	partition_start,ax
+	sub	ax,partition_end
+	neg	ax
+	inc	ax
+	cmp	ax,0ah
+	jl	retry_start_cylinder_at_0ad7
+	mov	partition_end,ax
+retry_start_cylinder_at_0ad1:
+	call	clear_work_area
+	jmp	edit_start_cylinder
+retry_start_cylinder_at_0ad7:
+	call	default_partition
+	jmps	retry_start_cylinder_at_0ad1
+
+;-----------------------------------------------------------------------------
+; Delete a CP/M volume only through the existing confirmation menu.
+;-----------------------------------------------------------------------------
+delete_volume:
+	mov	sp,offset stack_top
+	call	warn_delete
+	mov	ax,140h
+	mov	bx,offset delete_actions
+	call	dispatch_menu
+	jmp	request_reboot
+cancel_delete:
+	jmp	main_menu
+confirm_delete:
+	mov	si,offset delete_message
+	call	print_template
+
+;-----------------------------------------------------------------------------
+; Find the type-DBh partition entry, zero its 16 bytes, and write the MBR.
+;-----------------------------------------------------------------------------
+delete_cpm_entry:
+	mov	bx,offset partition_table
+delete_cpm_entry_at_0afa:
+	mov	al,4h[bx]
+	cmp	al,0dbh
+	jz	delete_cpm_entry_at_0b06
+	add	bx,10h
+	jmps	delete_cpm_entry_at_0afa
+delete_cpm_entry_at_0b06:
+	mov	si,0h
+	mov	cx,10h
+delete_cpm_entry_at_0b0c:
+	mov	byte ptr [bx+si],0h
+	inc	si
+	loop	delete_cpm_entry_at_0b0c
+	call	write_mbr
+	or	al,al
+	jz	delete_cpm_entry_at_0b21
+	mov	byte ptr error_number,2h
+	jmp	fatal_error
+delete_cpm_entry_at_0b21:
+	ret
+warn_delete:
+	call	clear_partition_display
+	mov	si,offset delete_warning
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Show the boot selection menu and write the selected active partition.
+;-----------------------------------------------------------------------------
+boot_partition_menu:
+	call	clear_partition_display
+	mov	si,offset boot_screen
+	call	print_template
+boot_partition_menu_at_0b35:
+	mov	sp,offset stack_top
+	call	display_partitions
+	mov	ax,202h
+	mov	bx,offset boot_actions
+	call	dispatch_menu
+boot_partition_menu_at_0b44:
+	call	write_mbr
+	or	al,al
+	jz	boot_partition_menu_at_0b53
+	mov	byte ptr error_number,2h
+	jmp	fatal_error
+boot_partition_menu_at_0b53:
+	jmp	main_menu
+
+;-----------------------------------------------------------------------------
+; Cycle the active (80h) marker among occupied partition entries.
+;-----------------------------------------------------------------------------
+cycle_boot_partition:
+	mov	bx,offset partition_table
+	mov	cx,4h
+cycle_boot_partition_at_0b5c:
+	cmp	byte ptr [bx],80h
+	jz	cycle_boot_partition_at_0b6f
+	add	bx,10h
+	loop	cycle_boot_partition_at_0b5c
+	mov	bx,offset partition_table
+	mov	byte ptr [bx],80h
+	jmp	boot_partition_menu_at_0b35
+cycle_boot_partition_at_0b6f:
+	mov	byte ptr [bx],0h
+	cmp	cl,1h
+	jz	boot_partition_menu_at_0b35
+	dec	cx
+cycle_boot_partition_at_0b78:
+	add	bx,10h
+	mov	al,4h[bx]
+	cmp	al,0h
+	jnz	cycle_boot_partition_at_0b87
+	loop	cycle_boot_partition_at_0b78
+	jmp	boot_partition_menu_at_0b35
+cycle_boot_partition_at_0b87:
+	mov	byte ptr [bx],80h
+	jmp	boot_partition_menu_at_0b35
+
+;-----------------------------------------------------------------------------
+; Clear the partition information area before redrawing.
+;-----------------------------------------------------------------------------
+clear_partition_display:
+	mov	cx,0eh
+	mov	si,offset partition_clear_position
+	call	print_template
+clear_partition_display_at_0b96:
+	call	clear_line
+	mov	si,offset next_row_escape
+	call	print_template
+	loop	clear_partition_display_at_0b96
+	ret
+
+;-----------------------------------------------------------------------------
+; Render each occupied partition through its display template. Clear unused
+; rows and show whether the CP/M system label passed validation.
+;-----------------------------------------------------------------------------
+display_partitions:
+	mov	si,offset partition_header
+	call	print_template
+	mov	byte ptr partition_display_row,24h
+	mov	al,partition1_type
+	or	al,al
+	jz	display_partitions_at_0bbe
+	mov	si,offset partition1_line
+	call	print_template
+	inc	byte ptr partition_display_row
+display_partitions_at_0bbe:
+	mov	al,partition2_type
+	or	al,al
+	jz	display_partitions_at_0bcf
+	mov	si,offset partition2_line
+	call	print_template
+	inc	byte ptr partition_display_row
+display_partitions_at_0bcf:
+	mov	al,partition3_type
+	or	al,al
+	jz	display_partitions_at_0be0
+	mov	si,offset partition3_line
+	call	print_template
+	inc	byte ptr partition_display_row
+display_partitions_at_0be0:
+	mov	al,partition4_type
+	or	al,al
+	jz	display_partitions_at_0bf1
+	mov	si,offset partition4_line
+	call	print_template
+	inc	byte ptr partition_display_row
+display_partitions_at_0bf1:
+	mov	al,partition_display_row
+	cmp	al,28h
+	jz	display_partitions_at_0c08
+	mov	si,offset partition_blank_position
+	call	print_template
+	call	clear_line
+	inc	byte ptr partition_display_row
+	jmp	display_partitions_at_0bf1
+display_partitions_at_0c08:
+	mov	si,offset partition_footer
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Choose a valid CP/M volume to verify. Verification reads the system area
+; and mapped logical blocks without rewriting the volume.
+;-----------------------------------------------------------------------------
+select_verify_disk:
+	cmp	byte ptr cpm_volume_count,2h
+	jnz	select_verify_disk_at_0c25
+	call	clear_work_area
+	mov	si,offset verify_title
+	call	print_template
+	call	choose_disk
+	jmp	verify_volume
+select_verify_disk_at_0c25:
+	cmp	byte ptr disk1_valid_label,0h
+	jz	select_verify_disk_at_0c32
+	call	select_first_disk
+	jmp	verify_volume
+select_verify_disk_at_0c32:
+	call	select_second_disk
+verify_volume:
+	mov	sp,offset stack_top
+	mov	word ptr verify_bad_count,0h
+	mov	ax,partition_start
+	mov	verify_cylinder_number,ax
+	call	clear_work_area
+	mov	si,offset verify_screen
+	call	print_template
+	call	poll_verify_abort
+	mov	ax,dma_segment
+	mov	es,ax
+	mov	bx,0h
+	mov	cx,partition_start
+	mov	dl,selected_disk
+	xor	dh,dh
+	call	read_boot_sectors
+	or	al,al
+	jnz	verify_volume_at_0c8f
+	inc	word ptr verify_cylinder_number
+	mov	si,offset verify_cylinder_progress
+	call	print_template
+	mov	word ptr verify_block_number,0h
+verify_volume_at_0c79:
+	call	verify_block
+	or	al,al
+	jnz	verify_volume_at_0c8f
+	mov	ax,last_directory_block
+	cmp	ax,verify_block_number
+	jz	verify_volume_at_0c95
+	inc	word ptr verify_block_number
+	jmps	verify_volume_at_0c79
+verify_volume_at_0c8f:
+	mov	si,offset verify_system_error
+	call	print_template
+verify_volume_at_0c95:
+	mov	word ptr verify_bad_count,0h
+	mov	ax,partition_start
+	inc	ax
+	mov	verify_cylinder_number,ax
+verify_volume_at_0ca2:
+	mov	si,offset verify_cylinder_progress
+	call	print_template
+	call	verify_cylinder
+	mov	ax,partition_end
+	cmp	ax,verify_cylinder_number
+	jz	verify_volume_at_0cbb
+	inc	word ptr verify_cylinder_number
+	jmp	verify_volume_at_0ca2
+verify_volume_at_0cbb:
+	mov	si,offset verify_complete
+	call	print_template
+	mov	bx,offset verify_done_actions
+	mov	ax,280h
+	call	dispatch_menu
+	ret
+
+;-----------------------------------------------------------------------------
+; Verify each logical block in the current cylinder and count read failures.
+;-----------------------------------------------------------------------------
+verify_cylinder:
+	call	poll_verify_abort
+	mov	ax,verify_cylinder_number
+	call	cylinder_to_blocks
+	mov	verify_block_number,ax
+verify_cylinder_at_0cd7:
+	push	cx
+	call	verify_block
+	inc	word ptr verify_block_number
+	pop	cx
+	loop	verify_cylinder_at_0cd7
+	ret
+verify_block:
+	mov	ax,dma_segment
+	mov	es,ax
+	mov	ax,verify_block_number
+	mov	dl,selected_disk
+	xor	dh,dh
+	mov	cx,offset volume_label
+	mov	bx,0h
+	call	read_block
+	or	al,al
+	jz	verify_block_at_0d0a
+	inc	word ptr verify_bad_count
+	mov	si,offset verify_error_progress
+	call	print_template
+	mov	al,0ffh
+verify_block_at_0d0a:
+	ret
+
+;-----------------------------------------------------------------------------
+; During verification, key E invokes the continue/stop menu.
+;-----------------------------------------------------------------------------
+poll_verify_abort:
+	mov	cl,6h
+	mov	dl,0ffh
+	int	i_bdos
+	or	al,al
+	jz	poll_verify_abort_at_0d1c
+	cmp	al,45h
+	jnz	poll_verify_abort_at_0d1e
+	call	confirm_verify_abort
+poll_verify_abort_at_0d1c:
+	cld
+	ret
+poll_verify_abort_at_0d1e:
+	mov	al,7h
+	call	console_out
+	jmps	poll_verify_abort
+confirm_verify_abort:
+	mov	si,offset verify_abort_screen
+	call	print_template
+	mov	ax,280h
+	mov	bx,offset verify_abort_actions
+	call	dispatch_menu
+	ret
+resume_verify:
+	mov	si,offset verify_resume_screen
+	call	print_template
+	ret
+stop_verify:
+	jmp	main_menu
+
+;-----------------------------------------------------------------------------
+; Choose the CP/M volume whose options will be edited.
+;-----------------------------------------------------------------------------
+select_options_disk:
+	mov	al,cpm_volume_count
+	cmp	al,2h
+	jnz	select_options_disk_at_0d55
+	call	clear_work_area
+	mov	si,offset options_title
+	call	print_template
+	call	choose_disk
+	jmp	change_options
+select_options_disk_at_0d55:
+	mov	al,disk1_has_cpm
+	or	al,al
+	jz	select_options_disk_at_0d62
+	call	select_first_disk
+	jmp	change_options
+select_options_disk_at_0d62:
+	call	select_second_disk
+
+;-----------------------------------------------------------------------------
+; Edit options, recompute the label checksum and write the label sector.
+;-----------------------------------------------------------------------------
+change_options:
+	mov	byte ptr creating_volume,0h
+	mov	bx,offset options_actions
+	call	options_menu
+	mov	bx,offset selected_disk
+	call	label_checksum
+	mov	volume_label,ax
+	call	write_label
+	or	al,al
+	jz	change_options_at_0d88
+	mov	byte ptr error_number,4h
+	jmp	fatal_error
+change_options_at_0d88:
+	jmp	main_menu
+
+;-----------------------------------------------------------------------------
+; Creation-time options share the editor, with a different menu vector.
+;-----------------------------------------------------------------------------
+create_options:
+	mov	byte ptr creating_volume,1h
+	mov	bx,offset create_options_actions
+	mov	byte ptr directory_expanded,0h
+
+;-----------------------------------------------------------------------------
+; Show directory-size and write-verify options. Directory expansion is
+; one-way; the confirmation updates DRM and the volume flag byte.
+;-----------------------------------------------------------------------------
+options_menu:
+	push	bx
+	call	clear_work_area
+	pop	bx
+	mov	al,volume_flags
+	ror	al,1
+	sbb	al,al
+	mov	verify_writes,al
+	mov	byte ptr keep_directory_size,0ffh
+	push	bx
+	mov	si,offset options_screen
+	call	print_template
+options_menu_at_0db3:
+	mov	al,directory_expanded
+	or	al,al
+	mov	ax,0h
+	jnz	options_menu_at_0dc0
+	mov	ax,2h
+options_menu_at_0dc0:
+	add	ax,208h
+	pop	bx
+	push	bx
+	call	dispatch_menu
+	jmp	options_menu_at_0db3
+accept_options:
+	pop	bx
+	pop	bx
+	mov	al,verify_writes
+	and	al,1h
+	mov	ah,volume_flags
+	and	ah,0feh
+	or	al,ah
+	mov	volume_flags,al
+	mov	al,keep_directory_size
+	or	al,al
+	jnz	accept_options_at_0df9
+	mov	ax,maximum_directory_entries
+	mov	directory_entries,ax
+	mov	byte ptr directory_expanded,0ffh
+	mov	ax,dpb_drm
+	add	ax,ax
+	inc	ax
+	mov	dpb_drm,ax
+accept_options_at_0df9:
+	ret
+
+;-----------------------------------------------------------------------------
+; Toggle the requested directory-size option and redraw its field.
+;-----------------------------------------------------------------------------
+toggle_directory:
+	not	byte ptr keep_directory_size
+	mov	si,offset directory_option
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Toggle write verification and redraw its field.
+;-----------------------------------------------------------------------------
+toggle_write_verify:
+	not	byte ptr verify_writes
+	mov	si,offset write_verify_option
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Fatal error: show status, wait for D for details, then require reboot.
+;-----------------------------------------------------------------------------
+fatal_error:
+	mov	si,offset error_console_mode
+	call	print_template
+	mov	si,offset error_status
+	call	show_status_message
+fatal_error_at_0e1c:
+	call	read_key
+	and	al,5fh
+	cmp	al,44h
+	jnz	fatal_error_at_0e1c
+	call	clear_status_message
+	call	clear_work_area
+	mov	si,offset error_details
+	jmp	request_reboot_at_0e37
+
+;-----------------------------------------------------------------------------
+; Request a system diskette and confirmation before rebooting.
+;-----------------------------------------------------------------------------
+request_reboot:
+	call	clear_work_area
+	mov	si,offset reboot_screen
+request_reboot_at_0e37:
+	call	print_template
+	mov	ax,100h
+	mov	bx,offset reboot_actions
+	call	dispatch_menu
+
+;-----------------------------------------------------------------------------
+; Restore disk state, set the BIOS warm-boot flag and jump to FFFF:0000.
+;-----------------------------------------------------------------------------
+reboot:
+	call	restore_disk_gateway
+	mov	ax,40h
+	mov	ds,ax
+	mov	word ptr .bios_warm_boot,1234h
+	jmpf	bios_reset
+
+;-----------------------------------------------------------------------------
+; Normal exit restores BIOS disk state and the saved function-key definitions.
+; Concurrent additionally restores CCB state, polling and both mutex queues.
+;-----------------------------------------------------------------------------
+exit_program:
+	mov	si,offset exit_console_mode
+	call	print_template
+restore_and_exit:
+	call	restore_disk_gateway
+	les	di,dword ptr key_table_offset
+	mov	si,offset saved_key_definitions
+	mov	cx,64h
+	rep	movsw
+	mov	al,concurrent_os
+	or	al,al
+	jz	restore_and_exit_at_0e75
+	jmp	release_concurrent
+restore_and_exit_at_0e75:
+	jmp	restore_cpm_console
+release_concurrent:
+	call	restore_console
+	call	enable_disk_polling
+	mov	cl,8bh
+	mov	dx,offset disk_queue
+	int	i_bdos
+	mov	cl,8bh
+	mov	dx,offset console_queue
+	int	i_bdos
+reset_process:
+	mov	cl,f_reset
+	int	i_bdos
+	jmps	reset_process
+restore_console:
+	mov	si,offset restore_concurrent_mode
+	call	print_template
+	les	si,dword ptr console_status_offset
+	mov	ax,saved_console_status
+	mov	es:[si],ax
+	ret
+restore_cpm_console:
+	mov	si,offset restore_cpm_mode
+	call	print_template
+	jmp	reset_process
+
+;-----------------------------------------------------------------------------
+; AX is a ten-bit key-enable mask; BX points to ten near CODE targets.
+; Populate enabled_keys, read an accepted F-key and jump to its vector entry.
+;-----------------------------------------------------------------------------
+dispatch_menu:
+	push	bx
+	mov	bx,offset disk_actions
+	mov	cx,0ah
+dispatch_menu_at_0eb3:
+	ror	ax,1
+	sbb	dl,dl
+	dec	bx
+	mov	[bx],dl
+	loop	dispatch_menu_at_0eb3
+	call	read_menu_key
+	pop	bx
+	shl	cx,1
+	mov	ax,bx
+	add	ax,cx
+	mov	bx,ax
+	jmp	word ptr [bx]
+
+;-----------------------------------------------------------------------------
+; Common physical-disk chooser; its callbacks select a saved disk record.
+;-----------------------------------------------------------------------------
+choose_disk:
+	mov	si,offset disk_screen
+	call	print_template
+	mov	ax,20ah
+	mov	bx,offset disk_actions
+	call	dispatch_menu
+	ret
+cancel_disk:
+	pop	ax
+	jmp	main_menu
+select_first_disk:
+	mov	si,offset first_disk
+	jmps	copy_selected_disk
+select_second_disk:
+	mov	si,offset second_disk
+
+;-----------------------------------------------------------------------------
+; Copy the selected 4A7h-byte descriptor into the working record.
+;-----------------------------------------------------------------------------
+copy_selected_disk:
+	mov	cx,4a7h
+	mov	di,offset selected_disk
+	mov	ax,ds
+	mov	es,ax
+	cld
+	rep	movsb
+	ret
+
+;-----------------------------------------------------------------------------
+; Convert a cylinder to its first logical block and number of blocks.
+;-----------------------------------------------------------------------------
+cylinder_to_blocks:
+	sub	ax,partition_start
+	dec	ax
+	mov	cx,sectors_per_cylinder
+	xor	dx,dx
+	mul	cx
+	shr	ax,1
+	shr	ax,1
+	mov	cx,sectors_per_cylinder
+	shr	cx,1
+	shr	cx,1
+	ret
+
+;-----------------------------------------------------------------------------
+; Decode an existing volume label into directory and allocation metadata.
+;-----------------------------------------------------------------------------
+decode_label:
+	mov	al,2d3h[bx]
+	inc	al
+	xor	ah,ah
+	push	ax
+	mov	dh,2d9h[bx]
+	mov	dl,2dah[bx]
+	mov	cx,10h
+	mov	ax,0h
+decode_label_at_0f25:
+	rol	dx,1
+	adc	al,0h
+	loop	decode_label_at_0f25
+	pop	cx
+	push	cx
+	mul	cl
+	mov	cx,4h
+	mul	cx
+	mov	6h[bx],ax
+	mov	cx,2d7h[bx]
+	inc	cx
+	mov	8h[bx],cx
+	mov	byte ptr 0bh[bx],0h
+	cmp	cx,ax
+	jnz	decode_label_at_0f4b
+	mov	byte ptr 0bh[bx],0ffh
+decode_label_at_0f4b:
+	mov	ax,6h[bx]
+	mov	cl,6h
+	shr	ax,cl
+	dec	ax
+	mov	0a3h[bx],ax
+	mov	ax,2d5h[bx]
+	inc	ax
+	pop	cx
+	shr	cx,1
+	shr	cx,1
+	shr	cx,1
+	mul	cx
+	mov	13h[bx],ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Label checksum is the negative sum of the 255 words after its first word.
+;-----------------------------------------------------------------------------
+label_checksum:
+	mov	si,2a9h
+	mov	cx,0ffh
+	mov	ax,0h
+label_checksum_at_0f72:
+	add	ax,[bx+si]
+	add	si,2h
+	loop	label_checksum_at_0f72
+	neg	ax
+	ret
+
+;-----------------------------------------------------------------------------
+; Sort occupied partition entries by their relative starting-sector fields.
+;-----------------------------------------------------------------------------
+sort_partitions:
+	mov	si,265h
+	mov	cx,3h
+sort_partitions_at_0f82:
+	mov	di,si
+	add	di,10h
+sort_partitions_at_0f87:
+	mov	al,4h[bx+si]
+	mov	ah,4h[bx+di]
+	cmp	ah,0h
+	jz	sort_partitions_at_0fbd
+	cmp	al,0h
+	jnz	sort_partitions_at_0f98
+	jmps	sort_partitions_at_0fa8
+sort_partitions_at_0f98:
+	mov	ax,0ah[bx+si]
+	cmp	ax,0ah[bx+di]
+	jg	sort_partitions_at_0fa8
+	mov	ax,8h[bx+si]
+	cmp	ax,8h[bx+di]
+	jl	sort_partitions_at_0fbd
+sort_partitions_at_0fa8:
+	push	cx
+	push	si
+	push	di
+	mov	cx,10h
+sort_partitions_at_0fae:
+	mov	al,[bx+si]
+	mov	ah,[bx+di]
+	mov	[bx+si],ah
+	mov	[bx+di],al
+	inc	si
+	inc	di
+	loop	sort_partitions_at_0fae
+	pop	di
+	pop	si
+	pop	cx
+sort_partitions_at_0fbd:
+	add	di,10h
+	cmp	di,2a5h
+	jnz	sort_partitions_at_0f87
+	add	si,10h
+	loop	sort_partitions_at_0f82
+	ret
+
+;-----------------------------------------------------------------------------
+; Read the MBR through the aligned EXTRA buffer, then copy its 512 bytes
+; into the caller's DATA buffer, preserving the disk result flags.
+;-----------------------------------------------------------------------------
+read_mbr:
+	push	es
+	push	bx
+	mov	es,word ptr dma_segment
+	mov	bx,0h
+	call	read_mbr_sectors
+	pop	bx
+	pop	es
+	push	si
+	push	di
+	push	ds
+	pushf
+	mov	ds,word ptr dma_segment
+	mov	di,bx
+	mov	si,0h
+	mov	cx,100h
+	cld
+	rep	movsw
+	popf
+	pop	ds
+	pop	di
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; Install the default MBR bootstrap while retaining the selected partition
+; table, copy the sector to EXTRA, and perform a verified write.
+;-----------------------------------------------------------------------------
+write_mbr:
+	cld
+	mov	si,offset default_mbr
+	mov	ax,ds
+	mov	es,ax
+	mov	di,offset mbr_buffer
+	mov	cx,1beh
+	rep	movsb
+	mov	si,offset mbr_buffer
+	mov	ax,dma_segment
+	mov	es,ax
+	mov	di,0h
+	mov	cx,200h
+	rep	movsb
+	mov	bx,0h
+	mov	dl,selected_disk
+	xor	dh,dh
+	jmp	write_mbr_sectors
+
+;-----------------------------------------------------------------------------
+; Read a CP/M label sector through EXTRA offset 600h into DATA.
+;-----------------------------------------------------------------------------
+read_label:
+	push	es
+	push	bx
+	mov	es,word ptr dma_segment
+	mov	bx,600h
+	call	read_label_sector
+	pop	bx
+	pop	es
+	push	si
+	push	di
+	push	ds
+	pushf
+	mov	ds,word ptr dma_segment
+	mov	di,bx
+	mov	si,600h
+	mov	cx,100h
+	cld
+	rep	movsw
+	popf
+	pop	ds
+	pop	di
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; Copy the selected label to EXTRA offset 600h and write it with comparison.
+;-----------------------------------------------------------------------------
+write_label:
+	cld
+	mov	ax,dma_segment
+	mov	es,ax
+	mov	si,offset volume_label
+	mov	di,600h
+	mov	cx,200h
+	rep	movsb
+	mov	bx,600h
+	mov	dl,selected_disk
+	xor	dh,dh
+	mov	cx,partition_start
+	jmp	write_label_sector
+
+;-----------------------------------------------------------------------------
+; Copy the 8K system-track payload to EXTRA, overlay the selected label at
+; 600h, then write the boot area (skipping sector one on cylinder zero).
+;-----------------------------------------------------------------------------
+write_system_track:
+	cld
+	mov	ax,dma_segment
+	mov	es,ax
+	mov	si,offset default_boot_copy1
+	mov	di,0h
+	push	di
+	mov	cx,2000h
+	rep	movsb
+	mov	si,offset volume_label
+	mov	di,600h
+	mov	cx,200h
+	rep	movsb
+	pop	bx
+	mov	cx,partition_start
+	mov	dl,selected_disk
+	xor	dh,dh
+	jmp	write_boot_sectors
+unused_return:
+	ret
+
+;-----------------------------------------------------------------------------
+; Display stream interpreter. NUL ends a stream; ordinary bytes go to the
+; console; FFh consumes a near CODE callback that may also consume operands.
+;-----------------------------------------------------------------------------
+print_template:
+	push	cx
+	push	dx
+template_next:
+	lodsb
+	or	al,al
+	jz	template_next_at_10a1
+	cmp	al,0ffh
+	jz	template_callback
+	call	console_out
+	jmps	template_next
+template_next_at_10a1:
+	pop	dx
+	pop	cx
+	ret
+template_callback:
+	lodsw
+	mov	bx,ax
+	cs_prefix	cs:byte ptr [bx]
+	call	bx
+	jmp	template_next
+
+;-----------------------------------------------------------------------------
+; Select OS-specific cursor visibility escape sequences.
+;-----------------------------------------------------------------------------
+cursor_on:
+	push	si
+	mov	al,concurrent_os
+	or	al,al
+	jz	cursor_on_at_10ba
+	mov	si,offset concurrent_cursor_on
+	jmps	cursor_on_at_10bd
+cursor_on_at_10ba:
+	mov	si,offset cpm_cursor_on
+cursor_on_at_10bd:
+	call	print_template
+	pop	si
+	ret
+cursor_off:
+	push	si
+	mov	al,concurrent_os
+	or	al,al
+	jz	cursor_off_at_10cf
+	mov	si,offset concurrent_cursor_off
+	jmps	cursor_on_at_10bd
+cursor_off_at_10cf:
+	mov	si,offset cpm_cursor_off
+	jmps	cursor_on_at_10bd
+
+;-----------------------------------------------------------------------------
+; Display callback: fetch a DATA word pointer and print three decimal digits.
+;-----------------------------------------------------------------------------
+template_number3:
+	lodsw
+	mov	bx,ax
+	mov	ax,[bx]
+	call	print_number3
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callback: fetch a DATA byte pointer and print its character.
+;-----------------------------------------------------------------------------
+template_character:
+	lodsw
+	mov	bx,ax
+	mov	al,[bx]
+	call	console_out
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callback: consume row/column bytes and emit VT52 ESC Y coordinates.
+;-----------------------------------------------------------------------------
+template_position:
+	mov	al,1bh
+	call	console_out
+	mov	al,59h
+	call	console_out
+	lodsb
+	add	al,20h
+	call	console_out
+	lodsb
+	add	al,20h
+	call	console_out
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callback: position and render the requested function-key caption.
+;-----------------------------------------------------------------------------
+template_key_caption:
+	call	template_position
+	xor	ax,ax
+	lodsb
+	mov	bx,ax
+	dec	bx
+	shl	bx,1
+	mov	ax,word ptr key_captions[bx]
+	mov	key_caption_value,ax
+	push	si
+	mov	si,offset key_caption_template
+	call	print_template
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callbacks for blink and reverse-video modes.
+;-----------------------------------------------------------------------------
+blink_on:
+	mov	al,1bh
+	call	console_out
+	mov	al,72h
+	call	console_out
+	ret
+blink_off:
+	mov	al,1bh
+	call	console_out
+	mov	al,75h
+	call	console_out
+	ret
+reverse_on:
+	mov	al,1bh
+	call	console_out
+	mov	al,73h
+	call	console_out
+	ret
+reverse_off:
+	mov	al,1bh
+	call	console_out
+	mov	al,74h
+	call	console_out
+	ret
+
+;-----------------------------------------------------------------------------
+; Conditional callbacks consume a DATA byte pointer and comparison byte.
+; A nested NUL-terminated stream is parsed even when output is suppressed.
+;-----------------------------------------------------------------------------
+template_if_equal:
+	lodsw
+	mov	bx,ax
+	lodsb
+	cmp	al,[bx]
+	jz	emit_nested_template
+	jmp	suppress_template
+template_if_not_equal:
+	lodsw
+	mov	bx,ax
+	lodsb
+	cmp	al,[bx]
+	jnz	emit_nested_template
+suppress_template:
+	mov	al,output_enabled
+	push	ax
+	mov	byte ptr output_enabled,0h
+	call	print_template
+	pop	ax
+	mov	output_enabled,al
+	ret
+emit_nested_template:
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Output AL through BDOS raw console I/O only when output_enabled is set.
+;-----------------------------------------------------------------------------
+console_out:
+	mov	ah,output_enabled
+	or	ah,ah
+	jz	console_out_at_117e
+	push	si
+	push	cx
+	mov	dl,al
+	mov	cl,f_rawio
+	int	i_bdos
+	pop	cx
+	pop	si
+console_out_at_117e:
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callback: print an unsigned DATA word in decimal.
+;-----------------------------------------------------------------------------
+template_decimal:
+	lodsw
+	mov	bx,ax
+	mov	ax,[bx]
+	mov	cx,0h
+template_decimal_at_1187:
+	sub	dx,dx
+	mov	bx,0ah
+	div	bx
+	add	dl,30h
+	push	dx
+	inc	cx
+	test	ax,ax
+	jnz	template_decimal_at_1187
+template_decimal_at_1197:
+	pop	dx
+	push	cx
+	mov	al,dl
+	call	console_out
+	pop	cx
+	loop	template_decimal_at_1197
+	ret
+
+;-----------------------------------------------------------------------------
+; Print the low three decimal digits, including leading zeroes.
+;-----------------------------------------------------------------------------
+print_number3:
+	mov	byte ptr decimal_width,3h
+	mov	cx,0h
+print_number3_at_11aa:
+	sub	dx,dx
+	mov	bx,0ah
+	div	bx
+	add	dl,30h
+	push	dx
+	inc	cx
+	dec	byte ptr decimal_width
+	jnz	print_number3_at_11aa
+print_number3_at_11bc:
+	pop	dx
+	push	cx
+	mov	al,dl
+	call	console_out
+	pop	cx
+	loop	print_number3_at_11bc
+	ret
+
+;-----------------------------------------------------------------------------
+; Unused shared hexadecimal display helpers.
+;-----------------------------------------------------------------------------
+print_hex_word:
+	push	ax
+	mov	al,ah
+	call	print_hex_byte
+	pop	ax
+print_hex_byte:
+	push	ax
+	ror	ax,1
+	ror	ax,1
+	ror	ax,1
+	ror	ax,1
+	call	print_hex_digit
+	pop	ax
+print_hex_digit:
+	and	ax,0fh
+	add	al,30h
+	cmp	al,39h
+	jng	print_hex_digit_at_11e6
+	add	al,7h
+print_hex_digit_at_11e6:
+	mov	dx,ax
+	mov	al,dl
+	call	console_out
+	ret
+
+;-----------------------------------------------------------------------------
+; Display callback: clear rows from the supplied row through row 22.
+;-----------------------------------------------------------------------------
+template_clear_rows:
+	lodsb
+	add	al,20h
+template_clear_rows_at_11f1:
+	mov	clear_row,al
+	mov	al,1bh
+	call	console_out
+	mov	al,59h
+	call	console_out
+	mov	al,clear_row
+	call	console_out
+	mov	al,20h
+	call	console_out
+	call	clear_line
+	mov	al,clear_row
+	inc	al
+	cmp	al,37h
+	jnz	template_clear_rows_at_11f1
+	ret
+clear_work_area:
+	mov	cx,14h
+	mov	si,offset work_area_position
+	call	print_template
+clear_work_area_at_121f:
+	call	clear_line
+	mov	si,offset next_row_escape
+	call	print_template
+	loop	clear_work_area_at_121f
+	ret
+clear_line:
+	push	si
+	mov	si,offset clear_line_escape
+	call	print_template
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; Raw console input polls BDOS 6; flush_keys discards pending bytes.
+;-----------------------------------------------------------------------------
+read_key:
+	mov	dl,0ffh
+	mov	cl,f_rawio
+	int	i_bdos
+	or	al,al
+	jz	read_key
+	ret
+flush_keys:
+	mov	dl,0ffh
+	mov	cl,f_rawio
+	int	i_bdos
+	or	al,al
+	jnz	flush_keys
+	ret
+
+;-----------------------------------------------------------------------------
+; Accept only one of the ten installed function-key codes enabled by the
+; current mask. Invalid or disabled keys ring the bell.
+;-----------------------------------------------------------------------------
+read_menu_key:
+	push	bx
+	call	flush_keys
+	call	read_key
+	mov	di,offset menu_keycodes
+	mov	dx,ds
+	mov	es,dx
+	mov	cx,0ah
+	repne	scasb
+	jnz	read_menu_key_at_1273
+	pop	bx
+	push	bx
+	add	bx,cx
+	mov	al,[bx]
+	or	al,al
+	jz	read_menu_key_at_1273
+	mov	ax,0ah
+	sub	ax,cx
+	mov	cx,ax
+	dec	cx
+	pop	bx
+	ret
+read_menu_key_at_1273:
+	mov	si,offset bell
+	call	print_template
+	pop	bx
+	jmp	read_menu_key
+
+;-----------------------------------------------------------------------------
+; Read three decimal digits; E before any digits returns FFFFh. The installed
+; F10 definition emits E. Other invalid input rings the bell.
+;-----------------------------------------------------------------------------
+read_number:
+	call	flush_keys
+	mov	byte ptr digits_left,3h
+	mov	word ptr number_value,0h
+read_number_at_128b:
+	call	read_digit
+	jnc	read_number_at_12a3
+	cmp	byte ptr digits_left,3h
+	jnz	read_number_at_129b
+	mov	ax,0ffffh
+	ret
+read_number_at_129b:
+	mov	al,7h
+	call	console_out
+	jmp	read_number_at_128b
+read_number_at_12a3:
+	push	ax
+	call	console_out
+	mov	al,20h
+	call	console_out
+	mov	al,20h
+	call	console_out
+	mov	al,8h
+	call	console_out
+	mov	al,8h
+	call	console_out
+	pop	ax
+	sub	al,30h
+	mov	cl,al
+	mov	ax,number_value
+	mov	bx,0ah
+	mul	bx
+	xor	ch,ch
+	add	ax,cx
+	mov	number_value,ax
+	dec	byte ptr digits_left
+	jnz	read_number_at_128b
+	ret
+read_digit:
+	call	read_key
+	cmp	al,45h
+	jz	read_digit_at_12ef
+	cmp	al,30h
+	jc	read_digit_at_12e7
+	cmp	al,3ah
+	jnc	read_digit_at_12e7
+	clc
+	ret
+read_digit_at_12e7:
+	mov	al,7h
+	call	console_out
+	jmp	read_digit
+read_digit_at_12ef:
+	stc
+	ret
+
+;-----------------------------------------------------------------------------
+; Draw the initial frame using the shared display-stream interpreter.
+;-----------------------------------------------------------------------------
+draw_frame:
+	mov	si,offset frame_template
+	call	print_template
+	ret
+frame_down:
+	push	si
+	mov	cx,16h
+frame_down_at_12fc:
+	mov	si,offset frame_down_escape
+	call	print_template
+	loop	frame_down_at_12fc
+	pop	si
+	ret
+frame_up:
+	push	si
+	mov	cx,16h
+frame_up_at_130a:
+	mov	si,offset frame_up_escape
+	call	print_template
+	loop	frame_up_at_130a
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; BIOS function 8 on drive 80h returns the available hard-disk count.
+;-----------------------------------------------------------------------------
+get_disk_count:
+	mov	ah,8h
+	mov	dl,80h
+	pushf
+	callf	dword ptr disk_gateway
+	mov	al,dl
+	jnc	get_disk_count_at_1323
+	mov	al,0h
+get_disk_count_at_1323:
+	ret
+
+;-----------------------------------------------------------------------------
+; Query and unpack maximum head, sectors per track and maximum cylinder.
+; Retain the shipped failure path, including its original stack handling.
+;-----------------------------------------------------------------------------
+get_geometry:
+	cld
+	push	bx
+	xor	ax,ax
+	mov	di,bx
+	stosw
+	stosw
+	mov	ah,8h
+	or	dl,80h
+	pushf
+	callf	dword ptr disk_gateway
+	jc	get_geometry_at_1350
+	pop	di
+	cld
+	mov	al,dh
+	stosb
+	mov	al,cl
+	and	al,3fh
+	stosb
+	mov	ah,cl
+	mov	al,ch
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	stosw
+	xor	al,al
+get_geometry_at_1350:
+	ret
+
+;-----------------------------------------------------------------------------
+; Concurrent-only XIOS query rejects open files before disk maintenance.
+;-----------------------------------------------------------------------------
+check_open_files:
+	xor	ax,ax
+	test	byte ptr gateway_is_xios,1h
+	jz	check_open_files_at_135e
+	mov	al,1dh
+	int	i_xios
+check_open_files_at_135e:
+	ret
+
+;-----------------------------------------------------------------------------
+; Disk wrappers select 12-byte BIOS request blocks: function, status, drive,
+; head, cylinder WORD, sector, count, buffer offset WORD and segment WORD.
+;-----------------------------------------------------------------------------
+read_mbr_sectors:
+	mov	ax,bx
+	mov	bx,offset mbr_read_request
+	jmp	setup_and_read
+write_mbr_sectors:
+	mov	ax,bx
+	mov	bx,offset mbr_write_request
+	call	setup_io_request
+	jmp	write_and_compare
+read_label_sector:
+	mov	ax,bx
+	mov	bx,offset label_read_request
+	mov	4h[bx],cx
+	jmp	setup_and_read
+write_label_sector:
+	mov	ax,bx
+	mov	bx,offset label_write_request
+	mov	4h[bx],cx
+	call	setup_io_request
+	jmp	write_and_compare
+read_block:
+	mov	si,cx
+	push	ax
+	mov	ax,bx
+	mov	bx,offset block_read_request
+	call	setup_io_request
+	pop	ax
+	call	block_to_chs
+	jmp	disk_io
+write_block:
+	mov	si,cx
+	push	ax
+	mov	ax,bx
+	mov	bx,offset block_write_request
+	call	setup_io_request
+	pop	ax
+	call	block_to_chs
+	jmp	write_and_compare
+write_boot_sectors:
+	mov	ax,bx
+	mov	bx,offset boot_write_request
+	mov	4h[bx],cx
+	mov	byte ptr 7h[bx],10h
+	mov	byte ptr 6h[bx],1h
+	cmp	cx,0h
+	jnz	write_boot_sectors_at_13cd
+	add	ax,200h
+	inc	byte ptr 6h[bx]
+	dec	byte ptr 7h[bx]
+write_boot_sectors_at_13cd:
+	call	setup_io_request
+	jmp	write_and_compare
+read_boot_sectors:
+	mov	ax,bx
+	mov	bx,offset boot_read_request
+	mov	4h[bx],cx
+	mov	byte ptr 7h[bx],10h
+	mov	byte ptr 6h[bx],1h
+	cmp	cx,0h
+	jnz	read_boot_sectors_at_13f1
+	add	ax,200h
+	inc	byte ptr 6h[bx]
+	dec	byte ptr 7h[bx]
+read_boot_sectors_at_13f1:
+	jmp	setup_and_read
+setup_io_request:
+	mov	2h[bx],dl
+	mov	8h[bx],ax
+	mov	word ptr 0ah[bx],es
+	ret
+setup_and_read:
+	call	setup_io_request
+	jmp	disk_io
+
+;-----------------------------------------------------------------------------
+; Translate a logical block through the label bad-block map and geometry
+; to BIOS CHS, then set transfer length and position in the request block.
+;-----------------------------------------------------------------------------
+block_to_chs:
+	mov	cx,44h[si]
+	jcxz	block_to_chs_at_141e
+	cld
+	lea	di,48h[si]
+	push	es
+	push	ds
+	pop	es
+	repne	scasw
+	pop	es
+	jnz	block_to_chs_at_141e
+	inc	cx
+	sub	cx,44h[si]
+	mov	ax,46h[si]
+	add	ax,cx
+block_to_chs_at_141e:
+	mul	word ptr 40h[si]
+	mov	cl,28h[si]
+	xor	ch,ch
+	div	cx
+	mov	cl,26h[si]
+	xor	dx,dx
+	div	cx
+	inc	dl
+	mov	6h[bx],dl
+	add	ax,36h[si]
+	mov	cl,25h[si]
+	xor	dx,dx
+	div	cx
+	mov	4h[bx],ax
+	mov	3h[bx],dl
+	mov	ax,40h[si]
+	shr	ax,1
+	shr	ax,1
+	mov	7h[bx],al
+	ret
+
+;-----------------------------------------------------------------------------
+; Write, read back into EXTRA offset 2000h, and compare the sector words.
+;-----------------------------------------------------------------------------
+write_and_compare:
+	mov	byte ptr [bx],3h
+	call	disk_io
+	or	al,al
+	jnz	write_and_compare_at_148a
+	push	word ptr 8h[bx]
+	mov	word ptr 8h[bx],2000h
+	mov	byte ptr [bx],2h
+	call	disk_io
+	pop	word ptr 8h[bx]
+	or	al,al
+	jnz	write_and_compare_at_148a
+	push	ds
+	push	es
+	les	di,dword ptr 8h[bx]
+	mov	si,2000h
+	mov	ch,7h[bx]
+	mov	ax,es
+	mov	ds,ax
+	xor	cl,cl
+	cld
+	repe	cmpsw
+	pop	es
+	pop	ds
+	mov	al,0h
+	jz	write_and_compare_at_148a
+	mov	al,0ffh
+write_and_compare_at_148a:
+	ret
+
+;-----------------------------------------------------------------------------
+; Issue BIOS requests through the saved far gateway with PUSHF. Retry up
+; to three times, resetting the controller between attempts; error 0Bh stops.
+;-----------------------------------------------------------------------------
+disk_io:
+	push	es
+	push	si
+	mov	cx,3h
+disk_retry:
+	push	cx
+	push	bx
+	mov	ah,[bx]
+	mov	al,7h[bx]
+	mov	dh,3h[bx]
+	mov	dl,2h[bx]
+	or	dl,80h
+	mov	cx,4h[bx]
+	xchg	ch,cl
+	ror	cl,1
+	ror	cl,1
+	and	cl,0c0h
+	or	cl,6h[bx]
+	les	bx,dword ptr 8h[bx]
+	pushf
+	callf	dword ptr disk_gateway
+	pop	bx
+	pop	cx
+	mov	1h[bx],ah
+	mov	al,0h
+	jnc	disk_retry_at_14d5
+	cmp	byte ptr 1h[bx],0bh
+	jz	disk_retry_at_14d3
+	push	cx
+	push	bx
+	mov	ah,0dh
+	pushf
+	callf	dword ptr disk_gateway
+	pop	bx
+	pop	cx
+	loop	disk_retry
+disk_retry_at_14d3:
+	mov	al,0ffh
+disk_retry_at_14d5:
+	pop	si
+	pop	es
+	ret
+
+;-----------------------------------------------------------------------------
+; Save the BIOS hard-disk controller option byte and mask its low three bits.
+; Concurrent obtains the disk gateway via XIOS 1Dh; CP/M uses INT 13h vector.
+;-----------------------------------------------------------------------------
+initialize_disk_gateway:
+	or	al,al
+	jz	initialize_disk_gateway_at_14de
+	mov	al,0ffh
+initialize_disk_gateway_at_14de:
+	mov	gateway_is_xios,al
+	push	es
+	xor	ax,ax
+	mov	es,ax
+	mov	al,es:.bios_disk_control
+	mov	saved_bios_disk_control,al
+	and	al,0f8h
+	mov	es:.bios_disk_control,al
+	test	byte ptr gateway_is_xios,1h
+	jz	initialize_disk_gateway_at_150c
+	mov	al,1dh
+	xor	dx,dx
+	mov	cx,dx
+	int	i_xios
+	mov	ax,dx
+	or	ax,cx
+	mov	al,0ffh
+	jz	initialize_disk_gateway_at_151d
+	jmps	initialize_disk_gateway_at_1513
+initialize_disk_gateway_at_150c:
+	les	cx,es:dword ptr .int13_vector
+	mov	dx,es
+initialize_disk_gateway_at_1513:
+	mov	disk_gateway,cx
+	mov	disk_gateway_segment,dx
+	xor	al,al
+initialize_disk_gateway_at_151d:
+	pop	es
+	ret
+
+;-----------------------------------------------------------------------------
+; Restore the BIOS controller option byte and reset the hard-disk controller.
+;-----------------------------------------------------------------------------
+restore_disk_gateway:
+	push	es
+	xor	ax,ax
+	mov	es,ax
+	mov	al,saved_bios_disk_control
+	mov	es:.bios_disk_control,al
+	pop	es
+	mov	ah,0dh
+	mov	dl,80h
+	pushf
+	callf	dword ptr disk_gateway
+	ret
+
+;-----------------------------------------------------------------------------
+; Status display uses Concurrent XIOS calls or CP/M escape sequences.
+;-----------------------------------------------------------------------------
+show_status_message:
+	mov	al,concurrent_os
+	or	al,al
+	jz	show_status_message_at_1548
+	push	si
+	call	xios_prepare_status
+	pop	si
+	mov	cx,ds
+	call	xios_write_status
+	ret
+show_status_message_at_1548:
+	push	si
+	mov	si,offset status_escape
+	call	print_template
+	pop	si
+	inc	si
+	call	print_template
+	ret
+clear_status_message:
+	mov	al,concurrent_os
+	or	al,al
+	jz	clear_status_message_at_1560
+	call	xios_clear_status
+	ret
+clear_status_message_at_1560:
+	mov	si,offset status_clear_escape
+	call	print_template
+	ret
+
+;-----------------------------------------------------------------------------
+; Concurrent XIOS wrappers; ES is restored to the saved UDA segment.
+;-----------------------------------------------------------------------------
+xios_clear_status:
+	mov	al,12h
+	jmps	xios_call
+xios_prepare_status:
+	mov	al,13h
+	jmps	xios_call
+xios_write_status:
+	mov	al,15h
+	jmps	xios_call
+xios_inhibit_abort:
+	mov	al,18h
+	jmps	xios_call
+disable_disk_polling:
+	mov	ah,0h
+	jmps	xios_disk_polling
+enable_disk_polling:
+	mov	ah,0ffh
+xios_disk_polling:
+	mov	al,21h
+	jmps	xios_call
+xios_call:
+	mov	es,word ptr uda_segment
+	int	i_xios
+	ret
+
+;-----------------------------------------------------------------------------
+; Original paragraph padding after the final return.
+;-----------------------------------------------------------------------------
+code_padding	db	0h,0h,0h,0h,0h,0h,0h,0h
+
+	dseg
+	org	0
+
+
+;-----------------------------------------------------------------------------
+; Loader base page, zero-filled in the reference executable.
+;-----------------------------------------------------------------------------
+base_page	rb	100h
+
+;-----------------------------------------------------------------------------
+; Runtime OS, disk and error state. EXTRA supplies the aligned DMA segment.
+;-----------------------------------------------------------------------------
+concurrent_os	db	0h
+disk_count	db	0h
+cpm_volume_count	db	0h
+error_number	db	0h
+dma_segment	dw	0h
+floppy_count	db	0h
+frame_drawn	db	0h
+editing_size	db	0h
+
+;-----------------------------------------------------------------------------
+; First physical disk descriptor, 4A7h bytes. Includes geometry, free extents,
+; bad cylinders, MBR and CP/M label. The second and working records match it.
+;-----------------------------------------------------------------------------
+first_disk	db	0h
+disk1_drive_letter	db	0h
+disk1_drive_valid	db	0h
+disk1_has_cpm	db	0h
+disk1_cylinder_sectors	db	0h,0h
+disk1_max_dir_entries	db	0h,0h
+disk1_dir_entries	db	0h,0h
+disk1_large_flag	db	0h
+disk1_expanded_flag	db	0h
+disk1_used_cylinders	db	0h,0h
+disk1_total_cylinders	db	0h,0h
+disk1_end_cylinder	db	0h,0h
+disk1_create_allowed	db	0h
+disk1_records_available	db	0h,0h
+disk1_valid_label	db	0h
+disk1_partition_offset	db	0h,0h
+disk1_cylinder_table	rb	10h
+disk1_free_table	rb	14h
+disk1_bad_cylinder_table	rb	63h
+disk1_geometry	rb	8h
+disk1_mbr	rb	1beh
+disk1_partitions	rb	40h
+disk1_signature	db	0h,0h
+disk1_label	rb	200h
+
+;-----------------------------------------------------------------------------
+; Second physical disk descriptor.
+;-----------------------------------------------------------------------------
+second_disk	db	0h
+disk2_drive_letter	db	0h
+disk2_drive_valid	db	0h
+disk2_has_cpm	db	0h
+disk2_cylinder_sectors	db	0h,0h
+disk2_max_dir_entries	db	0h,0h
+disk2_dir_entries	db	0h,0h
+disk2_large_flag	db	0h
+disk2_expanded_flag	db	0h
+disk2_used_cylinders	db	0h,0h
+disk2_total_cylinders	db	0h,0h
+disk2_end_cylinder	db	0h,0h
+disk2_create_allowed	db	0h
+disk2_records_available	db	0h,0h
+disk2_valid_label	db	0h
+disk2_partition_offset	db	0h,0h
+disk2_cylinder_table	rb	10h
+disk2_free_table	rb	14h
+disk2_bad_cylinder_table	rb	63h
+disk2_geometry	rb	8h
+disk2_mbr	rb	1beh
+disk2_partitions	rb	40h
+disk2_signature	db	0h,0h
+disk2_label	rb	200h
+
+;-----------------------------------------------------------------------------
+; Selected disk working copy; field names describe the partition editor state.
+;-----------------------------------------------------------------------------
+selected_disk	db	0h
+selected_letter	db	0h
+selected_valid	db	0h
+selected_has_cpm	db	0h
+sectors_per_cylinder	dw	0h
+maximum_directory_entries	dw	0h
+directory_entries	dw	0h
+large_volume	db	0h
+directory_expanded	db	0h
+assigned_cylinders	dw	0h
+disk_cylinders	db	0h,0h
+partition_end	dw	0h
+can_create	db	0h
+allocation_records	dw	0h
+label_valid	db	0h
+cpm_partition_offset	dw	0h
+partition_cylinders	db	0h,0h
+partition1_end	db	0h,0h
+partition2_start	db	0h,0h
+partition2_end	db	0h,0h
+partition3_start	db	0h,0h
+partition3_end	db	0h,0h
+partition4_start	db	0h,0h
+partition4_end	db	0h,0h
+free_extents	rb	14h
+bad_cylinders	rb	63h
+last_head	db	0h
+sectors_per_track	db	0h
+last_cylinder	db	0h,0h
+last_directory_block	dw	0h
+	db	0h,0h
+
+;-----------------------------------------------------------------------------
+; Working MBR: bootstrap, four 16-byte entries, AA55h signature.
+;-----------------------------------------------------------------------------
+mbr_buffer	rb	1beh
+partition_table	db	0h,0h,0h,0h
+partition1_type	rb	0ch
+partition2_entry	db	0h,0h,0h,0h
+partition2_type	rb	0ch
+partition3_entry	db	0h,0h,0h,0h
+partition3_type	rb	0ch
+partition4_entry	db	0h,0h,0h,0h
+partition4_type	rb	0ch
+mbr_signature	dw	0h
+
+;-----------------------------------------------------------------------------
+; CP/M label: checksum, identity, geometry, flags, DPB and bad-block map.
+;-----------------------------------------------------------------------------
+volume_label	dw	0h
+volume_identity	rb	1fh
+partition_start	dw	0h
+partition_cylinders_count	dw	0h
+head_count	db	0h
+physical_spt	db	0h
+volume_flags	db	0h
+records_per_sector	db	0h
+dpb_spt	dw	0h
+dpb_bsh	db	0h
+dpb_blm	db	0h
+dpb_exm	db	0h
+dpb_dsm	dw	0h
+dpb_drm	dw	0h
+dpb_al0	db	0h
+dpb_al1	db	0h
+dpb_cks	dw	0h
+dpb_off	dw	0h
+	rb	8h
+logical_block_records	dw	0h
+remap_table_entries	dw	0h
+bad_block_count	dw	0h
+last_spare_block	dw	0h
+bad_block_table	rb	1b8h
+
+;-----------------------------------------------------------------------------
+; Serialized disk payloads rebuilt from the boot-stage instruction sources:
+; the MBR, two secondary boot copies, setup sector, label and tertiary loader.
+;-----------------------------------------------------------------------------
+; Disk images rebuilt from the independently assembled boot sources.
+; These labels remain DATA-relative in the HDMAINT host program.
+default_mbr:
+	include mbr.inc
+default_boot_copy1:
+	include bootsect.inc
+default_boot_copy2:
+	include bootsect.inc
+
+	include hdboot.inc
+system_loader:
+	include loader.inc
+
+;-----------------------------------------------------------------------------
+; Private 256-byte stack; SP starts at its upper boundary.
+;-----------------------------------------------------------------------------
+private_stack	rb	100h
+
+;-----------------------------------------------------------------------------
+; OS checks use dollar-terminated strings. Later menu streams terminate at NUL.
+;-----------------------------------------------------------------------------
+stack_top:
+msg_version	db	'Cannot execute under this operating system version$'
+msg_remote_console	db	0dh,0ah,'This utility cannot be used from a user terminal.',0dh,0ah,0ah,'$'
+msg_no_disk	db	'Cannot execute without a hard disk$'
+msg_open_files	db	'Cannot execute while any files are open$'
+msg_static_console	db	'Virtual Console must be in Dynamic mode$'
+concurrent_console_setup	db	1bh,'z',1bh,'f',1bh,'w',0h
+cpm_console_setup	db	1bh,'n',1bh,'q',1bh,'t',1bh,'u',1bh,'w',0h
+
+;-----------------------------------------------------------------------------
+; Ten CODE pointers per action vector, selected by F1..F10. Disabled entries
+; remain present; enabled_keys prevents their selection.
+;-----------------------------------------------------------------------------
+main_actions	dw	offset select_partition_disk
+	dw	offset entry
+	dw	offset select_verify_disk
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset select_options_disk
+	dw	offset entry
+	dw	offset exit_program
+	dw	offset entry
+
+;-----------------------------------------------------------------------------
+; Display streams: FFh followed by a CODE callback; pointer operands are
+; DATA-relative. Other bytes are literal text or terminal escape sequences.
+;-----------------------------------------------------------------------------
+main_screen	db	0ffh
+	dw	offset template_position
+	db	4h,'#Main Menu',0ffh
+	dw	offset template_position
+	db	6h,' ',0ffh
+	dw	offset blink_on
+	db	'SELECT FUNCTION',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	8h,14h,1h,'Display or change disk partitioning',0ffh
+	dw	offset template_if_not_equal
+	dw	offset cpm_volume_count
+	db	0h,0ffh
+	dw	offset template_key_caption
+	db	0bh,14h,3h,'Verify a CP/M volume',0ffh
+	dw	offset template_key_caption
+	db	11h,14h,7h,'Display or change CP/M options',0h,0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Exit from this program',0h
+partition_disk_title	db	0ffh
+	dw	offset template_position
+	db	4h,16h,'Display or Change Disk Partitioning',0h
+partition_actions	dw	offset entry
+	dw	offset delete_volume
+	dw	offset entry
+	dw	offset boot_partition_menu
+	dw	offset entry
+	dw	offset create_partition
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset partition_menu_at_04cd
+partition_screen	db	0ffh
+	dw	offset template_position
+	db	0ah,' ',0ffh
+	dw	offset blink_on
+	db	'SELECT FUNCTION',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_if_not_equal
+	dw	offset selected_has_cpm
+	db	0h,0ffh
+	dw	offset template_key_caption
+	db	0bh,14h,2h,'Delete CP/M volume',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset selected_disk
+	db	0h,0ffh
+	dw	offset template_key_caption
+	db	0eh,14h,4h,'Change bootable partition',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset can_create
+	db	0h,0ffh
+	dw	offset template_key_caption
+	db	11h,14h,6h,'Change or create CP/M partition',0h,0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Return to main menu',0h
+replace_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset create_partition_at_04e6
+	dw	offset entry
+	dw	offset main_menu
+maximum_end_cylinder	dw	offset entry
+start_screen	db	1bh,'Y**If the starting cylinder number shown below is acceptable,',1bh
+	db	'Y+*press F10 to proceed.  Otherwise, enter a starting cylinder',1bh
+	db	'Y,*number.  Remember that a CP/M partition must be at least',1bh
+	db	'Y-*10 cylinders long.',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Continue with starting cylinder ',0ffh
+	dw	offset template_number3
+	dw	offset partition_start
+	db	1bh,'Y2=',0ffh
+	dw	offset blink_on
+	db	'Enter starting cylinder: ___',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset cursor_on
+	db	1bh,'Y2V',0h
+maximum_cpm22_cylinders	dw	0h
+size_screen	db	1bh,'Y**If the CP/M partition size shown below is acceptable, press',1bh
+	db	'Y+*F10 to proceed.  Otherwise, enter a new size.  Remember that',1bh
+	db	'Y,*the CP/M partition must be at least 10 cylinders long.',0ffh
+	dw	offset template_if_not_equal
+	dw	offset large_volume
+	db	0h,0ffh
+	dw	offset blink_on
+	db	0h,1bh,'Y.*Only Concurrent CP/M-86 can access volumes larger than 8192K',1bh
+	db	'Y/*bytes.  If you intend to use this volume with CP/M-86, make',1bh
+	db	'Y0*sure the partition size is no greater than ',0ffh
+	dw	offset template_decimal
+	dw	offset maximum_cpm22_cylinders
+	db	' cylinders.',0ffh
+	dw	offset blink_on
+	db	1bh,'Y2<Enter partition size: ___',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Continue with partition size of ',0ffh
+	dw	offset template_number3
+	dw	offset partition_cylinders_count
+	db	' (',0ffh
+	dw	offset template_decimal
+	dw	offset allocation_records
+	db	'K)  ',0ffh
+	dw	offset cursor_on
+	db	1bh,'Y2R',0h
+
+;-----------------------------------------------------------------------------
+; Partition-creation scratch values and progress counters.
+;-----------------------------------------------------------------------------
+other_assigned_cylinders	dw	0h
+directory_size_kb	dw	0h
+current_extent_pointer	dw	0h
+bad_block_capacity	dw	0h
+original_spare_base	dw	0h
+create_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset commit_volume_at_08b7
+	dw	offset entry
+create_cylinder	dw	0h
+create_block	dw	0h
+create_bad_count	dw	0h
+create_screen	db	1bh,'Y%.Creating CP/M volume on disk ',0ffh
+	dw	offset template_character
+	dw	offset selected_letter
+	db	': cylinders ',0ffh
+	dw	offset template_number3
+	dw	offset partition_start
+	db	'-',0ffh
+	dw	offset template_number3
+	dw	offset partition_end
+	db	0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Stop creation of CP/M volume',0h
+delete_progress	db	1bh,'Y(<Deleting old CP/M volume',0h
+create_progress	db	1bh,'Y(>',0ffh,'+',12h,1bh,'Y(>Creating CP/M volume',0h
+test_progress	db	1bh,'Y(>Testing cylinder ',0ffh
+	dw	offset template_number3
+	dw	offset create_cylinder
+	db	1bh,'Y*1',0ffh
+	dw	offset template_number3
+	dw	offset create_bad_count
+	db	' bad blocks found (will be ignored by CP/M)',0h
+cylinder_progress	db	1bh,'Y(O',0ffh
+	dw	offset template_number3
+	dw	offset create_cylinder
+	db	0h
+bad_block_progress	db	1bh,'Y*1',0ffh
+	dw	offset template_number3
+	dw	offset create_bad_count
+	db	0h
+enable_progress	db	1bh,'Y(>Enabling CP/M volume',0h
+create_complete	db	1bh,'Y(8',0ffh,'+',12h,1bh,'Y(8Creation of CP/M volume complete',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'To continue                  ',0h
+create_abort_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset resume_create
+	dw	offset entry
+	dw	offset stop_create
+	dw	offset entry
+create_abort_screen	db	1bh,'Y/4',0ffh
+	dw	offset blink_on
+	db	'Do you really want to stop?',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	11h,14h,7h,'Continue creating CP/M volume',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Stop creation of CP/M volume',0h
+create_resume_screen	db	1bh,'Y/4                             ',1bh,'Y14     ',1bh
+	db	'Y24                                          ',1bh,'Y34     ',0h
+bad_system_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset retry_start_cylinder
+	dw	offset entry
+	dw	offset bad_system_cylinder_at_0ab1
+	dw	offset entry
+bad_system_screen	db	1bh,'Y**HDMAINT cannot create a CP/M volume beginning at cylinder ',0ffh
+	dw	offset template_number3
+	dw	offset partition_start
+	db	1bh,'Y+*because of a bad block in the CP/M system area.',1bh
+	db	'Y-*You can either stop the creation process or try again with a',1bh
+	db	'Y.*new starting cylinder number.  If you stop, no CP/M volume',1bh
+	db	'Y/*is created.',0ffh
+	dw	offset template_key_caption
+	db	11h,14h,7h,'Set new starting cylinder',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Stop creation of CP/M volume',0h
+delete_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset confirm_delete
+	dw	offset entry
+	dw	offset cancel_delete
+	dw	offset entry
+delete_warning	db	1bh,'Y+*The operation you have chosen will delete all the CP/M files',1bh
+	db	'Y,*and system information on the hard disk.',1bh,'Y/4',0ffh
+	dw	offset blink_on
+	db	'Do you really want to proceed?',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	11h,14h,7h,'Delete existing CP/M volume',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Do not delete existing CP/M volume',0h
+delete_message	db	0ffh
+	dw	offset template_clear_rows
+	db	0fh,1bh,'Y2>DELETING CP/M VOLUME',0h
+boot_actions	dw	offset entry
+	dw	offset cycle_boot_partition
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset boot_partition_menu_at_0b44
+boot_screen	db	0ffh
+	dw	offset template_position
+	db	0ah,0ah,'CP/M requires the file CPM.SYS or CCPM.SYS on the hard disk',0ffh
+	dw	offset template_position
+	db	0bh,0ah,'before it can boot.  Use PIP to copy these files from your',0ffh
+	dw	offset template_position
+	db	0ch,0ah,'diskette.',0ffh
+	dw	offset template_position
+	db	0fh,' ',0ffh
+	dw	offset blink_on
+	db	'SELECT FUNCTION',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	11h,14h,2h,'Change bootable partition',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Return to main menu',0h
+partition_clear_position	db	1bh,'Y) ',0h
+partition_display_row	db	0h
+partition_blank_position	db	1bh,'B',0h
+partition_header	db	0ffh
+	dw	offset template_position
+	db	4h,2h,'Disk ',0ffh
+	dw	offset template_character
+	dw	offset selected_letter
+	db	': ',0ffh
+	dw	offset template_number3
+	dw	offset assigned_cylinders
+	db	' of ',0ffh
+	dw	offset template_number3
+	dw	offset disk_cylinders
+	db	' cylinders assigned:'
+partition_footer	db	0ffh
+	dw	offset template_if_not_equal
+	dw	offset selected_has_cpm
+	db	0h,0ffh
+	dw	offset template_if_equal
+	dw	offset label_valid
+	db	0h,1bh,'Y&+',1bh,'sCP/M system area is defective',1bh,'t',0h,0h,0h
+partition1_line	db	1bh,'Y',0ffh
+	dw	offset template_character
+	dw	offset partition_display_row
+	db	'J',0ffh
+	dw	offset template_number3
+	dw	offset partition_cylinders
+	db	'-',0ffh
+	dw	offset template_number3
+	dw	offset partition1_end
+	db	'  ',0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition1_type
+	db	0dbh,'non-CP/M use',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition1_type
+	db	0dbh,0ffh
+	dw	offset template_if_equal
+	dw	offset large_volume
+	db	0h,'CP/M        ',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset editing_size
+	db	0h,1bh,'s',1bh,'r',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset large_volume
+	db	0h,'CCP/M only  ',0h,1bh,'t',1bh,'u',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition_table
+	db	80h,'  (bootable)',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition_table
+	db	80h,'            ',0h,0h
+partition2_line	db	1bh,'Y',0ffh
+	dw	offset template_character
+	dw	offset partition_display_row
+	db	'J',0ffh
+	dw	offset template_number3
+	dw	offset partition2_start
+	db	'-',0ffh
+	dw	offset template_number3
+	dw	offset partition2_end
+	db	'  ',0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition2_type
+	db	0dbh,'non-CP/M use',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition2_type
+	db	0dbh,0ffh
+	dw	offset template_if_equal
+	dw	offset large_volume
+	db	0h,'CP/M        ',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset editing_size
+	db	0h,1bh,'s',1bh,'r',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset large_volume
+	db	0h,'CCP/M only  ',0h,1bh,'t',1bh,'u',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition2_entry
+	db	80h,' (bootable)',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition2_entry
+	db	80h,'           ',0h,0h
+partition3_line	db	1bh,'Y',0ffh
+	dw	offset template_character
+	dw	offset partition_display_row
+	db	'J',0ffh
+	dw	offset template_number3
+	dw	offset partition3_start
+	db	'-',0ffh
+	dw	offset template_number3
+	dw	offset partition3_end
+	db	'  ',0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition3_type
+	db	0dbh,'non-CP/M use',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition3_type
+	db	0dbh,0ffh
+	dw	offset template_if_equal
+	dw	offset large_volume
+	db	0h,'CP/M        ',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset editing_size
+	db	0h,1bh,'s',1bh,'r',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset large_volume
+	db	0h,'CCP/M only  ',0h,1bh,'t',1bh,'u',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition3_entry
+	db	80h,' (bootable)',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition3_entry
+	db	80h,'           ',0h,0h
+partition4_line	db	1bh,'Y',0ffh
+	dw	offset template_character
+	dw	offset partition_display_row
+	db	'J',0ffh
+	dw	offset template_number3
+	dw	offset partition4_start
+	db	'-',0ffh
+	dw	offset template_number3
+	dw	offset partition4_end
+	db	'  ',0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition4_type
+	db	0dbh,'non-CP/M use',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition4_type
+	db	0dbh,0ffh
+	dw	offset template_if_equal
+	dw	offset large_volume
+	db	0h,'CP/M        ',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset editing_size
+	db	0h,1bh,'s',1bh,'r',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset large_volume
+	db	0h,'CCP/M only  ',0h,1bh,'t',1bh,'u',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset partition4_entry
+	db	80h,' (bootable)',0h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset partition4_entry
+	db	80h,'           ',0h,0h
+verify_abort_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset resume_verify
+	dw	offset entry
+	dw	offset stop_verify
+verify_abort_screen	db	1bh,'Y02',0ffh
+	dw	offset blink_on
+	db	'Do you really want to stop?',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	11h,12h,8h,'Continue verifying CP/M volume',0h
+verify_resume_screen	db	1bh,'Y02                            ',1bh,'Y12     ',1bh
+	db	'Y22                                          ',1bh,'Y32     ',0h
+verify_cylinder_number	dw	0h
+verify_block_number	dw	0h
+verify_bad_count	dw	0h
+verify_done_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset verify_volume
+	dw	offset entry
+	dw	offset main_menu
+verify_title	db	1bh,'Y$>Verify a CP/M volume',0h
+verify_screen	db	1bh,'Y%2Scanning CP/M volume on disk ',0ffh
+	dw	offset template_character
+	dw	offset selected_letter
+	db	': for bad blocks',1bh,'Y(<',0ffh
+	dw	offset template_number3
+	dw	offset bad_block_count
+	db	' bad blocks known to CP/M and ignored',1bh,'Y)<',0ffh
+	dw	offset template_number3
+	dw	offset verify_bad_count
+	db	' additional bad blocks have been found',1bh,'Y/<Scanning cylinder ',0ffh
+	dw	offset template_number3
+	dw	offset verify_cylinder_number
+	db	0ffh
+	dw	offset template_key_caption
+	db	14h,12h,0ah,'Stop verify of CP/M volume',0h
+verify_cylinder_progress	db	1bh,'Y/N',0ffh
+	dw	offset template_number3
+	dw	offset verify_cylinder_number
+	db	0h
+verify_error_progress	db	1bh,'Y)<',0ffh
+	dw	offset template_number3
+	dw	offset verify_bad_count
+	db	0h
+verify_system_error	db	1bh,'Y+<CP/M system area is defective',0h
+verify_complete	db	1bh,'Y/<Verify complete      ',0ffh
+	dw	offset template_key_caption
+	db	11h,12h,8h,'Verify disk again',0ffh
+	dw	offset template_key_caption
+	db	14h,12h,0ah,'Return to main menu         ',0h
+options_actions	dw	offset entry
+	dw	offset toggle_directory
+	dw	offset entry
+	dw	offset toggle_write_verify
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset accept_options
+create_options_actions	dw	offset entry
+	dw	offset toggle_directory
+	dw	offset entry
+	dw	offset toggle_write_verify
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset accept_options
+keep_directory_size	db	0ffh
+verify_writes	db	0h
+creating_volume	db	0h
+options_title	db	1bh,'Y$6Display or Change CP/M Options',0h
+options_screen	db	0ffh
+	dw	offset template_if_not_equal
+	dw	offset directory_expanded
+	db	0h,1bh,'Y)3Directory is at maximum size (',0ffh
+	dw	offset template_decimal
+	dw	offset maximum_directory_entries
+	db	' entries)',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset directory_expanded
+	db	0h,1bh,'Y$*If you intend to use passwords or time stamps on your files, ','we'
+	db	1bh,'Y%*recommend that you increase the directory size to the maximum','.',1bh
+	db	'Y&*Once the directory size has been increased, it cannot be made',1bh,'Y',27h
+	db	'*smaller again.'
+directory_option	db	0ffh
+	dw	offset template_key_caption
+	db	8h,14h,2h,0ffh
+	dw	offset template_if_not_equal
+	dw	offset keep_directory_size
+	db	0h,0ffh
+	dw	offset blink_on
+	db	0h,0ffh
+	dw	offset template_decimal
+	dw	offset directory_entries
+	db	0ffh
+	dw	offset blink_off
+	db	'/',0ffh
+	dw	offset template_if_equal
+	dw	offset keep_directory_size
+	db	0h,0ffh
+	dw	offset blink_on
+	db	0h,0ffh
+	dw	offset template_decimal
+	dw	offset maximum_directory_entries
+	db	0ffh
+	dw	offset blink_off
+	db	' directory entries',0h,1bh
+	db	'Y,*CP/M optionally will verify that every write to the hard disk',1bh
+	db	'Y-*is successful by reading the data back.',0ffh,91h,10h
+write_verify_option	db	0ffh
+	dw	offset template_key_caption
+	db	0eh,14h,4h,'CP/M ',0ffh
+	dw	offset template_if_not_equal
+	dw	offset verify_writes
+	db	0h,0ffh
+	dw	offset blink_on
+	db	0h,'will',0ffh
+	dw	offset blink_off
+	db	'/',0ffh
+	dw	offset template_if_equal
+	dw	offset verify_writes
+	db	0h,0ffh
+	dw	offset blink_on
+	db	0h,'will not',0ffh
+	dw	offset blink_off
+	db	' verify after writes',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset creating_volume
+	db	0h,1bh,'Y2-Changes will take effect at the next POWER-ON or RESET',0h,0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Accept CP/M options shown',0h
+reboot_actions	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset reboot
+	dw	offset entry
+error_status	db	27h,'Unable to continue:  Type D for details',0h
+error_details	db	1bh,'Y%+Unable to continue: ',0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	2h,'Cannot write to Partition Table',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	1h,'Cannot read the Partition Table',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	4h,'Cannot write to CP/M system area',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	3h,'Cannot read the CP/M system area',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	5h,'Too many bad blocks were found',0h
+reboot_screen	db	1bh,'Y,*It is necessary to reload the operating system from diskette',1bh
+	db	'Y-*at this time.',1bh,'Y12',0ffh
+	dw	offset blink_on
+	db	'Please insert a system diskette in drive A:',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	14h,14h,9h,'Reload operating system from diskette',0h
+error_console_mode	db	7h,7h,0h
+exit_console_mode	db	1bh,'E',0h
+restore_concurrent_mode	db	1bh,'z',0h
+restore_cpm_mode	db	1bh,'m',1bh,'v',0h
+
+;-----------------------------------------------------------------------------
+; Function-key codes followed by ten runtime enable flags.
+;-----------------------------------------------------------------------------
+menu_keycodes	db	'VARBOCTDXE'
+enabled_keys	rb	0ah
+disk_actions	dw	offset entry
+	dw	offset select_first_disk
+	dw	offset entry
+	dw	offset select_second_disk
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset entry
+	dw	offset cancel_disk
+disk_screen	db	1bh,'Y&B',0ffh
+	dw	offset blink_on
+	db	'SELECT DISK',0ffh
+	dw	offset blink_off
+	db	0ffh
+	dw	offset template_key_caption
+	db	8h,14h,2h,'Disk ',0ffh
+	dw	offset template_character
+	dw	offset disk1_drive_letter
+	db	':',0ffh
+	dw	offset template_key_caption
+	db	0bh,14h,4h,'Disk ',0ffh
+	dw	offset template_character
+	dw	offset disk2_drive_letter
+	db	':',0ffh
+	dw	offset template_key_caption
+	db	14h,14h,0ah,'Return to main menu',0h
+cpm_cursor_on	db	1bh,'m',0h
+cpm_cursor_off	db	1bh,'n',0h
+concurrent_cursor_on	db	1bh,'z',0h
+concurrent_cursor_off	db	1bh,'f',0h
+key_caption_template	db	1bh,'D',0dah,0c4h,0c4h,0c4h,0c4h,0bfh,1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh
+	db	'B',1bh,'D',0b3h,' F'
+key_caption_value	dw	2031h
+	db	0b3h,' --',10h,' ',1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh,'D',1bh
+	db	'D',1bh,'D',1bh,'D',1bh,'D',1bh,'B',0c0h,0c4h,0c4h,0c4h,0c4h,0d9h,1bh,'C',1bh,'C'
+	db	1bh,'C',1bh,'C',1bh,'C',1bh,'A',0h
+key_captions	db	'1 2 3 4 5 6 7 8 9 10'
+output_enabled	db	0ffh
+clear_row	db	0h
+work_area_position	db	0ffh
+	dw	offset template_position
+	db	3h,0h,0h
+next_row_escape	db	1bh,'B',0h
+clear_line_escape	db	0dh,0b3h,1bh,'K',0ah,0dh,8h,0b3h,1bh,'A',0h
+bell	db	7h,0h
+digits_left	db	0h
+number_value	dw	0h
+frame_template	db	1bh,'E',0dah,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0bfh,1bh,'B',0ffh
+	dw	offset frame_up
+	db	0d9h,0ffh
+	dw	offset template_position
+	db	1h,0h,0ffh
+	dw	offset frame_down
+	db	0c0h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0ffh
+	dw	offset template_position
+	db	2h,0h,0c6h,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh
+	db	0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh
+	db	0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh
+	db	0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh
+	db	0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh,0cdh
+	db	0b5h,0ffh
+	dw	offset template_position
+	db	1h,5h,'Hard Disk Maintenance for Concurrent CP/M-86 and CP/M-86  versio','n 1.1'
+	db	1bh,'v',0h
+frame_down_escape	db	0b3h,1bh,'D',1bh,'B',0h
+frame_up_escape	db	0b3h,1bh,'B',0h
+
+;-----------------------------------------------------------------------------
+; Saved BIOS state and disk request descriptors. Each request is 12 bytes:
+; function, status, drive, head, cylinder word, sector, count, far buffer.
+;-----------------------------------------------------------------------------
+saved_bios_disk_control	db	0h
+gateway_is_xios	db	0h
+label_write_request	db	3h,0h,0h,0h
+	dw	0h
+	db	4h,1h
+	dw	0h
+	dw	0h
+label_read_request	db	2h,0h,0h,0h
+	dw	0h
+	db	4h,1h
+	dw	0h
+	dw	0h
+block_write_request	db	3h,0h,0h,0h
+	dw	0h
+	db	0h,4h
+	dw	0h
+	dw	0h
+block_read_request	db	2h,0h,0h,0h
+	dw	0h
+	db	0h,4h
+	dw	0h
+	dw	0h
+mbr_write_request	db	3h,0h,0h,0h
+	dw	0h
+	db	1h,1h
+	dw	0h
+	dw	0h
+mbr_read_request	db	2h,0h,0h,0h
+	dw	0h
+	db	1h,1h
+	dw	0h
+	dw	0h
+boot_write_request	db	3h,0h,0h,0h
+	dw	0h
+	db	1h,10h
+	dw	0h
+	dw	0h
+boot_read_request	db	2h,0h,0h,0h
+	dw	0h
+	db	1h,10h
+	dw	0h
+	dw	0h
+
+;-----------------------------------------------------------------------------
+; Saved BIOS/XIOS disk gateway, called with PUSHF as an interrupt handler.
+;-----------------------------------------------------------------------------
+disk_gateway	dw	0h
+disk_gateway_segment	dw	0h
+status_escape	db	1bh,'Y7"',0h
+status_clear_escape	db	1bh,'Y7!',0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h,0c4h
+	db	0h
+
+;-----------------------------------------------------------------------------
+; Saved Concurrent UDA/CCB/key pointers and mutex queue parameter blocks.
+;-----------------------------------------------------------------------------
+uda_segment	dw	0h
+console_number	dw	0h
+key_table_offset	dw	0h
+key_table_segment	dw	0h
+console_status_offset	dw	0h
+console_status_segment	dw	0h
+saved_console_status	dw	0h
+disk_queue	db	0h,0h,0h,0h,0h,0h,0h,0h,'MXdisk  '
+console_queue	db	0h,0h,0h,0h,0h,0h,0h,0h,'VCMXQ'
+console_queue_digit	db	'   '
+
+;-----------------------------------------------------------------------------
+; Ten 20-byte utility function-key definitions; the saved user map follows.
+;-----------------------------------------------------------------------------
+utility_key_definitions	db	'V',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,'A',0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,'R',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,'B',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	'O',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,'C',0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,'T',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,'D',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	'X',0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,'E',0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+saved_key_definitions	rb	0c8h
+decimal_width	db	3h
+
+;-----------------------------------------------------------------------------
+; Original DATA paragraph padding.
+;-----------------------------------------------------------------------------
+data_padding	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+data_end:
+
+; EXTRA is allocation-only: GENCMD supplies its 800h-paragraph minimum.
+	end

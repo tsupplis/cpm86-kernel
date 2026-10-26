@@ -1,5 +1,5 @@
 SUBDIRS=tod asm86 asm80 ddt86 submit pip ed gencmd help submit stat \
-    mform assign function dskmaint hexcom setup disk
+    mform assign function dskmaint hexcom setup disk hdmaint
 
 all clean:
 	for d in $(SUBDIRS); do \

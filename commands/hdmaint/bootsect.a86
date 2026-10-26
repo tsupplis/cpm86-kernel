@@ -1,0 +1,125 @@
+; HDMAINT 1.1 embedded bootsect - reconstructed from base/hdmaint.cmd.
+; Real instructions retain the original layout; make check verifies every byte.
+; Later OEM boot sources explain the design but are not substituted here.
+
+; Absolute far-transfer target (declaration only).
+	cseg	7c0h
+	org	5h
+normalized_boot_entry:
+
+; Absolute far-transfer target (declaration only).
+	cseg	3020h
+	org	0h
+system_loader_entry:
+
+	cseg
+	org	0
+
+; Preserve a short indexed CS override without widening its displacement.
+	codemacro cs_prefix operand:mb
+	segfix operand
+	endm
+
+
+
+; ----------------------------------------------------------------------
+; Normalize CS to 07C0h. DS:SI still points to the MBR partition entry.
+; ----------------------------------------------------------------------
+boot_entry:
+	jmpf	normalized_boot_entry
+normalized_entry:
+	pushf
+	pop	bp
+	cli
+	mov	ax,0h
+	mov	ss,ax
+	mov	ax,7c00h
+	mov	sp,ax
+	push	bp
+	popf
+	mov	cx,5h
+
+; ----------------------------------------------------------------------
+; Read twelve sectors starting at sector 4 of the partition start cylinder
+; into 3000:0000h. Sector 4 is the label; the system loader follows at 3020:0.
+; Retry five times, accepting corrected ECC status 11h.
+; ----------------------------------------------------------------------
+read_loader:
+	mov	ax,3000h
+	mov	es,ax
+	mov	bx,0h
+	mov	ah,2h
+	mov	al,0ch
+	mov	dx,word ptr [si]
+	push	cx
+	mov	cx,word ptr 2h[si]
+	and	cl,0c0h
+	or	cl,4h
+	int	13h
+	pop	cx
+	jnc	enter_loader
+	push	ax
+	mov	ah,0h
+	int	13h
+	pop	ax
+	loop	read_loader
+	cmp	ah,11h
+	jz	enter_loader
+
+; ----------------------------------------------------------------------
+; Print the failure message using the ROM BIOS, then wait for reset.
+; ----------------------------------------------------------------------
+loader_read_error:
+	mov	si,5bh
+	push	cs
+	pop	ds
+print_error:
+	lodsb
+	cmp	al,24h
+halt_error:
+	jz	halt_error
+	push	si
+	mov	bx,7h
+	mov	ah,0eh
+	int	10h
+	pop	si
+	jmps	print_error
+
+; ----------------------------------------------------------------------
+; Enter the system loader immediately after the 512-byte disk label.
+; ----------------------------------------------------------------------
+enter_loader:
+	jmpf	system_loader_entry
+
+	dseg
+	org	5bh
+
+read_error_message	db	0dh,0ah,48h,61h,72h,64h,20h,64h,69h,73h,6bh,20h,65h,72h,72h,6fh ; ..Hard disk erro
+	db	72h,20h,69h,6eh,20h,72h,65h,61h,64h,69h,6eh,67h,20h,53h,59h,53h ; r in reading SYS
+	db	54h,45h,4dh,20h,6ch,6fh,61h,64h,65h,72h,0dh,0ah,20h,20h,20h,20h ; TEM loader..    
+	db	49h,6eh,73h,65h,72h,74h,20h,53h,59h,53h,54h,45h,4dh,20h,64h,69h ; Insert SYSTEM di
+	db	73h,6bh,65h,74h,74h,65h,20h,69h,6eh,20h,41h,3ah,0dh,0ah,20h,20h ; skette in A:..  
+	db	20h,20h,74h,68h,65h,6eh,20h,50h,52h,45h,53h,53h,20h,43h,74h,72h ;   then PRESS Ctr
+	db	6ch,2fh,41h,6ch,74h,2fh,44h,65h,6ch,2eh,2eh,2eh,24h,0h,0h,0h ; l/Alt/Del...$...
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h
+boot_signature	db	55h,0aah ; U.
+	end

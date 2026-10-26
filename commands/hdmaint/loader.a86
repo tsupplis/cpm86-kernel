@@ -1,0 +1,2413 @@
+; HDMAINT 1.1 embedded loader - reconstructed from base/hdmaint.cmd.
+; Real instructions retain the original layout; make check verifies every byte.
+; Later OEM boot sources explain the design but are not substituted here.
+
+	cseg
+	org	0
+
+; Preserve a short indexed CS override without widening its displacement.
+	codemacro cs_prefix operand:mb
+	segfix operand
+	endm
+
+cached_block	equ	184ch
+physical_buffer	equ	184eh
+disk_label	equ	204eh
+label_heads	equ	2073h
+label_sectors	equ	2074h
+label_records_per_sector	equ	2076h
+label_dpb	equ	2077h
+label_checksum_size	equ	2082h
+label_reserved_tracks	equ	2084h
+label_block_records	equ	208eh
+label_bad_count	equ	2092h
+label_last_spare	equ	2094h
+label_bad_blocks	equ	2096h
+
+loader_entry:
+	jmp	bios_cold_vector
+
+; ----------------------------------------------------------------------
+; Load CPM.SYS, falling back to CCPM.SYS. Establish the private stack and
+; use the embedded BDOS for directory lookup and 128-byte sequential reads.
+; ----------------------------------------------------------------------
+load_system:
+	pushf
+	pop	bp
+	cli
+	mov	ax,cs
+	mov	ss,ax
+	mov	ds,ax
+	mov	es,ax
+	mov	sp,offset load_stack_top
+	push	bp
+	popf
+	cld
+	mov	dx,cs
+	call	set_dma_segment
+	mov	dx,offset command_header
+	call	set_dma_offset
+	call	select_drive
+	call	open_file
+try_system_file:
+	mov	byte ptr concurrent_flag,0h
+	cmp	al,0ffh
+	jnz	announce_system
+	mov	si,offset concurrent_name
+	mov	di,offset system_name
+	mov	cx,4h
+	rep	movsw
+	call	open_file
+	mov	byte ptr concurrent_flag,0ffh
+	cmp	al,0ffh
+	jnz	announce_system
+	mov	dx,offset missing_message
+	call	print_string
+	jmp	fatal_error
+announce_system:
+	mov	dx,offset loading_message
+	call	print_string
+	call	print_filename
+
+; ----------------------------------------------------------------------
+; Validate the CMD header: CODE must have an absolute load segment; if DATA
+; is present, it must immediately follow CODE. The header is not loaded.
+; ----------------------------------------------------------------------
+read_header:
+	call	read_sequential
+	or	al,al
+	jnz	bad_format
+	cmp	byte ptr command_header,1h
+	jnz	bad_format
+	mov	ax,word ptr code_base
+	mov	cs:word ptr system_segment,ax
+	cmp	ax,0h
+	jz	bad_format
+	cmp	byte ptr data_descriptor,2h
+	jnz	prepare_load
+	add	ax,word ptr code_paragraphs
+	cmp	ax,word ptr data_base
+	jz	prepare_load
+bad_format:
+	mov	dx,offset format_message
+	call	print_string
+	jmp	fatal_error
+prepare_load:
+	mov	dx,word ptr code_base
+	call	set_dma_segment
+start_progress:
+	mov	byte ptr progress_count,1h
+
+; ----------------------------------------------------------------------
+; Read the system image, advancing the DMA segment at each 64 KB boundary.
+; Print a progress dot every 64 records (8 KB).
+; ----------------------------------------------------------------------
+read_system:
+	mov	dx,0ff80h
+advance_dma:
+	add	dx,80h
+	mov	ax,dx
+	add	ax,80h
+	jnc	set_record_dma
+	push	dx
+	mov	cl,4h
+	shr	dx,cl
+	add	word ptr code_base,dx
+	mov	dx,word ptr code_base
+	call	set_dma_segment
+	pop	dx
+	and	dx,0fh
+set_record_dma:
+	push	dx
+	call	set_dma_offset
+show_progress:
+	dec	byte ptr progress_count
+	jnz	read_record
+	mov	dl,2eh
+	call	console_output
+	mov	byte ptr progress_count,40h
+read_record:
+	call	read_sequential
+	pop	dx
+	cmp	al,1h
+	jz	enter_system
+	cmp	al,0h
+	jz	advance_dma
+	mov	dx,offset read_error_message
+	call	print_string
+	call	print_filename
+	jmp	fatal_error
+
+; ----------------------------------------------------------------------
+; Enter CP/M at offset 2500h, or Concurrent CP/M at offset zero. DL=80h
+; identifies the hard disk. Set DS from the optional DATA descriptor.
+; ----------------------------------------------------------------------
+enter_system:
+	mov	dl,80h
+	cmp	byte ptr concurrent_flag,0h
+	jz	set_system_data
+	mov	cs:word ptr system_entry,0h
+set_system_data:
+	cmp	byte ptr data_descriptor,2h
+	jnz	loc_0101
+	mov	ds,word ptr data_base
+loc_0101:
+	jmpf	cs:dword ptr system_entry
+system_entry	dw	2500h
+system_segment	dw	0
+
+; ----------------------------------------------------------------------
+; Print the FCB name and extension, suppressing padding spaces.
+; ----------------------------------------------------------------------
+print_filename:
+	mov	si,offset system_name
+	mov	cx,8h
+	call	loc_011e
+	mov	dl,2eh
+	call	console_output
+	mov	si,offset system_extension
+	mov	cx,3h
+loc_011e:
+	lodsb
+	cmp	al,20h
+	jz	loc_012e
+	push	si
+	push	cx
+	mov	dl,al
+	call	console_output
+	pop	cx
+	pop	si
+	loop	loc_011e
+loc_012e:
+	ret
+
+; ----------------------------------------------------------------------
+; Small wrappers for the embedded BDOS interrupt E0h interface.
+; ----------------------------------------------------------------------
+console_output:
+	mov	cl,2h
+	jmps	bdos_call
+select_drive:
+	mov	cl,0eh
+	mov	dx,0h
+	jmps	bdos_call
+open_file:
+	mov	cl,0fh
+	mov	dx,offset system_fcb
+	jmps	bdos_call
+set_dma_offset:
+	mov	cl,1ah
+	jmps	bdos_call
+set_dma_segment:
+	mov	cl,33h
+	jmps	bdos_call
+print_string:
+	mov	cl,9h
+	jmps	bdos_call
+read_sequential:
+	mov	dx,offset system_fcb
+	mov	cl,14h
+bdos_call:
+	int	0e0h
+	ret
+
+; ----------------------------------------------------------------------
+; Fatal boot errors wait for a hardware reset after printing the prompt.
+; ----------------------------------------------------------------------
+fatal_error:
+	mov	dx,offset reboot_message
+	call	print_string
+halt_loader:
+	jmps	halt_loader
+
+	dseg
+	org	15dh
+
+loading_message	db	0dh,0ah,4ch,6fh,61h,64h,69h,6eh,67h,20h,24h ; ..Loading $
+missing_message	db	0dh,0ah,4eh,6fh,20h,43h,50h,4dh,2eh,53h,59h,53h,20h,6fh,72h,20h ; ..No CPM.SYS or 
+	db	43h,43h,50h,4dh,2eh,53h,59h,53h,20h,66h,69h,6ch,65h,20h,6fh,6eh ; CCPM.SYS file on
+	db	20h,74h,68h,65h,20h,68h,61h,72h,64h,20h,64h,69h,73h,6bh,24h ;  the hard disk$
+read_error_message	db	0dh,0ah,0ah,48h,61h,72h,64h,20h,64h,69h,73h,6bh,20h,65h,72h,72h ; ...Hard disk err
+	db	6fh,72h,20h,69h,6eh,20h,72h,65h,61h,64h,69h,6eh,67h,20h,24h ; or in reading $
+format_message	db	0dh,0ah,0ah,55h,6eh,61h,62h,6ch,65h,20h,74h,6fh,20h,6ch,6fh,61h ; ...Unable to loa
+	db	64h,20h,66h,69h,6ch,65h,20h,61h,73h,20h,67h,65h,6eh,65h,72h,61h ; d file as genera
+	db	74h,65h,64h,24h ; ted$
+reboot_message	db	0dh,0ah,20h,20h,20h,20h,49h,6eh,73h,65h,72h,74h,20h,53h,59h,53h ; ..    Insert SYS
+	db	54h,45h,4dh,20h,64h,69h,73h,6bh,65h,74h,74h,65h,20h,69h,6eh,20h ; TEM diskette in 
+	db	41h,3ah,0dh,0ah,20h,20h,20h,20h,74h,68h,65h,6eh,20h,50h,52h,45h ; A:..    then PRE
+	db	53h,53h,20h,43h,74h,72h,6ch,2fh,41h,6ch,74h,2fh,44h,65h,6ch,2eh ; SS Ctrl/Alt/Del.
+	db	2eh,2eh,24h ; ..$
+concurrent_flag	db	0h
+system_fcb	db	0h
+system_name	db	43h,50h,4dh,20h,20h,20h,20h,20h ; CPM     
+system_extension	db	53h,59h,53h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h ; SYS.............
+	db	0h,0h,0h,0h,0h,0h,0h,0h
+concurrent_name	db	43h,43h,50h,4dh,20h,20h,20h,20h ; CCPM    
+progress_count	db	0h
+command_header	db	0h
+code_paragraphs	dw	0h
+code_base	dw	0h
+	db	0h,0h,0h,0h
+data_descriptor	db	0h,0h,0h
+data_base	dw	0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h
+load_stack	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+load_stack_top	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h
+
+; ----------------------------------------------------------------------
+; Reduced BDOS dispatch table: functions 0..40, then 47..59. Unsupported
+; operations share return stubs; this loader only needs file reading.
+; ----------------------------------------------------------------------
+bdos_vectors	dw	offset bd_function_0
+state_0382	dw	offset bd_mconin
+	dw	offset bd_conout
+	dw	offset bd_mreder
+	dw	offset bios_punch_vector
+	dw	offset bd_blist
+	dw	offset bd_mdcnio
+	dw	offset bd_mgtiob
+	dw	offset bd_mstiob
+	dw	offset bd_mbufpr
+	dw	offset bd_mrdcbf
+	dw	offset bd_mconst
+	dw	offset bd_function_12
+	dw	offset bd_mrsdsy
+	dw	offset bd_mseldk
+	dw	offset bd_mopen
+	dw	offset bd_mclose
+	dw	offset bd_msrchf
+	dw	offset bd_function_18
+	dw	offset bd_function_19
+	dw	offset bd_function_20
+	dw	offset bd_function_21
+	dw	offset bd_function_22
+	dw	offset bd_function_23
+	dw	offset bd_mrtliv
+	dw	offset bd_mrtcdk
+	dw	offset bd_mstdmo
+	dw	offset bd_mgtalm
+	dw	offset bd_mwpdsk
+	dw	offset bd_mgtrov
+	dw	offset bd_function_30
+	dw	offset bd_function_31
+	dw	offset bd_function_32
+	dw	offset bd_function_33
+	dw	offset bd_function_34
+	dw	offset bd_function_35
+	dw	offset bd_function_36
+	dw	offset bd_function_37
+	dw	offset bd_noproc
+	dw	offset bd_noproc
+	dw	offset bd_function_40
+	dw	offset bd_function_41
+	dw	offset bd_function_42
+	dw	offset bd_function_43
+	dw	offset bd_function_44
+	dw	offset bd_function_45
+	dw	offset bd_function_46
+	dw	offset bd_function_47
+	dw	offset bd_function_47
+	dw	offset bd_function_47
+	dw	offset bd_function_47
+	dw	offset bd_function_47
+	dw	offset bd_function_47
+	dw	offset bd_function_53
+
+	cseg
+	org	3ech
+
+bd_function_12:
+	mov	al,22h
+	jmp	bd_btprst
+bd_function_43:
+	mov	bx,offset bd_dmaadd
+	jmp	loc_0f41
+
+	dseg
+	org	3f7h
+
+bdos_reserved	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+	cseg
+	org	406h
+
+
+; ----------------------------------------------------------------------
+; Embedded CP/M-86 BDOS entry. Save the caller context and dispatch through
+; bdos_vectors. Internal bd_ names follow the matching CP/M BDOS source.
+; ----------------------------------------------------------------------
+bd_bdosen:
+	push	ds
+	mov	ax,cs
+	mov	ds,ax
+	pop	word ptr bd_indseg
+	cmp	cl,5h
+	jz	bd_bdosec
+	cmp	cl,0dh
+	jc	bd_bdoses
+bd_bdosec:
+	mov	byte ptr bd_mdconf,0ffh
+bd_bdoses:
+	mov	word ptr bd_instsg,ss
+	mov	word ptr bd_instof,sp
+	cmp	byte ptr bd_flinsd,1h
+	jz	bd_bdosei
+	mov	ax,cs
+	mov	ss,ax
+bd_setup_stack:
+	mov	sp,1159h
+bd_bdosei:
+	mov	bx,word ptr bd_instof
+	mov	es,word ptr bd_instsg
+	mov	bx,es:word ptr 4h[bx]
+	and	bx,200h
+	jz	loc_0447
+	sti
+loc_0447:
+	mov	ax,ds
+	push	bp
+	push	di
+	push	si
+	push	cs
+	pop	es
+	mov	word ptr bd_curseg,es
+	call	bd_bdosb
+	pop	si
+	pop	di
+	pop	bp
+	mov	es,word ptr bd_curseg
+	cli
+	mov	ss,word ptr bd_instsg
+	mov	sp,word ptr bd_instof
+	mov	byte ptr bd_mdconf,0h
+	mov	ds,word ptr bd_indseg
+	iret
+bd_bdosb:
+	mov	word ptr bd_inpara,dx
+	mov	byte ptr bd_inparb,dl
+	xor	al,al
+	mov	word ptr bd_otpara,ax
+	mov	byte ptr bd_afwfcb,al
+	mov	byte ptr bd_enttyp,al
+	mov	byte ptr bd_flomod,al
+	mov	bx,0f4ch
+	push	bx
+	cmp	cl,29h
+	jc	bd_bdosbs
+	sub	cl,6h
+	cmp	cl,36h
+	jc	bd_bdosbs
+	ret
+bd_bdosbs:
+	mov	bl,cl
+	mov	bh,0h
+	mov	cl,dl
+	add	bx,bx
+	jmp	cs:word ptr bdos_vectors[bx]
+bd_ebadsc:
+	mov	bx,1076h
+	call	bd_erproc
+	cmp	al,3h
+	jnz	bd_stwfce
+	jmps	bd_erofie
+bd_eselct:
+	mov	bx,1081h
+	jmps	bd_erofis
+bd_erodsk:
+	mov	bx,108dh
+	jmps	bd_erofis
+bd_erofil:
+	mov	bx,1088h
+bd_erofis:
+	call	bd_erproc
+bd_erofie:
+	jmp	loc_0533
+bd_erproc:
+	push	bx
+	call	bd_crlf
+	mov	al,byte ptr bd_curdsk
+	add	al,41h
+	mov	byte ptr bd_cerrdk,al
+	mov	cx,1066h
+	call	bd_bufprn
+	pop	cx
+	call	bd_bufprn
+	jmp	bd_coninc
+; Save the caller FCB fields before internal directory operations.
+bd_stwfcb:
+	push	ds
+	push	ax
+	push	cx
+	mov	byte ptr bd_afwfcb,0ffh
+	mov	byte ptr bd_cnfcbc,cl
+	xor	ch,ch
+	mov	si,word ptr bd_inpara
+	mov	word ptr bd_ptufcb,si
+	mov	di,1091h
+	mov	word ptr bd_inpara,di
+	mov	ds,word ptr bd_indseg
+	cld
+	rep	movsb
+	pop	cx
+	pop	ax
+	pop	ds
+bd_stwfce:
+	ret
+bd_stwfcs:
+	push	cx
+	mov	cl,21h
+	jmps	bd_stwfcc
+bd_stwfcr:
+	push	cx
+	mov	cl,24h
+bd_stwfcc:
+	call	bd_stwfcb
+	pop	cx
+	ret
+; Restore the caller FCB and complete the BDOS return.
+bd_rstfcb:
+	push	es
+	push	ax
+	push	cx
+	mov	cl,byte ptr bd_cnfcbc
+	xor	ch,ch
+	mov	es,word ptr bd_indseg
+	mov	si,1091h
+	mov	di,word ptr bd_ptufcb
+	mov	word ptr bd_inpara,di
+	cld
+	rep	movsb
+	pop	cx
+	pop	ax
+	pop	es
+	ret
+bd_function_53:
+	ret
+bd_function_0:
+	ret
+bd_function_44:
+	ret
+loc_0533:
+	mov	byte ptr bd_flinsd,0h
+	jmp	bios_warm_vector
+bd_function_45:
+	mov	word ptr bd_dma_segment,dx
+	mov	cx,dx
+	call	bios_dma_segment_vector
+	ret
+bd_function_46:
+	ret
+bd_function_47:
+	ret
+; Console input with echo and control-character handling.
+bd_coninc:
+	mov	bx,offset bd_bfconc
+	mov	al,byte ptr [bx]
+	mov	byte ptr [bx],0h
+	or	al,al
+	jnz	bd_conche
+	jmp	bd_bconin
+bd_coninp:
+	call	bd_coninc
+	call	bd_conchk
+	jc	bd_conche
+	push	ax
+	mov	cl,al
+	call	bd_conout
+	pop	ax
+	ret
+bd_conchk:
+	cmp	al,0dh
+	jz	bd_conche
+	cmp	al,0ah
+	jz	bd_conche
+	cmp	al,9h
+	jz	bd_conche
+	cmp	al,8h
+	jz	bd_conche
+	cmp	al,20h
+bd_conche:
+	ret
+; Check console readiness, including the saved look-ahead character.
+bd_consts:
+	mov	al,byte ptr bd_bfconc
+	or	al,al
+	jnz	bd_constd
+	call	bd_bconst
+	and	al,1h
+	jz	bd_conche
+	call	bd_bconin
+	cmp	al,13h
+	jnz	bd_constg
+	call	bd_bconin
+	cmp	al,3h
+	jz	bd_conste
+	xor	al,al
+	ret
+bd_conste:
+	jmp	loc_0533
+bd_constg:
+	mov	byte ptr bd_bfconc,al
+bd_constd:
+	mov	al,1h
+	ret
+bd_conots:
+	mov	al,byte ptr bd_echkil
+	or	al,al
+	jnz	bd_conott
+	push	cx
+	call	bd_consts
+	pop	cx
+	push	cx
+	call	bd_bconot
+	pop	cx
+	push	cx
+	cmp	byte ptr bd_lsttgl,0h
+	jz	loc_05bd
+	call	bd_blist
+loc_05bd:
+	pop	cx
+bd_conott:
+	mov	al,cl
+	mov	bx,offset bd_pcarig
+	cmp	al,7fh
+	jz	bd_conote
+	inc	byte ptr [bx]
+	cmp	al,20h
+	jnc	bd_conote
+	dec	byte ptr [bx]
+	mov	al,byte ptr [bx]
+	or	al,al
+	jz	bd_conote
+	mov	al,cl
+	cmp	al,8h
+	jnz	bd_conotl
+	dec	byte ptr [bx]
+bd_conote:
+	ret
+bd_conotl:
+	cmp	al,0ah
+	jnz	bd_conote
+	mov	byte ptr [bx],0h
+	ret
+bd_conotc:
+	mov	al,cl
+	call	bd_conchk
+	jnc	bd_conout
+	push	ax
+	mov	cl,5eh
+	call	bd_conots
+	pop	cx
+	or	cl,40h
+; Console output with tab expansion and column tracking.
+bd_conout:
+	cmp	cl,9h
+	jnz	bd_conots
+bd_conoul:
+	mov	cl,20h
+	call	bd_conots
+	mov	al,byte ptr bd_pcarig
+	and	al,7h
+	jnz	bd_conoul
+bd_conoue:
+	ret
+bd_backs:
+	call	bd_back
+	mov	cl,20h
+	call	bd_bconot
+bd_back:
+	mov	cl,8h
+	jmp	bd_bconot
+bd_ncrlf:
+	mov	cl,23h
+	call	bd_conots
+	call	bd_crlf
+bd_ncrlfl:
+	mov	al,byte ptr bd_pcarig
+	cmp	al,byte ptr bd_ppromp
+	jnc	bd_conoue
+	mov	cl,20h
+	call	bd_conots
+	jmps	bd_ncrlfl
+bd_crlf:
+	mov	cl,0dh
+	call	bd_conots
+	mov	cl,0ah
+	jmp	bd_conots
+; Print the dollar-terminated string addressed by BX.
+bd_bufprn:
+	mov	si,cx
+	lodsb
+	cmp	al,24h
+	jz	bd_conoue
+	inc	cx
+	push	cx
+	mov	cl,al
+	push	ds
+	push	ss
+	pop	ds
+	call	bd_conout
+	pop	ds
+	pop	cx
+	jmps	bd_bufprn
+; Buffered console input, including line editing and control keys.
+bd_rdcnbf:
+	mov	al,byte ptr bd_pcarig
+	mov	byte ptr bd_ppromp,al
+	mov	bx,word ptr bd_inpara
+	mov	cl,es:byte ptr [bx]
+	inc	bx
+	push	bx
+	mov	ch,0h
+bd_rdcnbl:
+	push	cx
+	push	bx
+bd_rdcnbd:
+	call	bd_coninc
+	pop	bx
+	pop	cx
+	cmp	al,0dh
+	jnz	loc_066c
+bd_rdcnbq:
+	jmp	bd_rdcnbe
+loc_066c:
+	cmp	al,0ah
+	jz	bd_rdcnbq
+	cmp	al,8h
+	jnz	bd_rdcnbk
+	or	ch,ch
+	jz	bd_rdcnbl
+	dec	ch
+	mov	al,byte ptr bd_pcarig
+	mov	byte ptr bd_echkil,al
+	jmps	bd_rdcnbi
+bd_rdcnbk:
+	cmp	al,7fh
+	jnz	bd_rdcnba
+	or	ch,ch
+	jz	bd_rdcnbl
+	mov	al,es:byte ptr [bx]
+	dec	ch
+	dec	bx
+	jmps	bd_rdcnbs
+bd_rdcnba:
+	cmp	al,5h
+	jnz	bd_rdcnbp
+	push	cx
+	push	bx
+	call	bd_crlf
+	mov	byte ptr bd_ppromp,0h
+bd_rdcnbb:
+	jmps	bd_rdcnbd
+bd_rdcnbp:
+	cmp	al,10h
+	jnz	bd_rdcnbc
+	not	byte ptr bd_lsttgl
+	jmps	bd_rdcnbl
+bd_rdcnbc:
+	cmp	al,18h
+	jnz	bd_rdcnby
+	pop	bx
+bd_rdcnbx:
+	mov	al,byte ptr bd_ppromp
+	mov	bx,offset bd_pcarig
+	nop
+	cmp	al,byte ptr [bx]
+	jnc	bd_rdcnbf
+	nop
+	dec	byte ptr [bx]
+	call	bd_backs
+	jmps	bd_rdcnbx
+bd_rdcnby:
+	cmp	al,15h
+	jnz	bd_rdcnbr
+	call	bd_ncrlf
+	pop	bx
+	jmp	bd_rdcnbf
+bd_rdcnbr:
+	cmp	al,12h
+	jnz	bd_rdcnbn
+bd_rdcnbi:
+	push	cx
+	call	bd_ncrlf
+	pop	cx
+	pop	bx
+	push	bx
+	push	cx
+bd_rdcnbg:
+	or	ch,ch
+	jz	bd_rdcnbh
+	inc	bx
+	mov	cl,es:byte ptr [bx]
+	dec	ch
+	push	cx
+	push	bx
+	call	bd_conotc
+	pop	bx
+	pop	cx
+	jmps	bd_rdcnbg
+bd_rdcnbh:
+	push	bx
+	mov	al,byte ptr bd_echkil
+	or	al,al
+	jz	bd_rdcnbj
+	sub	al,byte ptr bd_pcarig
+	mov	byte ptr bd_echkil,al
+bd_rdcnbo:
+	call	bd_backs
+	dec	byte ptr bd_echkil
+	jnz	bd_rdcnbo
+bd_rdcnbj:
+	jmps	bd_rdcnbb
+bd_rdcnbn:
+	inc	bx
+	mov	es:byte ptr [bx],al
+	inc	ch
+bd_rdcnbs:
+	push	cx
+	push	bx
+	mov	cl,al
+	call	bd_conotc
+	pop	bx
+	pop	cx
+	mov	al,es:byte ptr [bx]
+	cmp	al,3h
+	mov	al,ch
+	jnz	bd_rdcnbm
+	cmp	al,1h
+	jnz	bd_rdcnbm
+	mov	ax,ds
+	mov	es,ax
+	jmp	bd_conste
+bd_rdcnbm:
+	cmp	al,cl
+	jnc	bd_rdcnbe
+	jmp	bd_rdcnbl
+bd_rdcnbe:
+	pop	bx
+	mov	es:byte ptr [bx],ch
+	mov	cl,0dh
+	mov	ax,ds
+	mov	es,ax
+	jmp	bd_conots
+; Console BDOS entry points and common return paths.
+bd_mconin:
+	call	bd_coninp
+	jmps	bd_btprst
+bd_mreder:
+	call	bios_reader_vector
+	jmps	bd_btprst
+bd_mdcnio:
+	mov	al,cl
+	inc	al
+	jz	bd_mdcnis
+	inc	al
+	jnz	bd_bconot
+	call	bd_bconst
+	jmps	bd_btprst
+bd_mdcnis:
+	call	bd_bconst
+	or	al,al
+	jnz	bd_mdcnig
+	jmp	bd_endprn
+bd_mdcnig:
+	call	bd_bconin
+	jmps	bd_btprst
+bd_mgtiob:
+	call	bios_iobyte_vector
+	jmps	bd_btprst
+bd_mstiob:
+	mov	cx,dx
+	call	bios_set_iobyte_vector
+	ret
+bd_mbufpr:
+	mov	cx,dx
+	push	ds
+	mov	ds,word ptr bd_indseg
+	call	bd_bufprn
+	pop	ds
+	ret
+bd_mrdcbf:
+	mov	es,word ptr bd_indseg
+	jmp	bd_rdcnbf
+bd_mconst:
+	call	bd_consts
+bd_btprst:
+	mov	byte ptr bd_otpara,al
+bd_noproc:
+	ret
+bd_nodtex:
+	mov	al,1h
+	jmps	bd_btprst
+bd_blist:
+	mov	bx,120fh
+	jmps	loc_07a2
+bd_bconin:
+	mov	bx,1209h
+	jmps	loc_07a2
+bd_bconst:
+	mov	bx,1206h
+	jmps	loc_07a2
+bd_bconot:
+	mov	bx,120ch
+loc_07a2:
+	call	bx
+	ret
+bd_dbios:
+	call	bx
+	retf
+bd_dseror:
+	mov	bx,1006h
+bd_error:
+	jmp	word ptr [bx]
+bd_copy:
+	push	cx
+	mov	ch,0h
+	mov	si,dx
+	mov	di,bx
+	cld
+	rep	movsb
+	pop	cx
+	ret
+; Select the BIOS disk and unpack its DPH/DPB into BDOS working fields.
+bd_gdptbl:
+	mov	cl,byte ptr bd_curdsk
+	call	bios_select_vector
+	cmp	bx,0h
+	jz	bd_gdptbe
+	mov	dx,word ptr [bx]
+	add	bx,2h
+	mov	word ptr bd_pndrck,bx
+	add	bx,2h
+	mov	word ptr bd_pntrak,bx
+	add	bx,2h
+	mov	word ptr bd_pnsctr,bx
+	add	bx,2h
+	xchg	bx,dx
+	mov	word ptr bd_pnxtbl,bx
+	mov	bx,word ptr bd_dirbuf
+	mov	word ptr bd_lsdrbf,bx
+	mov	bx,offset bd_dirbuf
+	mov	cl,8h
+	call	bd_copy
+	mov	dx,word ptr bd_pntdpb
+	mov	bx,offset bd_spt
+	mov	cl,0fh
+	call	bd_copy
+	mov	al,byte ptr state_1038
+	mov	bx,offset bd_dsmmod
+	mov	byte ptr [bx],0ffh
+	or	al,al
+	jz	loc_0811
+	mov	byte ptr [bx],0h
+loc_0811:
+	mov	al,0ffh
+	or	al,al
+bd_gdptbe:
+	ret
+bd_tohome:
+	call	bios_home_vector
+	xor	ax,ax
+	mov	bx,word ptr bd_pntrak
+	mov	word ptr [bx],ax
+	ret
+; Read the selected record through the loader BIOS.
+bd_dread:
+	mov	dx,word ptr bd_tgsect
+	call	bios_read_vector
+	jmps	bd_dwritn
+bd_dwrite:
+	mov	cl,byte ptr bd_mdwrit
+bd_dwrits:
+	call	bios_write_vector
+bd_dwritn:
+	or	al,al
+	jz	bd_gdptbe
+	mov	bx,1004h
+	jmp	bd_error
+bd_stdirt:
+	mov	bx,word ptr bd_dircnt
+	mov	cl,2h
+	shr	bx,cl
+	mov	word ptr bd_tgsect,bx
+	mov	word ptr bd_dirsct,bx
+; Convert the current record position to BIOS track and sector.
+bd_trsset:
+	mov	ax,word ptr bd_tgsect
+	mov	dx,0h
+	div	word ptr bd_spt
+	push	dx
+	mov	cx,ax
+	mov	si,word ptr bd_pntrak
+	mov	word ptr [si],cx
+	add	cx,word ptr bd_trkoff
+	call	bios_track_vector
+	pop	cx
+	mov	dx,word ptr bd_pnxtbl
+	call	bios_translate_vector
+	mov	cx,bx
+	jmp	bios_sector_vector
+bd_gbsdir:
+	mov	bx,offset bd_bsh
+	mov	cl,byte ptr [bx]
+	mov	al,byte ptr bd_curcnt
+	shr	al,cl
+	mov	ch,al
+	mov	cl,7h
+	sub	cl,byte ptr [bx]
+	mov	al,byte ptr bd_extent
+	shl	al,cl
+	add	al,ch
+	ret
+; Find the allocation-block number in the current FCB disk map.
+bd_gtblnm:
+	mov	bx,word ptr bd_inpara
+	add	bx,10h
+	add	bx,cx
+	cmp	byte ptr bd_dsmmod,0h
+	jz	bd_gtblns
+	mov	bl,byte ptr [bx]
+	mov	bh,0h
+	ret
+bd_gtblns:
+	add	bx,cx
+	mov	bx,word ptr [bx]
+	ret
+bd_gtblck:
+	call	bd_gbsdir
+	mov	cl,al
+	mov	ch,0h
+	call	bd_gtblnm
+	mov	word ptr bd_tgsect,bx
+	ret
+bd_chkblk:
+	mov	bx,word ptr bd_tgsect
+	or	bx,bx
+	ret
+bd_bltsct:
+	mov	cl,byte ptr bd_bsh
+	mov	bx,word ptr bd_tgsect
+	shl	bx,cl
+	mov	word ptr bd_btsect,bx
+	mov	al,byte ptr bd_curcnt
+	and	al,byte ptr bd_blm
+	or	bl,al
+	mov	word ptr bd_tgsect,bx
+	ret
+bd_extpnt:
+	mov	bx,word ptr bd_inpara
+	add	bx,0ch
+	mov	al,byte ptr [bx]
+	ret
+bd_gtrcpt:
+	mov	dx,0fh
+	add	dx,word ptr bd_inpara
+	mov	bx,11h
+	add	bx,dx
+	ret
+bd_gtrcnt:
+	call	bd_gtrcpt
+	mov	al,byte ptr [bx]
+	mov	byte ptr bd_curcnt,al
+	xchg	bx,dx
+	mov	al,byte ptr [bx]
+	mov	byte ptr bd_recunt,al
+	call	bd_extpnt
+	mov	al,byte ptr bd_exm
+	and	al,byte ptr [bx]
+	mov	byte ptr bd_extent,al
+	ret
+bd_usrcnt:
+	call	bd_gtrcpt
+	mov	al,byte ptr bd_rupcnt
+	cmp	al,2h
+	jnz	loc_0915
+	xor	al,al
+loc_0915:
+	add	al,byte ptr bd_curcnt
+	mov	byte ptr [bx],al
+	xchg	bx,dx
+	mov	al,byte ptr bd_recunt
+	mov	byte ptr [bx],al
+	ret
+bd_hash:
+	mov	cx,80h
+	mov	bx,word ptr bd_dirbuf
+	xor	al,al
+bd_hashl:
+	add	al,byte ptr [bx]
+	inc	bx
+	loop	bd_hashl
+	ret
+bd_stdkvc:
+	push	cx
+	mov	cl,byte ptr bd_curdsk
+	mov	bx,1h
+	shl	bx,cl
+	pop	cx
+	or	bx,cx
+	ret
+bd_chkrov:
+	mov	ax,word ptr bd_rodskv
+	mov	cl,byte ptr bd_curdsk
+	shr	ax,cl
+	and	al,1h
+	ret
+; Mark the current disk read-only in the BDOS vector.
+bd_mwpdsk:
+	mov	cx,word ptr bd_rodskv
+	call	bd_stdkvc
+	mov	word ptr bd_rodskv,bx
+	mov	dx,word ptr bd_drm
+	inc	dx
+	mov	bx,word ptr bd_pndrck
+	mov	word ptr [bx],dx
+	ret
+bd_chkrof:
+	call	bd_gtdrpt
+bd_chkrol:
+	mov	dx,9h
+	add	bx,dx
+	mov	al,byte ptr [bx]
+	rcl	al,1
+	jnc	bd_gtdrpe
+	mov	bx,100ah
+	jmps	bd_chkroe
+bd_chkrod:
+	call	bd_chkrov
+	jz	bd_gtdrpe
+	mov	bx,1008h
+bd_chkroe:
+	jmp	bd_error
+bd_gtdrpt:
+	mov	bx,word ptr bd_dirbuf
+	mov	al,byte ptr bd_bisdir
+	mov	ah,0h
+	add	bx,ax
+bd_gtdrpe:
+	ret
+bd_fmdpnt:
+	mov	bx,word ptr bd_inpara
+	add	bx,0eh
+	mov	al,byte ptr [bx]
+	ret
+bd_fmdclr:
+	call	bd_fmdpnt
+	mov	byte ptr [bx],0h
+	ret
+bd_fmdron:
+	call	bd_fmdpnt
+	or	al,80h
+	mov	byte ptr [bx],al
+	ret
+bd_chkdlv:
+	mov	dx,word ptr bd_dircnt
+	mov	bx,word ptr bd_pndrck
+	cmp	dx,word ptr [bx]
+bd_chkdle:
+	ret
+bd_stdlvl:
+	call	bd_chkdlv
+	jc	bd_chkdle
+	inc	dx
+	mov	word ptr [bx],dx
+	ret
+bd_invsub:
+	push	dx
+	sub	dx,bx
+	mov	bx,dx
+	pop	dx
+	ret
+bd_hashst:
+	mov	cl,0ffh
+bd_hashsc:
+	mov	dx,word ptr bd_dirsct
+	mov	bx,word ptr bd_chksiz
+	call	bd_invsub
+	jnc	bd_chkdle
+	push	cx
+	call	bd_hash
+	mov	bx,word ptr bd_dirsct
+	add	bx,word ptr bd_pnchsm
+	pop	cx
+	inc	cl
+	jz	bd_hashss
+	cmp	al,byte ptr [bx]
+	jz	bd_hashse
+	call	bd_chkdlv
+	jnc	bd_hashse
+	call	bd_mwpdsk
+	ret
+bd_hashss:
+	mov	byte ptr [bx],al
+bd_hashse:
+	ret
+bd_drwrit:
+	call	bd_hashst
+	call	bd_stddma
+	mov	cl,1h
+	call	bd_dwrits
+	jmps	bd_stbdma
+; Directory-sector read and DMA-buffer selection helpers.
+bd_drread:
+	call	bd_stddma
+	call	bd_dread
+bd_stbdma:
+	mov	cx,word ptr bd_dma_segment
+	call	bios_dma_segment_vector
+	mov	bx,offset bd_dmaadd
+	jmps	bd_stddms
+bd_stddma:
+	mov	cx,ds
+	call	bios_dma_segment_vector
+	mov	bx,offset bd_dirbuf
+bd_stddms:
+	mov	cx,word ptr [bx]
+	jmp	bios_dma_vector
+bd_drcopy:
+	mov	dx,word ptr bd_dirbuf
+	mov	bx,word ptr bd_dmaadd
+	mov	cl,80h
+	push	es
+	mov	es,word ptr bd_indseg
+	call	bd_copy
+	pop	es
+	ret
+bd_ckdren:
+	mov	bx,offset bd_dircnt
+	mov	al,byte ptr [bx]
+	inc	bx
+	cmp	al,byte ptr [bx]
+	jnz	bd_ckdree
+	inc	al
+bd_ckdree:
+	ret
+bd_indrcn:
+	mov	bx,0ffffh
+	mov	word ptr bd_dircnt,bx
+	ret
+bd_gtndsc:
+	mov	dx,word ptr bd_drm
+	mov	bx,word ptr bd_dircnt
+	inc	bx
+	mov	word ptr bd_dircnt,bx
+	call	bd_invsub
+	jnc	bd_gtndss
+	jmps	bd_indrcn
+bd_gtndss:
+	mov	al,byte ptr bd_dircnt
+	and	al,3h
+	push	cx
+	mov	cl,5h
+	shl	al,cl
+	pop	cx
+	mov	byte ptr bd_bisdir,al
+	or	al,al
+	jnz	loc_0a77
+	push	cx
+	call	bd_stdirt
+	call	bd_drread
+	pop	cx
+	jmp	bd_hashsc
+loc_0a77:
+	ret
+bd_chgdmp:
+	call	bd_gtdrpt
+	add	bx,10h
+	push	cx
+	mov	cl,11h
+bd_chgdml:
+	pop	dx
+	dec	cl
+	jnz	bd_chgdms
+	ret
+bd_chgdms:
+	push	dx
+	cmp	byte ptr bd_dsmmod,0h
+	jz	bd_chgdmt
+	push	cx
+	push	bx
+	mov	cl,byte ptr [bx]
+	mov	ch,0h
+	jmps	bd_chgdmg
+bd_chgdmt:
+	dec	cl
+	push	cx
+	mov	cx,word ptr [bx]
+	inc	bx
+	push	bx
+bd_chgdmg:
+	or	cx,cx
+	jz	bd_chgdmn
+	mov	bx,word ptr bd_dsm
+	cmp	bx,cx
+	jc	bd_chgdmn
+bd_chgdmn:
+	pop	bx
+	inc	bx
+	pop	cx
+	jmps	bd_chgdml
+; Initialize the allocation bitmap by scanning directory entries.
+bd_inidmp:
+	mov	bx,word ptr bd_dsm
+	mov	cl,3h
+	shr	bx,cl
+	inc	bx
+	mov	cx,bx
+	mov	bx,word ptr bd_pnalmp
+bd_inidmc:
+	mov	byte ptr [bx],0h
+	inc	bx
+	loop	bd_inidmc
+	mov	dx,word ptr bd_almask
+	mov	bx,word ptr bd_pnalmp
+	mov	word ptr [bx],dx
+	call	bd_tohome
+	mov	bx,word ptr bd_pndrck
+	mov	word ptr [bx],3h
+	call	bd_indrcn
+bd_inidml:
+	mov	cl,0ffh
+	call	bd_gtndsc
+	call	bd_ckdren
+	jz	bd_cpexte
+	call	bd_gtdrpt
+	cmp	byte ptr [bx],0e5h
+	jz	bd_inidml
+	mov	al,byte ptr bd_usrcod
+	cmp	al,byte ptr [bx]
+	jnz	bd_inidms
+	inc	bx
+	mov	al,byte ptr [bx]
+	sub	al,24h
+	jnz	bd_inidms
+	dec	al
+	mov	byte ptr bd_otpara,al
+bd_inidms:
+	mov	cl,1h
+	call	bd_chgdmp
+	call	bd_stdlvl
+	jmps	bd_inidml
+bd_sdrcod:
+	mov	al,byte ptr bd_dircod
+	jmp	bd_btprst
+bd_cpextm:
+	push	cx
+	mov	ch,byte ptr bd_exm
+	not	ch
+	and	cl,ch
+	and	al,ch
+	sub	al,cl
+	and	al,1fh
+	pop	cx
+bd_cpexte:
+	ret
+bd_stdrsp:
+	mov	bx,word ptr bd_inpara
+	mov	word ptr bd_fcboff,bx
+	mov	byte ptr bd_dircod,0ffh
+	mov	byte ptr bd_dircln,cl
+	ret
+; Start a directory search; the following routines continue and compare entries.
+bd_srdrfs:
+	call	bd_stdrsp
+	call	bd_indrcn
+	call	bd_tohome
+bd_srdrnx:
+	mov	byte ptr bd_sysflg,0h
+	mov	cl,0h
+	call	bd_gtndsc
+	call	bd_ckdren
+	jnz	bd_srdrns
+bd_srdrno:
+	jmp	bd_srdrnf
+bd_srdrns:
+	mov	dx,word ptr bd_fcboff
+	mov	si,dx
+	lodsb
+	cmp	al,0e5h
+	jz	bd_srdrnd
+	push	dx
+	call	bd_chkdlv
+	pop	dx
+	jnc	bd_srdrno
+bd_srdrnd:
+	call	bd_gtdrpt
+	mov	cl,byte ptr bd_dircln
+	mov	ch,0h
+bd_srdrnl:
+	or	cl,cl
+	jz	bd_srdrng
+	mov	si,dx
+	lodsb
+	cmp	al,3fh
+	jz	bd_srdrnn
+	cmp	ch,0dh
+	jz	bd_srdrnn
+	cmp	ch,0ch
+	jz	bd_srdrne
+	sub	al,byte ptr [bx]
+	and	al,7fh
+	jnz	bd_srdrnm
+	jmps	bd_srdrnn
+bd_srdrne:
+	push	cx
+	mov	cl,byte ptr [bx]
+	call	bd_cpextm
+	pop	cx
+	lahf
+	test	byte ptr bd_sysflg,0ffh
+	jnz	bd_srdrnz
+	mov	byte ptr bd_syssrc,0h
+	sahf
+	jnz	bd_srdrnx
+bd_srdrnn:
+	inc	dx
+	inc	bx
+	inc	ch
+	dec	cl
+	jmps	bd_srdrnl
+bd_srdrng:
+	mov	byte ptr bd_dircod,0h
+	mov	al,byte ptr bd_dircnt
+	and	al,3h
+	mov	byte ptr bd_otpara,al
+	mov	ch,al
+	inc	ch
+bd_srdrnr:
+	ret
+bd_srdrnm:
+	or	ch,ch
+	jnz	loc_0bec
+	test	byte ptr [bx],0ffh
+	jnz	loc_0bec
+	test	byte ptr bd_syssrc,0ffh
+	jz	loc_0bec
+	mov	byte ptr bd_sysflg,0ffh
+	jmps	bd_srdrnn
+bd_srdrnf:
+	call	bd_indrcn
+	mov	al,0ffh
+	mov	ch,al
+	inc	ch
+	jmp	bd_btprst
+bd_srdrnz:
+	sahf
+	jnz	loc_0bec
+	inc	bx
+	cmp	byte ptr [bx],0h
+	jnz	loc_0bec
+	mov	si,word ptr bd_dircnt
+	mov	word ptr bd_syscnt,si
+loc_0bec:
+	jmp	bd_srdrnx
+bd_copyda:
+	mov	cl,0h
+	mov	dl,20h
+bd_copydr:
+	push	dx
+	mov	ch,0h
+	mov	dx,word ptr bd_inpara
+	add	dx,cx
+	call	bd_gtdrpt
+	pop	cx
+	call	bd_copy
+bd_copyde:
+	call	bd_stdirt
+	jmp	bd_drwrit
+loc_0c09:
+	ret
+bd_stfatr:
+	mov	cl,0ch
+	call	bd_srdrfs
+bd_stfatl:
+	call	bd_ckdren
+	jz	loc_0c09
+	mov	cl,0h
+	mov	dl,0ch
+	call	bd_copydr
+	call	bd_srdrnx
+	jmps	bd_stfatl
+; Open a matching directory entry and populate its FCB allocation map.
+bd_openfl:
+	mov	cl,0fh
+	call	bd_srdrfs
+	call	bd_ckdren
+bd_openfn:
+	jz	loc_0c09
+bd_openfs:
+	call	bd_extpnt
+	push	ax
+	push	bx
+	call	bd_gtdrpt
+	xchg	bx,dx
+	mov	bx,word ptr bd_inpara
+	mov	cl,20h
+	push	dx
+	call	bd_copy
+	call	bd_fmdron
+	pop	dx
+	mov	bx,0ch
+	add	bx,dx
+	mov	cl,byte ptr [bx]
+	mov	bx,0fh
+	add	bx,dx
+	mov	ch,byte ptr [bx]
+	pop	bx
+	pop	ax
+	mov	byte ptr [bx],al
+	cmp	cl,byte ptr [bx]
+	mov	al,ch
+	jz	bd_openfx
+	mov	al,0h
+	jc	bd_openfx
+	mov	al,80h
+bd_openfx:
+	mov	bx,word ptr bd_inpara
+	mov	dx,0fh
+	add	bx,dx
+	mov	byte ptr [bx],al
+bd_openfe:
+	ret
+bd_chkdmp:
+	cmp	word ptr [bx],0h
+	jnz	bd_openfe
+	mov	si,dx
+	lodsw
+	mov	word ptr [bx],ax
+bd_chkdme:
+	ret
+; Shared BDOS close-file logic retained in the shipped loader.
+bd_closef:
+	xor	ax,ax
+	mov	byte ptr bd_otpara,al
+	mov	word ptr bd_dircnt,ax
+	call	bd_chkrov
+	jnz	bd_chkdme
+	call	bd_fmdpnt
+	and	al,80h
+	jnz	bd_chkdme
+	mov	cl,0fh
+	call	bd_srdrfs
+	call	bd_ckdren
+	jz	bd_chkdme
+	mov	cx,10h
+	call	bd_gtdrpt
+	add	bx,cx
+	xchg	bx,dx
+	mov	bx,word ptr bd_inpara
+	add	bx,cx
+	mov	cl,10h
+bd_closel:
+	cmp	byte ptr bd_dsmmod,0h
+	jz	bd_closed
+	mov	al,byte ptr [bx]
+	or	al,al
+	mov	si,dx
+	lodsb
+	jnz	loc_0cb9
+	mov	byte ptr [bx],al
+loc_0cb9:
+	or	al,al
+	jnz	bd_closes
+	mov	al,byte ptr [bx]
+	mov	di,dx
+	cld
+	stosb
+bd_closes:
+	cmp	al,byte ptr [bx]
+	jnz	bd_closer
+	jmps	bd_closen
+bd_closed:
+	call	bd_chkdmp
+	xchg	bx,dx
+	call	bd_chkdmp
+	xchg	bx,dx
+	mov	si,dx
+	mov	ax,word ptr [si]
+	cmp	ax,word ptr [bx]
+	jnz	bd_closer
+	inc	dx
+	inc	bx
+	dec	cl
+bd_closen:
+	inc	dx
+	inc	bx
+	dec	cl
+	jnz	bd_closel
+	mov	cx,0ffech
+	add	bx,cx
+	xchg	bx,dx
+	add	bx,cx
+	mov	si,dx
+	lodsb
+	cmp	al,byte ptr [bx]
+	jc	bd_closet
+	mov	byte ptr [bx],al
+	mov	cx,3h
+	add	bx,cx
+	xchg	bx,dx
+	add	bx,cx
+	mov	al,byte ptr [bx]
+	mov	di,dx
+	cld
+	stosb
+bd_closet:
+	mov	byte ptr bd_extmod,0ffh
+	jmp	bd_copyde
+bd_closer:
+	dec	byte ptr bd_otpara
+bd_closee:
+	ret
+; Advance to the next file extent when sequential reading crosses an extent.
+bd_gtnxdr:
+	xor	al,al
+	mov	byte ptr bd_extmod,al
+	call	bd_closef
+	call	bd_ckdren
+	jz	bd_closee
+	mov	bx,word ptr bd_inpara
+	add	bx,0ch
+	mov	al,byte ptr [bx]
+	inc	al
+	and	al,1fh
+	mov	byte ptr [bx],al
+	jz	bd_gtnxdx
+	mov	ch,al
+	mov	al,byte ptr bd_exm
+	and	al,ch
+	and	al,byte ptr bd_extmod
+	jz	bd_gtnxdn
+	jmps	loc_0d5c
+bd_gtnxdx:
+	add	bx,2h
+	inc	byte ptr [bx]
+	mov	al,byte ptr [bx]
+	and	al,0fh
+	jz	bd_gtnxdv
+bd_gtnxdn:
+	mov	cl,0fh
+	call	bd_srdrfs
+	call	bd_ckdren
+	jnz	loc_0d5c
+	mov	al,byte ptr bd_rwmode
+	inc	al
+	jz	bd_gtnxdv
+loc_0d5c:
+	call	bd_openfs
+	call	bd_gtrcnt
+	xor	al,al
+	jmp	bd_btprst
+bd_gtnxdv:
+	call	bd_nodtex
+	jmp	bd_fmdron
+; Sequential record reader: locate the block, set BIOS position and read.
+bd_rdnext:
+	mov	byte ptr bd_rupcnt,1h
+bd_rdnexr:
+	mov	byte ptr bd_rwmode,0ffh
+	call	bd_gtrcnt
+	mov	al,byte ptr bd_curcnt
+	cmp	al,byte ptr bd_recunt
+	jc	bd_rdnexs
+	cmp	al,80h
+	jnz	bd_rdnexv
+	call	bd_gtnxdr
+	call	bd_gtrcpt
+	xor	ax,ax
+	mov	word ptr bd_curcnt,ax
+	mov	byte ptr [bx],al
+	cmp	byte ptr bd_otpara,0h
+	jnz	bd_rdnexv
+bd_rdnexs:
+	call	bd_gtblck
+	call	bd_chkblk
+	jz	bd_rdnexv
+	call	bd_bltsct
+	call	bd_trsset
+	call	bd_dread
+	jmp	bd_usrcnt
+bd_rdnexv:
+	jmp	bd_nodtex
+; Select and, when necessary, log in the requested disk.
+bd_seldsk:
+	mov	bx,word ptr bd_lgdskv
+	mov	cl,byte ptr bd_curdsk
+	ror	bx,cl
+	push	bx
+	xchg	bx,dx
+	call	bd_gdptbl
+	pop	bx
+	jnz	loc_0dc8
+	call	bd_dseror
+loc_0dc8:
+	rcr	bl,1
+	jc	bd_entrye
+	mov	cx,word ptr bd_lgdskv
+	call	bd_stdkvc
+	mov	word ptr bd_lgdskv,bx
+	jmp	bd_inidmp
+bd_mseldk:
+	mov	al,byte ptr bd_inparb
+	mov	byte ptr bd_curdsk,al
+	jmps	bd_seldsk
+bd_entrys:
+	call	bd_stwfcs
+	jmps	bd_entryc
+bd_entryr:
+	call	bd_stwfcr
+bd_entryc:
+	mov	bx,word ptr bd_inpara
+	mov	byte ptr bd_sysmod,0h
+	test	byte ptr 8h[bx],80h
+	jz	bd_entrym
+	and	byte ptr 8h[bx],7fh
+	mov	byte ptr bd_sysmod,60h
+bd_entrym:
+	mov	byte ptr bd_flomod,0ffh
+	mov	bx,word ptr bd_inpara
+	mov	al,byte ptr [bx]
+	and	al,1fh
+	dec	al
+	mov	byte ptr bd_inparb,al
+	cmp	al,1eh
+	jnc	bd_entryd
+	mov	al,byte ptr bd_curdsk
+	mov	byte ptr bd_entdsk,al
+	mov	al,byte ptr [bx]
+	mov	byte ptr bd_enttyp,al
+	and	al,0e0h
+	mov	byte ptr [bx],al
+	call	bd_mseldk
+bd_entryd:
+	mov	al,byte ptr bd_usrcod
+	mov	bx,word ptr bd_inpara
+	or	byte ptr [bx],al
+bd_entrye:
+	ret
+bd_stsysm:
+	cmp	byte ptr bd_sysmod,60h
+	jnz	bd_stsyse
+	mov	bx,word ptr bd_inpara
+	mov	byte ptr [bx],0h
+bd_stsyse:
+	ret
+; BDOS disk-system reset: initialize default drive and DMA state.
+bd_mrsdsy:
+	test	word ptr bd_sgbios,0ffffh
+	jnz	bd_mrsdss
+	mov	word ptr bd_sgbios,cs
+bd_mrsdss:
+	xor	bx,bx
+	mov	word ptr bd_rodskv,bx
+	mov	word ptr bd_lgdskv,bx
+	mov	bl,byte ptr bd_curdrv
+	mov	byte ptr bd_curdsk,bl
+	jmp	bd_seldsk
+; Public file-open entry, including drive selection and FCB preparation.
+bd_mopen:
+	call	bd_entrys
+	call	bd_fmdclr
+	cmp	byte ptr bd_usrcod,0h
+	jz	bd_mopens
+	mov	word ptr state_1064,0feh
+	mov	byte ptr bd_syssrc,0ffh
+bd_mopens:
+	call	bd_openfl
+	call	bd_mopenc
+	test	byte ptr bd_syssrc,0ffh
+	jnz	bd_mopenz
+bd_mopene:
+	ret
+bd_mopenz:
+	mov	byte ptr bd_syssrc,0h
+	cmp	word ptr state_1064,0feh
+	jz	bd_mopene
+	mov	bx,word ptr bd_syscnt
+	and	bl,0fch
+	dec	bx
+	mov	word ptr bd_dircnt,bx
+	mov	byte ptr bd_sysmod,60h
+	mov	bx,word ptr bd_inpara
+	mov	byte ptr [bx],0h
+	mov	cl,0fh
+	call	bd_stdrsp
+	call	bd_srdrnx
+	call	bd_openfn
+	call	bd_mopenc
+	ret
+bd_mopenc:
+	call	bd_ckdren
+	jz	bd_mopene
+	pop	bx
+	cmp	byte ptr bd_sysmod,60h
+	jnz	bd_mopeng
+	mov	bx,word ptr bd_inpara
+	mov	al,byte ptr 0ah[bx]
+	and	al,80h
+	jnz	bd_mopeng
+	mov	byte ptr bd_sysmod,al
+	mov	al,0ffh
+	jmps	bd_mrtcds
+bd_mopeng:
+	ret
+; Public close and directory-search entries retained in this reduced BDOS.
+bd_mclose:
+	call	bd_entrys
+	jmp	bd_closef
+bd_msrchf:
+	call	bd_stwfcs
+	mov	bx,word ptr bd_indseg
+	mov	word ptr bd_sgufcb,bx
+	mov	cl,0h
+	mov	bx,word ptr bd_inpara
+	cmp	byte ptr [bx],3fh
+	jz	bd_msrcha
+	call	bd_extpnt
+	cmp	byte ptr [bx],3fh
+	jz	bd_msrchx
+	call	bd_fmdclr
+bd_msrchx:
+	call	bd_entryc
+	mov	cl,0fh
+bd_msrcha:
+	call	bd_srdrfs
+	jmps	loc_0f10
+bd_function_18:
+	ret
+loc_0f10:
+	jmp	bd_drcopy
+bd_function_19:
+	ret
+bd_function_20:
+	call	bd_entrys
+	call	bd_stsysm
+	jmp	bd_rdnext
+bd_function_21:
+	ret
+bd_function_22:
+	ret
+bd_function_23:
+	ret
+bd_mrtliv:
+	mov	bx,word ptr bd_lgdskv
+	jmps	loc_0f41
+bd_mrtcdk:
+	mov	al,byte ptr bd_curdsk
+bd_mrtcds:
+	jmp	bd_btprst
+; Set the caller DMA offset; the DMA segment is maintained separately.
+bd_mstdmo:
+	mov	word ptr bd_dmaadd,dx
+	jmp	bd_stbdma
+bd_mgtalm:
+	mov	bx,word ptr bd_pnalmp
+	jmps	loc_0f41
+bd_mgtrov:
+	mov	bx,word ptr bd_rodskv
+	jmps	loc_0f41
+bd_function_30:
+	ret
+bd_function_31:
+	ret
+loc_0f41:
+	mov	word ptr bd_otpara,bx
+	ret
+bd_function_32:
+	ret
+bd_function_33:
+	ret
+bd_function_34:
+	ret
+bd_function_35:
+	ret
+bd_function_36:
+	ret
+bd_function_37:
+	ret
+; Restore caller registers/segments and return from INT E0h.
+bd_endprc:
+	cmp	byte ptr bd_flomod,0h
+	jz	bd_endprn
+	mov	bx,word ptr bd_inpara
+	cmp	byte ptr bd_sysmod,60h
+	jnz	bd_endprs
+	or	byte ptr 8h[bx],80h
+bd_endprs:
+	mov	byte ptr [bx],0h
+	mov	al,byte ptr bd_enttyp
+	or	al,al
+	jz	bd_endprn
+	mov	byte ptr [bx],al
+	mov	al,byte ptr bd_entdsk
+	mov	byte ptr bd_inparb,al
+	call	bd_mseldk
+bd_endprn:
+	cmp	byte ptr bd_afwfcb,0ffh
+	jnz	bd_endprw
+	call	bd_rstfcb
+bd_endprw:
+	mov	ax,word ptr bd_otpara
+	mov	bx,ax
+bd_endpre:
+	ret
+bd_function_40:
+	ret
+bd_function_41:
+	ret
+bd_function_42:
+	ret
+	ret
+
+	dseg
+	org	0f8bh
+
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h
+bios_gateway	db	0a5h,7h
+bd_sgbios	dw	0h
+	db	0a4h,4h,0b0h,4h,0b5h,4h,0bah,4h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h
+bd_echkil	db	0h
+bd_ppromp	db	0h
+bd_pcarig	db	0h
+bd_bfconc	db	0h,0e5h
+bd_rodskv	dw	0h
+bd_lgdskv	dw	0h
+bd_pndrck	dw	0h
+bd_pntrak	dw	0h
+bd_pnsctr	dw	0h
+bd_dirbuf	dw	0h
+bd_pntdpb	dw	0h
+bd_pnchsm	dw	0h
+bd_pnalmp	dw	0h
+bd_spt	dw	0h
+bd_bsh	db	0h
+bd_blm	db	0h
+bd_exm	db	0h
+bd_dsm	db	0h
+state_1038	db	0h
+bd_drm	dw	0h
+bd_almask	dw	0h
+bd_chksiz	dw	0h
+bd_trkoff	dw	0h
+bd_pnxtbl	dw	0h
+bd_extmod	db	0h
+bd_rwmode	db	0h
+bd_mdwrit	db	0h
+bd_dircod	db	0h
+bd_rupcnt	db	0h
+bd_inparb	db	0h,0h
+bd_dsmmod	db	0h
+bd_flomod	db	0h
+bd_entdsk	db	0h
+bd_enttyp	db	0h
+bd_recunt	db	0h
+bd_extent	db	0h
+bd_curcnt	dw	0h
+bd_tgsect	dw	0h
+bd_btsect	dw	0h
+bd_bisdir	db	0h
+bd_dirsct	dw	0h
+bd_fcboff	dw	0h
+	db	0h,0h
+bd_curseg	dw	0h
+bd_afwfcb	db	0h
+bd_cnfcbc	db	0h
+bd_sysmod	db	0h
+bd_syssrc	db	0h
+bd_syscnt	db	0h
+state_1064	db	0h
+bd_sysflg	db	0h,42h,64h,6fh,73h,20h,45h,72h,72h,20h,4fh,6eh,20h ; .Bdos Err On 
+bd_cerrdk	db	20h,3ah,20h,24h,42h,61h,64h,20h,53h,65h,63h,74h,6fh,72h,24h,53h ;  : $Bad Sector$S
+	db	65h,6ch,65h,63h,74h,24h,46h,69h,6ch,65h,20h,52h,2fh,4fh,24h,0h ; elect$File R/O$.
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h
+bd_instsg	dw	0h
+bd_instof	dw	0h
+bd_flinsd	db	0h
+bd_inpara	dw	0h
+bd_otpara	dw	0h
+bd_indseg	dw	0h
+	db	0h
+bd_dmaadd	dw	0h
+bd_dma_segment	dw	0h
+bd_curdsk	db	0h
+bd_usrcod	db	0h
+bd_dircnt	dw	0h
+bd_dircln	db	0h
+bd_ptufcb	dw	0h
+bd_sgufcb	dw	0h
+bd_lsdrbf	dw	0h
+	db	0h,0h
+bd_mdconf	db	0h,0h,0h,0h,0h
+bd_lsttgl	db	0h
+bd_curdrv	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,50h,0h,0h,0h,0h,0h,0h ; .........P......
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+	cseg
+	org	1200h
+
+
+; ----------------------------------------------------------------------
+; Hard-disk loader BIOS jump table, with the standard CP/M-86 entry order.
+; ----------------------------------------------------------------------
+bios_cold_vector:
+	jmp	bios_initialize
+bios_warm_vector:
+	jmp	bios_warm_boot
+bios_status_vector:
+	jmp	bios_console_status
+bios_input_vector:
+	jmp	bios_console_input
+bios_output_vector:
+	jmp	bios_console_output
+bios_list_vector:
+	jmp	bios_no_operation
+bios_punch_vector:
+	jmp	bios_no_operation
+bios_reader_vector:
+	jmp	bios_no_operation
+bios_home_vector:
+	jmp	bios_home
+bios_select_vector:
+	jmp	bios_select_disk
+bios_track_vector:
+	jmp	bios_set_track
+bios_sector_vector:
+	jmp	bios_set_sector
+bios_dma_vector:
+	jmp	bios_set_dma
+bios_read_vector:
+	jmp	bios_read
+bios_write_vector:
+	jmp	bios_write_stub
+bios_list_status_vector:
+	jmp	bios_no_operation
+bios_translate_vector:
+	jmp	bios_translate
+bios_dma_segment_vector:
+	jmp	bios_set_dma_segment
+bios_memory_vector:
+	jmp	bios_memory
+bios_iobyte_vector:
+	jmp	bios_no_operation
+bios_set_iobyte_vector:
+	jmp	bios_no_operation
+
+; ----------------------------------------------------------------------
+; Initialize the BIOS stack/video state and install the embedded BDOS at
+; INT E0h. Copy the preceding on-disk label sector into runtime storage.
+; ----------------------------------------------------------------------
+bios_initialize:
+	pushf
+	pop	bp
+	cli
+	mov	ax,cs
+	mov	ss,ax
+	mov	sp,offset bios_stack_top
+	push	bp
+	popf
+	cld
+	mov	ds,ax
+	mov	es,ax
+	push	ds
+	mov	ax,0h
+	mov	ds,ax
+	mov	ah,0fh
+	int	10h
+	mov	ah,0h
+	int	10h
+	mov	word ptr bdos_vectors,406h
+	mov	word ptr state_0382,cs
+copy_disk_label:
+	mov	ax,cs
+	sub	ax,20h
+	mov	ds,ax
+	mov	si,0h
+	mov	di,disk_label
+	mov	cx,200h
+	rep	movsb
+	pop	ds
+
+; ----------------------------------------------------------------------
+; The 256-word label checksum must sum to zero. Disable directory checksum
+; storage and invalidate the cached physical block before loading the OS.
+; ----------------------------------------------------------------------
+check_disk_label:
+	mov	si,disk_label
+	lodsw
+	push	ax
+	mov	dx,0h
+	mov	cx,0ffh
+loc_1286:
+	lodsw
+	add	dx,ax
+	loop	loc_1286
+	pop	ax
+	add	dx,ax
+	jz	initialize_cache
+	mov	bx,offset bad_label_message
+	call	bios_print
+halt_bad_label:
+	jmps	halt_bad_label
+initialize_cache:
+	mov	word ptr .label_checksum_size,0h
+	mov	word ptr .cached_block,0ffffh
+	jmp	load_system
+unused_return:
+	ret
+bios_warm_boot:
+	jmp	load_system
+
+; ----------------------------------------------------------------------
+; Console services use ROM BIOS INT 16h / INT 10h.
+; ----------------------------------------------------------------------
+bios_console_status:
+	mov	ah,1h
+	int	16h
+	mov	al,0h
+	jz	loc_12b5
+	mov	al,0ffh
+loc_12b5:
+	ret
+bios_console_input:
+	mov	ah,0h
+	int	16h
+	and	al,7fh
+	ret
+bios_console_output:
+	mov	ah,0eh
+	mov	bx,7h
+	mov	al,cl
+	and	al,7fh
+	int	10h
+	ret
+bios_no_operation:
+	and	al,0h
+	ret
+bios_print:
+	mov	cl,byte ptr [bx]
+	or	cl,cl
+	jz	loc_12da
+	push	bx
+	call	bios_console_output
+	pop	bx
+	inc	bx
+	jmps	bios_print
+loc_12da:
+	ret
+
+; ----------------------------------------------------------------------
+; Only drive A: is exposed to BDOS. On first selection, compare ROM BIOS
+; geometry against the disk label before returning the DPH.
+; ----------------------------------------------------------------------
+bios_select_disk:
+	mov	bx,0h
+	cmp	cl,1h
+	jnc	loc_1309
+	or	cl,80h
+	mov	byte ptr disk_number,cl
+	test	dl,1h
+	jnz	loc_1306
+	mov	dl,cl
+	mov	ah,8h
+	int	13h
+	inc	dh
+	cmp	dh,byte ptr .label_heads
+	jnz	loc_1309
+	and	cl,3fh
+	cmp	cl,byte ptr .label_sectors
+	jnz	loc_1309
+loc_1306:
+	mov	bx,offset disk_parameter_header
+loc_1309:
+	ret
+bios_home:
+	mov	cx,0h
+bios_set_track:
+	mov	word ptr current_track,cx
+	ret
+bios_set_sector:
+	mov	byte ptr current_sector,cl
+	ret
+bios_translate:
+	mov	bx,cx
+	ret
+bios_set_dma:
+	mov	word ptr dma_offset,cx
+	ret
+bios_set_dma_segment:
+	mov	word ptr dma_segment,cx
+	ret
+bios_memory:
+	mov	bx,offset memory_regions
+	ret
+
+; ----------------------------------------------------------------------
+; Map the logical record to a physical block. Refill the cache only when
+; the block changes, then copy one 128-byte record into the BDOS DMA area.
+; ----------------------------------------------------------------------
+bios_read:
+	push	es
+	cld
+	call	map_block
+	mov	ax,word ptr bios_stack_top
+	cmp	word ptr .cached_block,ax
+	jz	copy_record
+	mov	word ptr .cached_block,ax
+	mul	word ptr .label_block_records
+	mov	cl,byte ptr .label_records_per_sector
+	xor	ch,ch
+	div	cx
+	xor	dx,dx
+	mov	cl,byte ptr .label_sectors
+	div	cx
+	inc	dl
+	mov	byte ptr request_sector,dl
+	add	ax,word ptr .label_reserved_tracks
+	xor	dx,dx
+	mov	cl,byte ptr .label_heads
+	div	cx
+	mov	word ptr request_cylinder,ax
+	mov	byte ptr request_head,dl
+	mov	byte ptr request_function,2h
+	mov	word ptr request_offset,184eh
+	mov	word ptr request_segment,cs
+	mov	ax,word ptr .label_block_records
+	shr	ax,1
+	shr	ax,1
+	mov	byte ptr request_count,al
+	mov	al,byte ptr disk_number
+	mov	byte ptr request_drive,al
+	call	bios_disk_request
+	jnc	copy_record
+	mov	word ptr .cached_block,0ffffh
+	mov	al,1h
+	jmps	loc_13aa
+copy_record:
+	mov	si,physical_buffer
+	add	si,word ptr byte_in_block
+	mov	di,word ptr dma_offset
+	mov	es,word ptr dma_segment
+	mov	cx,40h
+	rep	movsw
+	mov	al,0h
+loc_13aa:
+	pop	es
+	ret
+bios_write_stub:
+	mov	al,0h
+	ret
+
+; ----------------------------------------------------------------------
+; Convert track/record to a block and byte offset. Search the label bad-block
+; table and substitute a spare block when necessary.
+; ----------------------------------------------------------------------
+map_block:
+	mov	ax,word ptr current_track
+	sub	ax,word ptr .label_reserved_tracks
+	mul	word ptr .label_dpb
+	mov	cl,byte ptr current_sector
+	xor	ch,ch
+	add	ax,cx
+	adc	dx,0h
+	div	word ptr .label_block_records
+	mov	byte ptr record_in_block,dl
+	mov	dh,dl
+	xor	dl,dl
+	shr	dx,1
+	mov	word ptr byte_in_block,dx
+	mov	cx,word ptr .label_bad_count
+	jcxz	loc_13f0
+	push	cs
+	pop	es
+	mov	di,label_bad_blocks
+	repne	scasw
+	jnz	loc_13f0
+	inc	cx
+	sub	cx,word ptr .label_bad_count
+	mov	ax,word ptr .label_last_spare
+	add	ax,cx
+loc_13f0:
+	mov	word ptr bios_stack_top,ax
+	ret
+
+; ----------------------------------------------------------------------
+; Execute the BIOS request with five attempts and controller reset between
+; failures. Corrected ECC status 11h is accepted.
+; ----------------------------------------------------------------------
+bios_disk_request:
+	mov	cx,5h
+loc_13f7:
+	push	es
+	push	cx
+	mov	ah,byte ptr request_function
+	mov	al,byte ptr request_count
+	mov	dl,byte ptr request_drive
+	mov	dh,byte ptr request_head
+	mov	cx,word ptr request_cylinder
+	xchg	ch,cl
+	ror	cl,1
+	ror	cl,1
+	and	cl,0c0h
+	or	cl,byte ptr request_sector
+	mov	bx,word ptr request_offset
+	mov	es,word ptr request_segment
+	int	13h
+	pop	cx
+	pop	es
+	jnc	loc_1437
+	push	ax
+	mov	ah,0h
+	int	13h
+	pop	ax
+	loop	loc_13f7
+	cmp	ah,11h
+	stc
+	jnz	loc_1437
+	xor	ah,ah
+loc_1437:
+	ret
+
+	dseg
+	org	1438h
+
+
+; ----------------------------------------------------------------------
+; Disk parameter header: no translation table, runtime directory buffer,
+; DPB in the copied label, and shared allocation/checksum-vector storage.
+; ----------------------------------------------------------------------
+disk_parameter_header	db	0h,0h,0h,0h,0h,0h,0h,0h
+	dw	offset directory_buffer
+	dw	label_dpb
+	dw	offset allocation_vector
+	dw	offset allocation_vector
+bad_label_message	db	0dh,0ah,49h,6eh,76h,61h,6ch,69h,64h,20h,68h,61h,72h,64h,20h,64h ; ..Invalid hard d
+	db	69h,73h,6bh,20h,73h,79h,73h,74h,65h,6dh,20h,70h,61h,72h,74h,69h ; isk system parti
+	db	74h,69h,6fh,6eh,0dh,0ah,20h,20h,20h,20h,49h,6eh,73h,65h,72h,74h ; tion..    Insert
+	db	20h,53h,59h,53h,54h,45h,4dh,20h,64h,69h,73h,6bh,65h,74h,74h,65h ;  SYSTEM diskette
+	db	20h,69h,6eh,20h,41h,3ah,0dh,0ah,20h,20h,20h,20h,74h,68h,65h,6eh ;  in A:..    then
+	db	20h,50h,52h,45h,53h,53h,20h,43h,74h,72h,6ch,2fh,41h,6ch,74h,2fh ;  PRESS Ctrl/Alt/
+	db	44h,65h,6ch,2eh,2eh,2eh,0h ; Del....
+memory_regions	db	1h,0e5h,3h,1bh,1ch
+disk_number	db	0h
+current_track	dw	0h
+current_sector	db	0h
+dma_offset	dw	0h
+dma_segment	dw	0h
+request_function	db	0h
+request_drive	db	0h
+request_cylinder	dw	0h
+request_head	db	0h
+request_sector	db	0h
+request_count	db	0h
+request_offset	dw	0h
+request_segment	dw	0h
+
+; ----------------------------------------------------------------------
+; BIOS private stack (256 bytes). Its upper boundary is reused for block
+; mapping scratch state once the stack grows downward.
+; ----------------------------------------------------------------------
+bios_stack	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+bios_stack_top	dw	0h
+record_in_block	db	0h
+byte_in_block	dw	0h
+allocation_vector	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+; ----------------------------------------------------------------------
+; The directory buffer continues beyond the serialized image. The block
+; cache and disk label following it are runtime-only storage.
+; ----------------------------------------------------------------------
+directory_buffer	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h
+	end

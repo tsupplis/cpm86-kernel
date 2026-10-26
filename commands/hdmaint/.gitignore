@@ -1,0 +1,7 @@
+mbr.bin
+bootsect.bin
+loader.bin
+mbr.inc
+bootsect.inc
+loader.inc
+__pycache__/

@@ -20,6 +20,7 @@ TOD      = $(CMDDIR)/tod/tod.cmd
 ASSIGN   = $(CMDDIR)/assign/assign.cmd
 DSKMAINT = $(CMDDIR)/dskmaint/dskmaint.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
+HDMAINT  = $(CMDDIR)/hdmaint/hdmaint.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
 DFORM    = $(CMDDIR)/dskmaint/dform.cmd
 DCOPY    = $(CMDDIR)/disk/dcopy.cmd
@@ -44,7 +45,7 @@ DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
 	cpm86-720-at.img cpm86-exp-720-at.img
 
 # Tools that are the same whichever kernel the image carries.
-SHARED     = base/setup.cmd base/hdmaint.cmd \
+SHARED     = base/setup.cmd $(HDMAINT) \
              base/config.cmd base/print.cmd 
 
 CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
@@ -64,7 +65,7 @@ EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
 .SECONDEXPANSION:
 SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
                $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
-               $(MFORM) $(EXTTOOLS)
+               $(MFORM) $(HDMAINT) $(EXTTOOLS)
 $(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/Makefile)
 	$(MAKE) -C $(@D) $(@F)
 $(HLP): commands/help/help.dat

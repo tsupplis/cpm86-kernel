@@ -1,0 +1,160 @@
+; HDMAINT 1.1 embedded mbr - reconstructed from base/hdmaint.cmd.
+; Real instructions retain the original layout; make check verifies every byte.
+; Later OEM boot sources explain the design but are not substituted here.
+
+; Absolute far-transfer target (declaration only).
+	cseg	60h
+	org	27h
+relocated_mbr:
+
+; Absolute far-transfer target (declaration only).
+	cseg	0h
+	org	7c00h
+partition_boot_entry:
+
+	cseg
+	org	0
+
+; Preserve a short indexed CS override without widening its displacement.
+	codemacro cs_prefix operand:mb
+	segfix operand
+	endm
+
+
+
+; ----------------------------------------------------------------------
+; BIOS loads this sector at 0000:7C00h. Copy it to 0060:0000h, then
+; transfer to the relocated code so the partition boot sector can reuse 7C00h.
+; ----------------------------------------------------------------------
+mbr_entry:
+	cli
+	mov	ax,0h
+	mov	ss,ax
+	mov	ax,7c00h
+	mov	sp,ax
+	sti
+	cld
+	mov	ax,0h
+	mov	ds,ax
+	mov	si,7c00h
+	mov	ax,60h
+	mov	es,ax
+	mov	di,0h
+	mov	cx,100h
+	rep	movsw
+	jmpf	relocated_mbr
+relocated_entry:
+	mov	ax,cs
+	mov	ds,ax
+	mov	cx,4h
+	mov	di,offset partition_table
+
+; ----------------------------------------------------------------------
+; Locate exactly one active (80h) entry. Reject any other nonzero boot flag.
+; With no active partition, invoke ROM BASIC through INT 18h.
+; ----------------------------------------------------------------------
+find_active:
+	mov	dx,word ptr [di]
+	cmp	dl,80h
+	jz	active_found
+	cmp	dl,0h
+	jnz	invalid_partition
+	add	di,10h
+	loop	find_active
+	int	18h
+active_found:
+	mov	si,di
+	jmps	next_entry
+check_other_entries:
+	add	di,10h
+	mov	ax,word ptr [di]
+	cmp	al,80h
+	jz	invalid_partition
+	cmp	al,0h
+	jnz	invalid_partition
+next_entry:
+	loop	check_other_entries
+
+; ----------------------------------------------------------------------
+; Read the active partition boot sector, retrying five times. DS:SI remains
+; a pointer to its partition entry for the next boot stage.
+; ----------------------------------------------------------------------
+prepare_read:
+	mov	cx,5h
+read_boot_sector:
+	mov	ax,0h
+	mov	es,ax
+	mov	bx,7c00h
+	mov	ah,2h
+	mov	al,1h
+	push	cx
+	mov	cx,word ptr 2h[si]
+	int	13h
+	pop	cx
+	jnc	check_signature
+	mov	ah,0h
+	int	13h
+	loop	read_boot_sector
+	mov	si,offset read_error_message
+	jmps	print_error
+
+; ----------------------------------------------------------------------
+; Require the AA55h boot signature before transferring to 0000:7C00h.
+; ----------------------------------------------------------------------
+check_signature:
+	cmp	es:word ptr boot_signature[bx],0aa55h
+	jnz	missing_system
+	jmpf	partition_boot_entry
+missing_system:
+	mov	si,offset missing_message
+	jmps	print_error
+invalid_partition:
+	mov	si,offset invalid_message
+
+; ----------------------------------------------------------------------
+; Print a dollar-terminated error via ROM video, then wait for reset.
+; ----------------------------------------------------------------------
+print_error:
+	lodsb
+	cmp	al,24h
+halt_error:
+	jz	halt_error
+	push	si
+	mov	bx,7h
+	mov	ah,0eh
+	int	10h
+	pop	si
+	jmps	print_error
+
+	dseg
+	org	0a0h
+
+invalid_message	db	49h,6eh,76h,61h,6ch,69h,64h,20h,70h,61h,72h,74h,69h,74h,69h,6fh ; Invalid partitio
+	db	6eh,20h,74h,61h,62h,6ch,65h,24h ; n table$
+missing_message	db	4dh,69h,73h,73h,69h,6eh,67h,20h,6fh,70h,65h,72h,61h,74h,69h,6eh ; Missing operatin
+	db	67h,20h,73h,79h,73h,74h,65h,6dh,24h ; g system$
+read_error_message	db	45h,72h,72h,6fh,72h,20h,6ch,6fh,61h,64h,69h,6eh,67h,20h,6fh,70h ; Error loading op
+	db	65h,72h,61h,74h,69h,6eh,67h,20h,73h,79h,73h,74h,65h,6dh,24h,0h ; erating system$.
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+; ----------------------------------------------------------------------
+; Four initially empty 16-byte partition entries; HDMAINT overlays these.
+; ----------------------------------------------------------------------
+partition_table	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+boot_signature	db	55h,0aah ; U.
+	end
