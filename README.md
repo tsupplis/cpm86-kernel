@@ -100,7 +100,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `help.hlp` | Original | Rebuilt for every core distribution; includes new tools too |
 | `mform` | Original| Reverse engineered from CP/M-86 and adapted |
 | `pip` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
-| `print` | Original | TBD, Reverse engineered from CP/M-86 and adapted |
+| `print` | Original | Labelled assembly reconstruction; maintained and frozen builds match the original exactly |
 | `setup` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
 | `stat` | Original | Adapted from CP/M-80 2.2 |
 | `submit`  | Patched (DR rec.) | Adapted from CP/M-80 2.2 |
@@ -110,7 +110,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | `hexcom` | — | HEXCOM 3.00-compatible C from [tpzasm](https://github.com/johnsonjh/tpzasm) |
 > A clean-room reimplementation of `submit` (`msub`) with a visual and configurable menu system for submit orchestration is available at [cpm86-menu](https://github.com/tsupplis/cpm86-menu).
 
-`make commands` builds the full source set. `tod`, `mform`, `dcopy`, `dcomp`, `dform` and the updated help database are built from source for the stock and experimental distributions. The experimental images also use reconstructed versions of the standard tools.
+`make commands` builds the full source set. Every `cpm86*.img` distribution uses the maintained `commands/` build wherever available, including CONFIG, SETUP and HDMAINT 1.1N. Only GENDEF and MFORMQ retain their `base/` binaries because they have no corresponding source-build target. Developer toolchains remain in `dev/`.
 
 #### Command-line floppy tools
 
@@ -163,7 +163,7 @@ Shipped unmodified.
 
 ### Disk images
 
-Four sets are produced. The 160K set is the reference layout; the others repack the same material for larger media. The experimental set boots `cpmexp.sys` and replaces `base/` binaries with source-rebuilt tools.
+Four sets are produced. The 160K set is the reference layout; the others repack the same material for larger media. The experimental set boots `cpmexp.sys`; both kernel families use source-rebuilt tools.
 
 **160K single sided: 4 disks**
 
@@ -201,7 +201,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 
 The three new floppy commands total about 51K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. The 320K core pair and all stock/experimental 720K and 1.44M images carry all three commands directly. Developer-only disks retain their toolchain contents.
 
-The experimental 160K pair ships the reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
+All 160K core disks ship reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 
 PCE helper scripts: `./cpm86`, `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make test`, `make test-320` and `make test-exp` are shortcuts for the common ones.
 

@@ -4,8 +4,7 @@ all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys commands extra
 # so cpmtools has to work on an untwisted copy that is twisted back at the end.
 TWIST = python3 tools/cpm86twist.py
 
-# Tools rebuilt from source. tod has no base/ binary at all, so every image
-# takes it from here; the experimental images take the whole reconstructed set.
+# Every distribution uses rebuilt tools wherever a commands/ counterpart exists.
 CMDDIR   = commands
 ASM86    = $(CMDDIR)/asm86/asm86.cmd
 DDT86    = $(CMDDIR)/ddt86/ddt86.cmd
@@ -14,6 +13,7 @@ GENCMD   = $(CMDDIR)/gencmd/gencmd.cmd
 HELP     = $(CMDDIR)/help/help.cmd
 HLP      = $(CMDDIR)/help/help.hlp
 PIP      = $(CMDDIR)/pip/pip.cmd
+PRINT    = $(CMDDIR)/print/print.cmd
 STAT     = $(CMDDIR)/stat/stat.cmd
 SUBMIT   = $(CMDDIR)/submit/submit.cmd
 TOD      = $(CMDDIR)/tod/tod.cmd
@@ -21,6 +21,8 @@ ASSIGN   = $(CMDDIR)/assign/assign.cmd
 DSKMAINT = $(CMDDIR)/dskmaint/dskmaint.cmd
 FUNCTION = $(CMDDIR)/function/function.cmd
 HDMAINT  = $(CMDDIR)/hdmaint/hdmaint.cmd
+CONFIG   = $(CMDDIR)/config/config.cmd
+SETUP    = $(CMDDIR)/setup/setup.cmd
 MFORM    = $(CMDDIR)/mform/mform.cmd
 DFORM    = $(CMDDIR)/dskmaint/dform.cmd
 DCOPY    = $(CMDDIR)/disk/dcopy.cmd
@@ -30,7 +32,7 @@ DATPFK   = $(CMDDIR)/function/data.pfk
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
 # take everything; the smaller formats take subsets.
-ASMTOOLS   = base/asm86.cmd base/ddt86.cmd base/gencmd.cmd base/gendef.cmd
+ASMTOOLS   = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
 DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
              dev/sid86.cmd
 BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
@@ -45,12 +47,12 @@ DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
 	cpm86-720-at.img cpm86-exp-720-at.img
 
 # Tools that are the same whichever kernel the image carries.
-SHARED     = base/setup.cmd $(HDMAINT) \
-             base/config.cmd base/print.cmd 
+SHARED     = $(SETUP) $(HDMAINT) \
+             $(CONFIG) $(PRINT) 
 
-CORETOOLS  = base/pip.cmd base/stat.cmd base/submit.cmd base/ed.cmd base/function.cmd \
-             base/help.cmd base/assign.cmd $(MFORM) base/mformq.cmd \
-             $(HLP) base/dskmaint.cmd base/data.pfk \
+CORETOOLS  = $(PIP) $(STAT) $(SUBMIT) $(ED) $(FUNCTION) \
+             $(HELP) $(ASSIGN) $(MFORM) base/mformq.cmd \
+             $(HLP) $(DSKMAINT) $(DATPFK) \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
              $(MFORM) $(FUNCTION) $(SHARED) $(DSKMAINT) $(HLP) $(TESTSUB) \
@@ -65,7 +67,7 @@ EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
 .SECONDEXPANSION:
 SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
                $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
-               $(MFORM) $(HDMAINT) $(EXTTOOLS)
+               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(EXTTOOLS)
 $(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/Makefile)
 	$(MAKE) -C $(@D) $(@F)
 $(HLP): commands/help/help.dat
@@ -166,7 +168,7 @@ cpm86-720-at.img: FTOOLS = $(STOCKTOOLS)
 cpm86-720-at.img: cpm.sys base-720-at.img | commands extra
 	$(feat_image)
 
-# Experimental kernel plus the full commands/ reconstruction.
+# Experimental kernel with the same source-built tool policy.
 cpm86-exp-1440-at.img: FEAT = cpm86-144feat
 cpm86-exp-1440-at.img: BASE = base-1440-at.img
 cpm86-exp-1440-at.img: KRNL = cpmexp.sys
@@ -198,11 +200,11 @@ cpm86-320.img: cpm.sys base-320.img | commands
 
 cpm86-320-dev.img: FEAT = cpm86-320
 cpm86-320-dev.img: BASE = base-320.img
-cpm86-320-dev.img: FTOOLS = base/pip.cmd base/submit.cmd base/ed.cmd $(DEVTOOLS)
+cpm86-320-dev.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(DEVTOOLS)
 cpm86-320-dev.img: base-320.img
 	$(twist_image)
 
-# Experimental kernel plus the commands/ reconstruction in place of base/.
+# Experimental kernel with source-built core tools.
 cpm86-exp-160-1-at.img: FEAT = ibmpc-514ss
 cpm86-exp-160-1-at.img: BASE = base-160-at.img
 cpm86-exp-160-1-at.img: KRNL = cpmexp.sys
@@ -236,7 +238,7 @@ cpm86-160-1.img: cpm.sys base-160.img | commands
 cpm86-160-2.img: FEAT = ibmpc-514ss
 cpm86-160-2.img: BASE = base-160.img
 # HELP stays on the bootable core disks; duplicating it here exceeds 160K.
-cpm86-160-2.img: FTOOLS = base/pip.cmd base/submit.cmd base/ed.cmd $(ASMTOOLS) \
+cpm86-160-2.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(ASMTOOLS) \
              $(EXTTOOLS)
 cpm86-160-2.img: base-160.img
 	$(flat_image)

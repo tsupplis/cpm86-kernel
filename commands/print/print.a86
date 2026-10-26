@@ -1,0 +1,1746 @@
+
+; ----------------------------------------------------------------------
+; PRINT V1.1 - CP/M-86 V1.1 resident printer/spooler.
+; Copyright (C) 1980 Digital Research.
+;
+; Reconstructed from ../../base/print.cmd. printorg.a86 is the frozen
+; invariant; print.a86 is the maintained source. Both initially reproduce
+; the entire original CMD, including its 16-byte record padding.
+;
+; Command line (shipped explicit-file mode):
+;
+;   PRINT [d:]filename[.ext] [[d:]filename[.ext] ...]
+;   PRINT OFF
+;
+; Separate filenames with spaces. Each name uses CP/M 8.3 syntax; an
+; omitted drive uses the current drive. Wildcards (* and ?) are rejected
+; by the file-opening path. Use explicit extensions; none is supplied.
+; Files print in queue order, with a form feed before each new file.
+; A later PRINT invocation appends names to the resident queue, provided
+; it belongs to the same CP/M user and has sufficient command-tail space.
+; OFF requests shutdown of an existing resident spooler.
+;
+; Examples:
+;   A>PRINT REPORT.TXT B:NOTES.LST
+;   A>PRINT MORE.TXT
+;   A>PRINT OFF
+;
+; Directory-spool mode and scheduling options are CODE configuration
+; bytes, not command-line switches. The shipped directory mode is off.
+;
+; Build from this directory (host tools):
+;   cpm86_asm86 print.a86
+;   cpm86_gencmd print.h86
+; Or, from the repository root:
+;   make -C commands/print check
+; Native CP/M equivalents: ASM86 PRINT, then GENCMD PRINT.
+; GENCMD uses its default separate CODE/DATA layout; no switches required.
+;
+; The program queues command-tail filenames, expands printer tabs, hooks
+; INT E2h/E3h and optionally the BDOS BIOS gateway, then stays resident.
+; Later invocations append names or request OFF. Optional directory mode
+; searches for configured spool files and deletes completed output files.
+;
+; This is the CP/M-86-specific binary, not a Concurrent CP/M port. It checks
+; BDOS version 0022h and accesses fixed kernel offsets. Unknown kernel fields
+; are named by address rather than assigned speculative meanings.
+;
+; CODE and DATA are separate, each with origin zero. Executable bytes use
+; mnemonics; configuration, saved state, patch space and padding use DB/DW.
+; make check verifies every byte and therefore every original displacement.
+; ----------------------------------------------------------------------
+
+int_e2_offset	equ	388h
+int_e2_segment	equ	38ah
+int_e3_offset	equ	38ch
+int_e3_segment	equ	38eh
+bdos_bios_offset	equ	2200h
+bdos_bios_segment	equ	2202h
+bdos_byte_2310	equ	2310h
+bdos_byte_2313	equ	2313h
+bdos_word_2321	equ	2321h
+bdos_byte_2327	equ	2327h
+bdos_byte_2393	equ	2393h
+bdos_abort_mode	equ	24afh
+resident_ds_slot	equ	0bb1h
+resident_lock_slot	equ	0bc5h
+bios_console_status	equ	2506h
+bios_console_input	equ	2509h
+f_reset	equ	0h
+f_console_output	equ	2h
+f_list_output	equ	5h
+f_print_string	equ	9h
+f_version	equ	0ch
+f_select_disk	equ	0eh
+f_open	equ	0fh
+f_search_first	equ	11h
+f_delete	equ	13h
+f_read_sequential	equ	14h
+f_current_disk	equ	19h
+f_dma_offset	equ	1ah
+f_user	equ	20h
+f_system_data	equ	31h
+f_direct_bios	equ	32h
+f_dma_segment	equ	33h
+f_release_resident	equ	3ah
+
+	cseg
+	org	0
+
+entry:
+	jmp	initialize
+
+; ----------------------------------------------------------------------
+; Original copyright and configurable spooler options. Preserve unused
+; option bytes and the reserved block; their offsets form the shipped layout.
+; ----------------------------------------------------------------------
+copyright	db	'COPYRIGHT (C) 1980, DIGITAL RESEARCH  '
+debug_breaks	db	0h
+directory_mode	db	0h
+reserved_option	db	0h
+reserved_option2	db	0ffh
+console_hook_enabled	db	0ffh
+status_poll_enabled	db	0ffh
+e3_interval	db	14h
+configured_spool_extension	db	'SPL'
+directory_poll_interval	dw	5dch
+characters_per_slice	db	4h
+buffer_records	dw	4h
+e2_interval	db	5h
+defer_disk_io	db	0ffh
+option_padding	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+; ----------------------------------------------------------------------
+; Save/restore the interrupt worker registers while retaining the near return
+; address on top of the stack. AX is saved separately by the interrupt entry.
+; ----------------------------------------------------------------------
+save_registers:
+	pop	ax
+	push	bx
+	push	cx
+	push	dx
+	push	bp
+	push	si
+	push	di
+	push	es
+	push	ax
+	ret
+restore_registers:
+	pop	ax
+	pop	es
+	pop	di
+	pop	si
+	pop	bp
+	pop	dx
+	pop	cx
+	pop	bx
+	push	ax
+	ret
+
+; ----------------------------------------------------------------------
+; BDOS 49 returns the system-data pointer in ES:BX. Remember it for later
+; context switches and initialize the character budget from CODE options.
+; ----------------------------------------------------------------------
+locate_bdos:
+	mov	cl,f_system_data
+	call	bdos_call
+	mov	word ptr bdos_segment,es
+	mov	word ptr bdos_state_pointer,bx
+	mov	al,cs:byte ptr characters_per_slice
+	mov	byte ptr slice_remaining,al
+	ret
+get_bdos_pointer:
+	mov	es,word ptr bdos_segment
+	mov	bx,word ptr bdos_state_pointer
+	ret
+
+; ----------------------------------------------------------------------
+; Save CX bytes beginning twelve bytes before the BDOS state pointer.
+; Also preserve the separately addressed kernel byte at 2310h.
+; ----------------------------------------------------------------------
+save_bdos_state:
+	push	ds
+	pop	es
+	push	ds
+	mov	si,word ptr bdos_state_pointer
+	sub	si,0ch
+	mov	ds,word ptr bdos_segment
+	mov	di,offset saved_bdos_state
+	push	ax
+	mov	al,byte ptr .bdos_byte_2310
+	mov	es:byte ptr saved_bdos_byte,al
+	pop	ax
+	cld
+	rep	movsb
+	pop	ds
+	ret
+restore_bdos_state:
+	call	get_bdos_pointer
+	mov	si,offset saved_bdos_state
+	mov	di,bx
+	sub	di,0ch
+	push	ax
+	mov	al,byte ptr saved_bdos_byte
+	mov	es:byte ptr .bdos_byte_2310,al
+	pop	ax
+	cld
+	rep	movsb
+	ret
+
+; ----------------------------------------------------------------------
+; Save the larger disk context and the 128-byte directory/DMA record.
+; restore_disk_context reverses these transfers after background file I/O.
+; ----------------------------------------------------------------------
+save_disk_context:
+	mov	cx,1bh
+	call	save_bdos_state
+	push	ds
+	mov	ds,word ptr bdos_segment
+	push	ax
+	mov	ax,word ptr .bdos_word_2321
+	mov	es:word ptr saved_bdos_word,ax
+	pop	ax
+	mov	cx,80h
+	mov	si,es:word ptr saved_directory_buffer
+	mov	di,offset saved_dma_record
+	rep	movsb
+	pop	ds
+	ret
+restore_disk_context:
+	mov	cx,1bh
+	call	restore_bdos_state
+	push	ax
+	mov	ax,word ptr saved_bdos_word
+	mov	es:word ptr .bdos_word_2321,ax
+	pop	ax
+	mov	cx,80h
+	mov	di,word ptr saved_directory_buffer
+	mov	si,offset saved_dma_record
+	rep	movsb
+	ret
+
+; ----------------------------------------------------------------------
+; Protected BDOS call: preserve shared kernel state, mark the temporary
+; context, call INT E0h, then restore the foreground fields. Save AX and BX
+; results across restoration. Fixed offsets belong to this CP/M revision.
+; ----------------------------------------------------------------------
+protected_bdos_call:
+	push	cx
+	mov	cx,0bh
+	call	save_bdos_state
+	call	get_bdos_pointer
+	sub	bx,8h
+	mov	es:byte ptr [bx],1h
+	pop	cx
+	mov	word ptr saved_bdos_ax,ax
+	mov	ah,es:byte ptr .bdos_byte_2327
+	mov	al,es:byte ptr .bdos_byte_2313
+	push	ax
+	mov	ax,word ptr saved_bdos_ax
+	int	0e0h
+	mov	cs:word ptr saved_bdos_bx,bx
+	call	get_bdos_pointer
+	sub	bx,8h
+	mov	es:byte ptr [bx],0h
+	mov	word ptr saved_bdos_ax,ax
+	pop	ax
+	mov	es:byte ptr .bdos_byte_2327,ah
+	mov	es:byte ptr .bdos_byte_2313,al
+	mov	ax,word ptr saved_bdos_ax
+	mov	bp,ds
+	mov	es,bp
+	mov	cx,0bh
+	call	restore_bdos_state
+	mov	bx,cs:word ptr saved_bdos_bx
+	ret
+
+; ----------------------------------------------------------------------
+; Direct BDOS entry and small function-selection wrappers. Function zero
+; uses DX=0 to release memory or DX=1 to keep the spooler resident.
+; ----------------------------------------------------------------------
+bdos_call:
+	int	0e0h
+	ret
+exit_transient:
+	xor	dx,dx
+reset_or_stay_resident:
+	mov	cl,f_reset
+	jmps	bdos_call
+select_disk:
+	mov	dl,al
+	mov	cl,f_select_disk
+	jmps	dispatch_protected_bdos
+open_file:
+	mov	cl,f_open
+dispatch_protected_bdos:
+	jmp	protected_bdos_call
+set_dma_segment:
+	mov	cl,f_dma_segment
+	jmps	dispatch_protected_bdos
+set_dma_offset:
+	mov	cl,f_dma_offset
+	jmps	dispatch_protected_bdos
+
+; ----------------------------------------------------------------------
+; Restore both DMA segment and offset from the saved foreground context.
+; ----------------------------------------------------------------------
+restore_dma:
+	mov	bx,offset saved_dma_offset
+	mov	dx,word ptr 2h[bx]
+	push	bx
+	call	set_dma_segment
+	pop	bx
+	mov	dx,word ptr [bx]
+	call	set_dma_offset
+	ret
+get_default_drive:
+	mov	cl,f_current_disk
+	int	0e0h
+	inc	al
+	mov	byte ptr default_drive,al
+	ret
+set_bdos_byte:
+	call	get_bdos_pointer
+	add	bx,dx
+	mov	es:byte ptr [bx],al
+	ret
+
+; ----------------------------------------------------------------------
+; Save and replace INT E2h/E3h vectors in segment zero. The caller disables
+; interrupts before installation. Symbolic CODE offsets retain the handlers.
+; ----------------------------------------------------------------------
+install_interrupts:
+	mov	ax,0h
+	mov	es,ax
+	mov	ax,es:word ptr .int_e2_offset
+	mov	word ptr saved_e2_offset,ax
+	mov	ax,es:word ptr .int_e2_segment
+	mov	word ptr saved_e2_segment,ax
+	mov	ax,es:word ptr .int_e3_offset
+	mov	word ptr saved_e3_offset,ax
+	mov	ax,es:word ptr .int_e3_segment
+	mov	word ptr saved_e3_segment,ax
+	mov	ax,offset int_e2_handler
+	mov	es:word ptr .int_e2_offset,ax
+	mov	es:word ptr .int_e2_segment,cs
+	mov	ax,offset int_e3_handler
+	mov	es:word ptr .int_e3_offset,ax
+	mov	es:word ptr .int_e3_segment,cs
+	ret
+check_bdos_busy:
+	call	get_bdos_pointer
+	test	es:byte ptr 11h[bx],0ffh
+	ret
+
+; ----------------------------------------------------------------------
+; Console diagnostics use protected BDOS function 2. print_message emits
+; a leading CR/LF and then a NUL-terminated string addressed by CX.
+; ----------------------------------------------------------------------
+console_output:
+	mov	dl,al
+	mov	cl,f_console_output
+	push	cx
+	call	protected_bdos_call
+	pop	cx
+	ret
+console_crlf:
+	mov	al,0dh
+	call	console_output
+	mov	al,0ah
+	jmps	console_output
+print_message:
+	push	cx
+	call	console_crlf
+	pop	bx
+print_message_at_0211:
+	mov	al,byte ptr [bx]
+	or	al,al
+	jnz	print_message_at_0218
+	ret
+print_message_at_0218:
+	inc	bx
+	push	bx
+	call	console_output
+	pop	bx
+	jmps	print_message_at_0211
+
+; ----------------------------------------------------------------------
+; When enabled, BDOS 50 invokes BIOS list-status function 15. FFh means
+; ready; a busy printer leaves the character pending for another slice.
+; ----------------------------------------------------------------------
+printer_status:
+	test	cs:byte ptr status_poll_enabled,0ffh
+	jnz	printer_status_at_022b
+	or	al,0ffh
+	ret
+printer_status_at_022b:
+	mov	cl,32h
+	mov	dx,offset bios_request
+	mov	byte ptr bios_request,0fh
+	jmp	protected_bdos_call
+
+; ----------------------------------------------------------------------
+; Track printer column and emit DL through BDOS list output (function 5).
+; ----------------------------------------------------------------------
+printer_output:
+	cmp	dl,0dh
+	jnz	printer_output_at_0242
+	mov	byte ptr printer_column,0ffh
+printer_output_at_0242:
+	inc	byte ptr printer_column
+	mov	cl,f_list_output
+	call	protected_bdos_call
+	mov	byte ptr character_pending,0h
+	ret
+
+; ----------------------------------------------------------------------
+; Expand TAB into spaces up to the next eight-column boundary. Preserve
+; a pending character when the printer is not ready.
+; ----------------------------------------------------------------------
+print_character:
+	cmp	al,9h
+	jnz	print_character_at_0277
+print_character_at_0255:
+	call	printer_status
+	cmp	al,0ffh
+	jz	print_character_at_0268
+	mov	byte ptr character_pending,0ffh
+	mov	byte ptr pending_character,9h
+	jmps	print_character_at_0276
+print_character_at_0268:
+	mov	dl,20h
+	call	printer_output
+	mov	dl,byte ptr printer_column
+	and	dl,7h
+	jnz	print_character_at_0255
+print_character_at_0276:
+	ret
+print_character_at_0277:
+	mov	byte ptr pending_character,al
+	call	printer_status
+	cmp	al,0ffh
+	jz	print_character_at_0288
+	mov	byte ptr character_pending,0ffh
+	jmps	print_character_at_0276
+print_character_at_0288:
+	mov	dl,byte ptr pending_character
+	jmp	printer_output
+
+; ----------------------------------------------------------------------
+; Render the current FCB as a fourteen-character status filename in the
+; BDOS area. The companion routine blanks the same field.
+; ----------------------------------------------------------------------
+show_current_filename:
+	cld
+	call	get_bdos_pointer
+	mov	di,bx
+	add	di,32h
+	mov	bx,offset drive_letters
+	mov	al,byte ptr file_fcb
+	xlat	byte ptr [bx]
+	stosb
+	mov	al,3ah
+	stosb
+	mov	si,offset file_name
+	mov	cx,8h
+show_current_filename_at_02a9:
+	cmp	byte ptr [si],20h
+	jz	show_current_filename_at_02b4
+	lodsb
+	and	al,7fh
+	stosb
+	loop	show_current_filename_at_02a9
+show_current_filename_at_02b4:
+	mov	al,2eh
+	stosb
+	push	cx
+	mov	cx,3h
+	mov	si,offset file_extension
+show_current_filename_at_02be:
+	lodsb
+	and	al,7fh
+	stosb
+	loop	show_current_filename_at_02be
+	pop	cx
+	mov	al,20h
+	rep	stosb
+	ret
+clear_current_filename:
+	cld
+	call	get_bdos_pointer
+	mov	di,bx
+	add	di,32h
+	mov	cx,0eh
+	mov	al,20h
+	rep	stosb
+	ret
+
+; ----------------------------------------------------------------------
+; Reset the current record, select the FCB drive through BIOS function 9,
+; then open the file. Return zero if the drive or open operation fails.
+; ----------------------------------------------------------------------
+open_print_file:
+	mov	byte ptr file_current_record,0h
+	xor	ax,ax
+	mov	al,byte ptr file_fcb
+	dec	al
+	mov	word ptr bios_request_argument,ax
+	mov	word ptr bios_request_value,1h
+	mov	byte ptr bios_request,9h
+	mov	cl,32h
+	mov	dx,offset bios_request
+	call	protected_bdos_call
+	cmp	bx,0h
+	jnz	open_print_file_at_0305
+	and	al,0h
+	ret
+open_print_file_at_0305:
+	mov	dx,offset file_fcb
+	call	open_file
+	inc	al
+	ret
+
+; ----------------------------------------------------------------------
+; Read up to AX 128-byte records into read_buffer. Return the number read.
+; The surrounding caller saves and restores the foreground disk context.
+; ----------------------------------------------------------------------
+fill_read_buffer:
+	mov	word ptr records_remaining,ax
+	mov	word ptr records_read,0h
+	mov	ax,offset read_buffer
+	mov	word ptr read_dma_offset,ax
+	mov	dx,ds
+	call	set_dma_segment
+fill_read_buffer_at_0322:
+	mov	dx,word ptr read_dma_offset
+	call	set_dma_offset
+	mov	dx,offset file_fcb
+	mov	cl,f_read_sequential
+	call	protected_bdos_call
+	cmp	al,0h
+	jnz	fill_read_buffer_at_0347
+	inc	word ptr records_read
+	dec	word ptr records_remaining
+	jz	fill_read_buffer_at_0347
+	add	word ptr read_dma_offset,80h
+	jmps	fill_read_buffer_at_0322
+fill_read_buffer_at_0347:
+	mov	ax,word ptr records_read
+	ret
+no_file_exit:
+	mov	dx,offset msg_no_file
+	mov	cl,f_print_string
+	int	0e0h
+	jmp	exit_transient
+
+; ----------------------------------------------------------------------
+; Retained syntax diagnostic: print the offending token followed by ?.
+; ----------------------------------------------------------------------
+syntax_error:
+	call	console_crlf
+	mov	bx,word ptr token_start
+syntax_error_at_035c:
+	mov	al,byte ptr [bx]
+	cmp	al,20h
+	jz	syntax_error_at_036e
+	or	al,al
+	jz	syntax_error_at_036e
+	push	bx
+	call	console_output
+	pop	bx
+	inc	bx
+	jmps	syntax_error_at_035c
+syntax_error_at_036e:
+	mov	al,3fh
+	call	console_output
+	call	console_crlf
+	call	exit_transient
+
+; ----------------------------------------------------------------------
+; Token parsing helpers: test separators, skip spaces and pad FCB fields.
+; A star expands to question marks; the caller counts wildcard characters.
+; ----------------------------------------------------------------------
+test_delimiter:
+	mov	al,byte ptr [si]
+	or	al,al
+	jnz	test_delimiter_at_0380
+	ret
+test_delimiter_at_0380:
+	cmp	al,20h
+	jnc	test_delimiter_at_0387
+	or	al,0h
+	ret
+test_delimiter_at_0387:
+	push	di
+	push	es
+	push	ds
+	pop	es
+	mov	di,offset delimiters
+	mov	cx,9h
+	cld
+	repne	scasb
+	pop	es
+	pop	di
+	ret
+skip_spaces:
+	mov	al,byte ptr [si]
+	cmp	al,0h
+	jnz	skip_spaces_at_039e
+	ret
+skip_spaces_at_039e:
+	cmp	al,20h
+	jz	skip_spaces_at_03a3
+	ret
+skip_spaces_at_03a3:
+	inc	si
+	jmps	skip_spaces
+pad_name_field:
+	inc	bx
+	mov	byte ptr [bx],20h
+	loop	pad_name_field
+	ret
+parse_name_field:
+	push	cx
+	call	test_delimiter
+	pop	cx
+	jnz	parse_name_field_at_03bd
+	cmp	si,offset filename_queue
+	jnz	parse_name_field_at_03bb
+	inc	si
+parse_name_field_at_03bb:
+	jmps	pad_name_field
+parse_name_field_at_03bd:
+	inc	bx
+	cmp	al,2ah
+	jnz	parse_name_field_at_03c6
+	mov	al,3fh
+	jmps	parse_name_field_at_03c7
+parse_name_field_at_03c6:
+	inc	si
+parse_name_field_at_03c7:
+	mov	byte ptr [bx],al
+	loop	parse_name_field
+parse_name_field_at_03cb:
+	call	test_delimiter
+	jz	parse_name_field_at_03d3
+	inc	si
+	jmps	parse_name_field_at_03cb
+parse_name_field_at_03d3:
+	ret
+
+; ----------------------------------------------------------------------
+; Parse optional drive, eight-character name and three-character extension
+; into the base-page FCB. Return the wildcard count in AH.
+; ----------------------------------------------------------------------
+parse_filename:
+	mov	ax,0h
+	mov	bx,offset file_fcb
+	add	bx,ax
+	push	bx
+	mov	si,word ptr argument_pointer
+	call	skip_spaces
+	mov	word ptr token_start,si
+	jz	parse_filename_at_03f2
+	sbb	al,40h
+	cmp	byte ptr 1h[si],3ah
+	jz	parse_filename_at_03f7
+parse_filename_at_03f2:
+	mov	al,byte ptr default_drive
+	jmps	parse_filename_at_03f9
+parse_filename_at_03f7:
+	inc	si
+	inc	si
+parse_filename_at_03f9:
+	mov	byte ptr [bx],al
+	mov	cx,8h
+	call	parse_name_field
+	mov	cx,3h
+	cmp	al,2eh
+	jnz	parse_filename_at_0409
+	inc	si
+parse_filename_at_0409:
+	call	parse_name_field
+	inc	bx
+	mov	di,bx
+	push	es
+	push	ds
+	pop	es
+	cld
+	mov	cx,3h
+	xor	ax,ax
+	rep	stosb
+	pop	es
+	mov	word ptr argument_pointer,si
+	pop	bx
+	mov	cx,0bh
+parse_filename_at_0423:
+	inc	bx
+	cmp	byte ptr [bx],3fh
+	jnz	parse_filename_at_042b
+	inc	ah
+parse_filename_at_042b:
+	loop	parse_filename_at_0423
+	mov	al,byte ptr [si]
+	or	ah,ah
+	ret
+report_read_error:
+	mov	cx,offset msg_read_error
+	jmp	print_message
+
+; ----------------------------------------------------------------------
+; Reject wildcard/empty names; save the foreground disk state while opening
+; the next named file. Mark its buffer empty and display its filename.
+; ----------------------------------------------------------------------
+open_next_argument:
+	call	parse_filename
+	jz	open_next_argument_at_043f
+	jmps	open_next_argument_at_0467
+open_next_argument_at_043f:
+	cmp	byte ptr file_name,20h
+	jnz	open_next_argument_at_0448
+	jmps	open_next_argument_at_0467
+open_next_argument_at_0448:
+	call	save_disk_context
+	call	open_print_file
+	call	restore_disk_context
+	or	al,al
+	jz	open_next_argument_at_0467
+	call	show_current_filename
+	mov	byte ptr printer_column,0h
+	mov	word ptr read_position,0ffffh
+	or	al,0ffh
+	jmps	open_next_argument_at_0469
+open_next_argument_at_0467:
+	and	al,0h
+open_next_argument_at_0469:
+	ret
+
+; ----------------------------------------------------------------------
+; Remove the consumed filename from the resident command-tail queue by
+; compacting the remaining bytes and updating its length.
+; ----------------------------------------------------------------------
+remove_processed_argument:
+	mov	ax,word ptr argument_pointer
+	sub	ax,word ptr argument_start
+	mov	word ptr argument_length,ax
+	mov	ax,word ptr argument_length
+	sub	byte ptr queue_length,al
+	pushf
+	push	es
+	cld
+	mov	ax,ds
+	mov	es,ax
+	xor	cx,cx
+	mov	cl,byte ptr queue_length
+	mov	di,word ptr argument_start
+	mov	si,word ptr argument_pointer
+	rep	movsb
+	pop	es
+	popf
+	mov	ax,word ptr argument_start
+	mov	word ptr argument_pointer,ax
+	ret
+
+; ----------------------------------------------------------------------
+; Advance through queued filenames until one opens or the queue empties.
+; Emit a form feed before starting the next printable file.
+; ----------------------------------------------------------------------
+next_queued_file:
+	xor	ax,ax
+	mov	al,byte ptr queue_length
+	add	ax,80h
+	cmp	word ptr argument_pointer,ax
+	jnl	next_queued_file_at_04c4
+	mov	ax,word ptr argument_pointer
+	mov	word ptr argument_start,ax
+	call	open_next_argument
+	push	ax
+	call	remove_processed_argument
+	pop	ax
+	or	al,al
+	jz	next_queued_file
+	mov	al,0ch
+	call	print_character
+	or	al,0h
+	jmps	next_queued_file_at_04c8
+next_queued_file_at_04c4:
+	mov	al,0ffh
+	or	al,al
+next_queued_file_at_04c8:
+	ret
+
+; ----------------------------------------------------------------------
+; Compare the FCB extension with the configured spool-file extension.
+; ----------------------------------------------------------------------
+is_spool_extension:
+	push	es
+	cld
+	mov	ax,ds
+	mov	es,ax
+	mov	di,offset spool_extension
+	mov	si,offset file_extension
+	mov	cx,3h
+	repe	cmpsb
+	pop	es
+	jz	is_spool_extension_at_04e1
+	xor	al,al
+	jmps	is_spool_extension_at_04e5
+is_spool_extension_at_04e1:
+	mov	al,0ffh
+	or	al,al
+is_spool_extension_at_04e5:
+	ret
+
+; ----------------------------------------------------------------------
+; Directory-spool cleanup deletes the completed file. Keep the original
+; optional INT 3 debug traps and the error/abort behavior.
+; ----------------------------------------------------------------------
+delete_printed_file:
+	cmp	cs:byte ptr debug_breaks,0ffh
+	jnz	delete_printed_file_at_04ef
+	int	3
+delete_printed_file_at_04ef:
+	mov	dx,offset file_fcb
+	call	save_disk_context
+	mov	cl,f_delete
+	call	protected_bdos_call
+	call	restore_disk_context
+	cmp	al,0ffh
+	jnz	delete_printed_file_at_0519
+	mov	cx,offset msg_delete_error
+	call	print_message
+	mov	dx,0fh
+	mov	ax,2h
+	call	set_bdos_byte
+	cmp	cs:byte ptr debug_breaks,0ffh
+	jnz	delete_printed_file_at_0519
+	int	3
+delete_printed_file_at_0519:
+	ret
+abort_read_error:
+	call	report_read_error
+	call	get_bdos_pointer
+	mov	es:byte ptr .bdos_abort_mode,3h
+	ret
+
+; ----------------------------------------------------------------------
+; Background output worker. Refill the record buffer as needed, honor the
+; per-slice character budget and pending character, and stop at Ctrl-Z/EOF.
+; The configured interrupt mode can defer disk I/O to the E3 worker.
+; ----------------------------------------------------------------------
+spool_characters:
+	mov	al,cs:byte ptr characters_per_slice
+	mov	byte ptr slice_remaining,al
+spool_characters_at_052e:
+	cmp	cs:byte ptr defer_disk_io,0h
+	jz	spool_characters_at_0540
+	cmp	byte ptr file_finished_pending,0ffh
+	jnz	spool_characters_at_0540
+	jmp	end_print_file
+spool_characters_at_0540:
+	mov	ax,word ptr buffer_byte_count
+	cmp	word ptr read_position,ax
+	jc	spool_characters_at_058c
+	cmp	cs:byte ptr defer_disk_io,0h
+	jz	spool_characters_at_0559
+	cmp	cs:byte ptr interrupt_source,1h
+	jz	spool_characters_at_05c6
+spool_characters_at_0559:
+	call	save_disk_context
+	mov	ax,cs:word ptr buffer_records
+	call	fill_read_buffer
+	push	ax
+	call	restore_disk_context
+	call	restore_dma
+	pop	ax
+	cmp	ax,0h
+	jz	end_print_file
+	mov	word ptr read_position,0h
+	cmp	ax,cs:word ptr buffer_records
+	jz	spool_characters_at_058c
+	mov	byte ptr short_read,0ffh
+	mov	ax,word ptr records_read
+	mov	cl,7h
+	shl	ax,cl
+	mov	word ptr buffer_byte_count,ax
+spool_characters_at_058c:
+	cmp	byte ptr character_pending,0h
+	jz	spool_characters_at_0598
+	mov	al,byte ptr pending_character
+	jmps	spool_characters_at_05ba
+spool_characters_at_0598:
+	mov	si,offset read_buffer
+	add	si,word ptr read_position
+	mov	al,byte ptr [si]
+	inc	word ptr read_position
+	cmp	al,1ah
+	jz	end_print_file
+	cmp	byte ptr short_read,0ffh
+	jnz	spool_characters_at_05ba
+	mov	dx,word ptr buffer_byte_count
+	cmp	word ptr read_position,dx
+	jg	end_print_file
+spool_characters_at_05ba:
+	call	print_character
+	dec	byte ptr slice_remaining
+	jz	spool_characters_at_05c6
+	jmp	spool_characters_at_052e
+spool_characters_at_05c6:
+	ret
+
+; ----------------------------------------------------------------------
+; Complete a file, clear its status, then advance the explicit queue or
+; return to directory polling. Original mode-dependent deletion is retained.
+; ----------------------------------------------------------------------
+end_print_file:
+	cmp	cs:byte ptr defer_disk_io,0h
+	jz	end_print_file_at_05de
+	cmp	cs:byte ptr interrupt_source,2h
+	jz	end_print_file_at_05de
+	mov	byte ptr file_finished_pending,0ffh
+	jmps	end_print_file_at_0637
+end_print_file_at_05de:
+	call	clear_current_filename
+	mov	byte ptr file_finished_pending,0h
+	mov	byte ptr short_read,0h
+	mov	ax,cs:word ptr buffer_records
+	mov	cl,7h
+	shl	ax,cl
+	mov	word ptr buffer_byte_count,ax
+	cmp	cs:byte ptr directory_mode,0ffh
+	jz	end_print_file_at_060f
+	call	next_queued_file
+	or	al,al
+	jz	end_print_file_at_0637
+	call	get_bdos_pointer
+	mov	es:byte ptr 0fh[bx],2h
+	jmps	end_print_file_at_0637
+end_print_file_at_060f:
+	call	is_spool_extension
+	jz	end_print_file_at_061e
+	call	delete_printed_file
+	mov	byte ptr spool_phase,2h
+	jmps	end_print_file_at_0637
+end_print_file_at_061e:
+	call	next_queued_file
+	jz	end_print_file_at_062a
+	mov	byte ptr spool_phase,2h
+	jmps	end_print_file_at_0637
+end_print_file_at_062a:
+	mov	byte ptr printer_column,0h
+	mov	word ptr read_position,0ffffh
+	jmps	end_print_file_at_0637
+end_print_file_at_0637:
+	ret
+
+; ----------------------------------------------------------------------
+; Search the default drive for the configured spool extension using an FCB
+; with a wildcard name. Copy the returned directory name and open the file.
+; ----------------------------------------------------------------------
+find_spool_file:
+	mov	al,byte ptr default_drive
+	mov	byte ptr file_fcb,al
+	cld
+	mov	ax,ds
+	mov	es,ax
+	mov	di,offset file_name
+	mov	cx,8h
+	mov	al,3fh
+	rep	stosb
+	mov	si,offset spool_extension
+	mov	cx,3h
+	rep	movsb
+	mov	cx,4h
+	mov	al,0h
+	rep	stosb
+	mov	byte ptr file_current_record,0h
+	call	save_disk_context
+	mov	dx,ds
+	call	set_dma_segment
+	mov	dx,offset directory_buffer
+	call	set_dma_offset
+	mov	dx,offset file_fcb
+	mov	cl,f_search_first
+	call	protected_bdos_call
+	push	ax
+	call	restore_dma
+	call	restore_disk_context
+	pop	ax
+	cmp	al,0ffh
+	jz	find_spool_file_at_06dc
+	mov	cl,5h
+	shl	al,cl
+	mov	ah,0h
+	inc	ax
+	mov	si,offset directory_buffer
+	add	si,ax
+	mov	ax,ds
+	mov	es,ax
+	mov	di,offset file_name
+	mov	cx,0bh
+	rep	movsb
+	mov	al,0h
+	mov	cx,4h
+	rep	stosb
+	mov	al,byte ptr default_drive
+	mov	byte ptr file_fcb,al
+	call	save_disk_context
+	call	open_print_file
+	call	restore_disk_context
+	cmp	al,0h
+	jnz	find_spool_file_at_06cb
+	mov	cx,offset msg_open_spool_error
+	call	print_message
+	call	get_bdos_pointer
+	mov	es:byte ptr .bdos_abort_mode,3h
+	mov	byte ptr spool_phase,1h
+	jmps	find_spool_file_at_06dc
+find_spool_file_at_06cb:
+	mov	al,0ffh
+	or	al,al
+	mov	word ptr read_position,0ffffh
+	mov	byte ptr printer_column,0h
+	jmps	find_spool_file_at_06de
+find_spool_file_at_06dc:
+	xor	al,al
+find_spool_file_at_06de:
+	ret
+
+; ----------------------------------------------------------------------
+; Install a far hook in the BDOS BIOS gateway at 2200h:2202h, preserving the
+; original pointer. Restore it when the resident spooler is removed.
+; ----------------------------------------------------------------------
+install_bios_hook:
+	mov	cl,f_system_data
+	call	bdos_call
+	mov	ax,es:word ptr .bdos_bios_offset
+	mov	cs:word ptr saved_bios_offset,ax
+	mov	ax,es:word ptr .bdos_bios_segment
+	mov	cs:word ptr saved_bios_segment,ax
+	pushf
+	cli
+	mov	es:word ptr .bdos_bios_segment,cs
+	mov	ax,offset bios_hook
+	mov	es:word ptr .bdos_bios_offset,ax
+	popf
+	ret
+restore_bios_hook:
+	pushf
+	cli
+	mov	cl,f_system_data
+	call	protected_bdos_call
+	mov	ax,cs:word ptr saved_bios_offset
+	mov	es:word ptr .bdos_bios_offset,ax
+	mov	ax,cs:word ptr saved_bios_segment
+	mov	es:word ptr .bdos_bios_segment,ax
+	popf
+	ret
+
+; ----------------------------------------------------------------------
+; Intercept BIOS console-status/input calls at 2506h/2509h; chain other
+; requests. INT E3h gives the spooler work while console input is waiting.
+; ----------------------------------------------------------------------
+bios_hook:
+	cmp	bx,2506h
+	jz	hook_console_status
+	cmp	bx,2509h
+	jz	hook_console_input
+	jmpf	cs:dword ptr saved_bios_offset
+hook_console_status:
+	mov	bx,2506h
+	callf	cs:dword ptr saved_bios_offset
+	push	es
+	push	ds
+	mov	ds,cs:word ptr resident_data_segment
+	cmp	al,0ffh
+	jz	hook_console_status_at_074d
+	call	get_bdos_pointer
+	test	es:byte ptr 0fh[bx],0ffh
+	jz	hook_console_status_at_074d
+	int	0e3h
+hook_console_status_at_074d:
+	pop	ds
+	pop	es
+	retf
+hook_console_input:
+	call	poll_console_and_spool
+	cmp	al,0h
+	jz	hook_console_input
+	mov	bx,2509h
+	jmpf	cs:dword ptr saved_bios_offset
+poll_console_and_spool:
+	mov	bx,2506h
+	callf	cs:dword ptr saved_bios_offset
+	push	es
+	push	ds
+	mov	ds,cs:word ptr resident_data_segment
+	cmp	al,0ffh
+	jz	poll_console_and_spool_at_077e
+	call	get_bdos_pointer
+	test	es:byte ptr 0fh[bx],0ffh
+	jz	poll_console_and_spool_at_077e
+	int	0e3h
+poll_console_and_spool_at_077e:
+	pop	ds
+	pop	es
+	ret
+
+; ----------------------------------------------------------------------
+; Remember the submitting user; background I/O temporarily selects that
+; user and restores the foreground user on leaving the interrupt worker.
+; ----------------------------------------------------------------------
+remember_spool_user:
+	mov	dl,0ffh
+	mov	cl,f_user
+	call	bdos_call
+	mov	byte ptr spool_user,al
+	ret
+restore_foreground_user:
+	mov	al,0h
+	pushf
+	cli
+	xchg	al,byte ptr user_switched
+	or	al,al
+	jz	restore_foreground_user_at_07a1
+	mov	dl,byte ptr foreground_user
+	mov	cl,f_user
+	call	protected_bdos_call
+restore_foreground_user_at_07a1:
+	popf
+	ret
+save_foreground_user:
+	mov	dl,0ffh
+	mov	cl,f_user
+	call	protected_bdos_call
+	mov	byte ptr foreground_user,al
+	ret
+select_spool_user:
+	pushf
+	cli
+	mov	dl,byte ptr spool_user
+	mov	cl,f_user
+	call	protected_bdos_call
+	mov	al,0ffh
+	xchg	al,byte ptr user_switched
+	popf
+	ret
+print_banner:
+	mov	cx,offset msg_banner
+	call	print_message
+	ret
+
+; ----------------------------------------------------------------------
+; Recognize a three-letter OFF command, case-insensitively, and request
+; shutdown in the shared BDOS status field.
+; ----------------------------------------------------------------------
+parse_off_command:
+	mov	si,offset filename_queue
+	call	skip_spaces
+	push	si
+	mov	byte ptr option_length,0h
+parse_off_command_at_07d4:
+	call	test_delimiter
+	jz	parse_off_command_at_07e0
+	inc	byte ptr option_length
+	inc	si
+	jmps	parse_off_command_at_07d4
+parse_off_command_at_07e0:
+	pop	si
+	cmp	byte ptr option_length,3h
+	jz	parse_off_command_at_07eb
+	xor	al,al
+	ret
+parse_off_command_at_07eb:
+	pushf
+	push	es
+	cld
+	mov	ax,ds
+	mov	es,ax
+	mov	cx,3h
+	mov	di,offset off_keyword
+parse_off_command_at_07f8:
+	jcxz	parse_off_command_at_0801
+	dec	cx
+	and	byte ptr [si],0dfh
+	cmpsb
+	jz	parse_off_command_at_07f8
+parse_off_command_at_0801:
+	pop	es
+	jz	parse_off_command_at_0808
+	popf
+	xor	al,al
+	ret
+parse_off_command_at_0808:
+	popf
+	push	es
+	call	get_bdos_pointer
+	mov	es:byte ptr 0fh[bx],2h
+	pop	es
+	or	al,0ffh
+	ret
+
+; ----------------------------------------------------------------------
+; Find the active resident through its INT E2h vector and the fixed
+; resident_data_segment slot in that copy of CODE.
+; ----------------------------------------------------------------------
+locate_resident:
+	push	es
+	mov	ax,0h
+	mov	es,ax
+	mov	ax,es:word ptr .int_e2_segment
+	mov	word ptr active_code_segment,ax
+	mov	es,ax
+	mov	ax,es:word ptr .resident_ds_slot
+	mov	word ptr active_data_segment,ax
+	pop	es
+	ret
+
+; ----------------------------------------------------------------------
+; If another copy is resident, handle OFF or append this invocation's names.
+; Require the same user and sufficient space in the 128-byte queue. Lock
+; the resident worker while modifying its command-tail buffer.
+; ----------------------------------------------------------------------
+submit_to_resident:
+	mov	cl,f_system_data
+	call	bdos_call
+	test	es:byte ptr .bdos_abort_mode,0ffh
+	jnz	submit_to_resident_at_083c
+	ret
+submit_to_resident_at_083c:
+	call	locate_resident
+	call	parse_off_command
+	jz	submit_to_resident_at_0845
+	ret
+submit_to_resident_at_0845:
+	mov	dl,0ffh
+	mov	cl,f_user
+	call	bdos_call
+	push	es
+	mov	es,word ptr active_data_segment
+	mov	dl,es:byte ptr spool_user
+	pop	es
+	cmp	al,dl
+	jz	submit_to_resident_at_085e
+	jmp	wrong_user
+submit_to_resident_at_085e:
+	push	es
+	mov	es,word ptr active_data_segment
+	mov	al,es:byte ptr queue_length
+	pop	es
+	mov	dl,80h
+	dec	dl
+	sub	dl,al
+	mov	al,byte ptr queue_length
+	inc	al
+	cmp	al,dl
+	jl	submit_to_resident_at_087a
+	jmp	queue_full
+submit_to_resident_at_087a:
+	push	es
+	mov	es,word ptr active_code_segment
+	mov	al,0ffh
+	xchg	al,es:byte ptr .resident_lock_slot
+	pop	es
+	push	es
+	pushf
+	cld
+	mov	es,word ptr active_data_segment
+	xor	ax,ax
+	mov	al,es:byte ptr queue_length
+	inc	al
+	add	ax,80h
+	mov	di,ax
+	mov	si,offset filename_queue
+	xor	cx,cx
+	mov	cl,byte ptr queue_length
+	rep	movsb
+	mov	al,20h
+	stosb
+	inc	byte ptr queue_length
+	mov	es,word ptr active_data_segment
+	mov	al,es:byte ptr queue_length
+	add	al,byte ptr queue_length
+	mov	es:byte ptr queue_length,al
+	popf
+	pop	es
+	push	es
+	mov	es,word ptr active_code_segment
+	mov	al,0h
+	xchg	al,es:byte ptr .resident_lock_slot
+	pop	es
+	or	al,0ffh
+	ret
+queue_full:
+	mov	cx,offset msg_queue_full
+	call	print_message
+	jmp	exit_transient
+wrong_user:
+	mov	cx,offset msg_wrong_user
+	call	print_message
+	jmp	exit_transient
+
+; ----------------------------------------------------------------------
+; Periodically poll for directory-spool jobs when the queue is idle.
+; ----------------------------------------------------------------------
+poll_spool_directory:
+	mov	ax,cs:word ptr directory_poll_interval
+	cmp	word ptr directory_countdown,ax
+	jnz	poll_spool_directory_at_0913
+	cmp	cs:byte ptr defer_disk_io,0h
+	jz	poll_spool_directory_at_08fd
+	cmp	cs:byte ptr interrupt_source,2h
+	jz	poll_spool_directory_at_08fd
+	jmps	poll_spool_directory_at_0913
+poll_spool_directory_at_08fd:
+	call	next_queued_file
+	jnz	poll_spool_directory_at_0909
+	mov	byte ptr spool_phase,1h
+	jmps	poll_spool_directory_at_0913
+poll_spool_directory_at_0909:
+	call	find_spool_file
+	jz	poll_spool_directory_at_0913
+	mov	byte ptr spool_phase,1h
+poll_spool_directory_at_0913:
+	ret
+
+; ----------------------------------------------------------------------
+; Shutdown waits for the kernel state to permit removal, restores both
+; interrupt vectors and the optional BIOS hook, then calls BDOS 58.
+; ----------------------------------------------------------------------
+remove_spooler:
+	call	get_bdos_pointer
+	cmp	es:byte ptr .bdos_byte_2393,2h
+	jnl	remove_spooler_at_095c
+	call	clear_current_filename
+	mov	ax,0h
+	mov	es,ax
+	cli
+	mov	ax,word ptr saved_e2_offset
+	mov	es:word ptr .int_e2_offset,ax
+	mov	ax,word ptr saved_e2_segment
+	mov	es:word ptr .int_e2_segment,ax
+	mov	ax,word ptr saved_e3_offset
+	mov	es:word ptr .int_e3_offset,ax
+	mov	ax,word ptr saved_e3_segment
+	mov	es:word ptr .int_e3_segment,ax
+	call	get_bdos_pointer
+	mov	es:byte ptr 0fh[bx],0h
+	cmp	cs:byte ptr console_hook_enabled,0ffh
+	jnz	remove_spooler_at_0957
+	call	restore_bios_hook
+remove_spooler_at_0957:
+	mov	cl,f_release_resident
+	call	protected_bdos_call
+remove_spooler_at_095c:
+	jmp	leave_spooler
+
+; ----------------------------------------------------------------------
+; INT E3h worker entry: acquire the reentrancy lock and apply its countdown.
+; E3 and E2 entries share the stack-switching worker and IRET exit.
+; ----------------------------------------------------------------------
+int_e3_handler:
+	push	ax
+	mov	al,0ffh
+	xchg	al,cs:byte ptr spooler_lock
+	test	al,al
+	pop	ax
+	jz	int_e3_handler_at_096f
+	jmp	interrupt_return
+int_e3_handler_at_096f:
+	dec	cs:byte ptr e3_countdown
+	jz	int_e3_handler_at_097f
+	mov	cs:byte ptr spooler_lock,0h
+	jmp	interrupt_return
+int_e3_handler_at_097f:
+	push	ax
+	mov	al,cs:byte ptr e3_interval
+	mov	cs:byte ptr e3_countdown,al
+	pop	ax
+	mov	cs:byte ptr interrupt_source,2h
+	jmps	enter_spooler
+
+; ----------------------------------------------------------------------
+; INT E2h worker entry with its independent countdown and source tag.
+; ----------------------------------------------------------------------
+int_e2_handler:
+	push	ax
+	mov	al,0ffh
+	xchg	al,cs:byte ptr spooler_lock
+	test	al,al
+	pop	ax
+	jz	int_e2_handler_at_09a1
+	jmp	interrupt_return
+int_e2_handler_at_09a1:
+	dec	cs:byte ptr e2_countdown
+	jz	int_e2_handler_at_09b1
+	mov	cs:byte ptr spooler_lock,0h
+	jmp	interrupt_return
+int_e2_handler_at_09b1:
+	push	ax
+	mov	al,cs:byte ptr e2_interval
+	mov	cs:byte ptr e2_countdown,al
+	pop	ax
+	mov	cs:byte ptr interrupt_source,1h
+
+; ----------------------------------------------------------------------
+; Save the interrupted SS:SP, DS and AX; switch to the private DATA stack.
+; The E3 path restores the interrupted IF state before doing background work.
+; ----------------------------------------------------------------------
+enter_spooler:
+	push	ds
+	mov	ds,cs:word ptr resident_data_segment
+	mov	word ptr interrupted_ax,ax
+	pop	ax
+	mov	word ptr interrupted_ds,ax
+	mov	word ptr interrupted_ss,ss
+	mov	word ptr interrupted_sp,sp
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset interrupt_stack_top
+	cmp	cs:byte ptr interrupt_source,2h
+	jz	restore_interrupted_if
+	sti
+	jmps	service_spooler
+restore_interrupted_if:
+	mov	word ptr interrupted_bx,bx
+	mov	word ptr interrupted_es,es
+	mov	bx,word ptr interrupted_sp
+	mov	es,word ptr interrupted_ss
+	test	es:word ptr 4h[bx],200h
+	jz	restore_interrupted_if_at_0a01
+	sti
+restore_interrupted_if_at_0a01:
+	mov	bx,word ptr interrupted_bx
+	mov	es,word ptr interrupted_es
+
+; ----------------------------------------------------------------------
+; Save remaining registers, test shutdown/busy state, switch user, and
+; service either output or directory polling according to the current phase.
+; ----------------------------------------------------------------------
+service_spooler:
+	call	save_registers
+	cmp	cs:byte ptr interrupt_source,2h
+	jz	service_spooler_at_0a19
+	call	check_bdos_busy
+	jnz	leave_spooler
+service_spooler_at_0a19:
+	call	get_bdos_pointer
+	test	es:byte ptr 0fh[bx],2h
+	jz	service_spooler_at_0a26
+	jmp	remove_spooler
+service_spooler_at_0a26:
+	dec	word ptr directory_countdown
+	jnz	service_spooler_at_0a33
+	mov	ax,cs:word ptr directory_poll_interval
+	mov	word ptr directory_countdown,ax
+service_spooler_at_0a33:
+	call	save_foreground_user
+	call	select_spool_user
+	cmp	cs:byte ptr directory_mode,0ffh
+	jz	service_spooler_at_0a46
+	mov	byte ptr spool_phase,1h
+service_spooler_at_0a46:
+	mov	al,byte ptr spool_phase
+	cmp	al,1h
+	jnz	service_spooler_at_0a52
+	call	spool_characters
+	jmps	leave_spooler
+service_spooler_at_0a52:
+	call	poll_spool_directory
+
+; ----------------------------------------------------------------------
+; Restore foreground user and registers, switch back to the interrupted
+; stack, release the lock and return with IRET.
+; ----------------------------------------------------------------------
+leave_spooler:
+	call	restore_foreground_user
+	call	restore_registers
+	cli
+	mov	ss,word ptr interrupted_ss
+	mov	sp,word ptr interrupted_sp
+	mov	ax,word ptr interrupted_ax
+	mov	ds,word ptr interrupted_ds
+	mov	cs:byte ptr spooler_lock,0h
+interrupt_return:
+	iret
+
+; ----------------------------------------------------------------------
+; Transient entry: establish a private stack, locate BDOS, display the banner
+; and first try forwarding to an existing resident. A fresh installation
+; requires BDOS 0022h before initializing and hooking the system.
+; ----------------------------------------------------------------------
+initialize:
+	pushf
+	cli
+	pop	word ptr startup_flags
+	mov	ax,ds
+	mov	ss,ax
+	mov	sp,offset argument_start
+	test	word ptr startup_flags,200h
+	jz	initialize_at_0a88
+	sti
+initialize_at_0a88:
+	mov	cs:word ptr resident_data_segment,ax
+	call	locate_bdos
+	mov	bp,ds
+	mov	es,bp
+	call	print_banner
+	call	submit_to_resident
+	jz	initialize_at_0a9e
+	jmp	exit_transient
+initialize_at_0a9e:
+	mov	cl,f_version
+	call	bdos_call
+	cmp	bx,22h
+	jz	initialize_spool_state
+	mov	cx,offset msg_version
+	call	print_message
+	jmp	exit_transient
+initialize_spool_state:
+	mov	byte ptr short_read,0h
+	mov	ax,cs:word ptr buffer_records
+	mov	cl,7h
+	shl	ax,cl
+	mov	word ptr buffer_byte_count,ax
+	mov	al,cs:byte ptr e3_interval
+	mov	cs:byte ptr e3_countdown,al
+	mov	al,cs:byte ptr e2_interval
+	mov	cs:byte ptr e2_countdown,al
+	call	remember_spool_user
+	cmp	cs:byte ptr console_hook_enabled,0ffh
+	jnz	initialize_queue
+	call	install_bios_hook
+
+; ----------------------------------------------------------------------
+; Copy the configured spool extension and terminate the command tail with
+; a space and NUL. Select the first file or the directory-spool idle phase.
+; ----------------------------------------------------------------------
+initialize_queue:
+	call	get_default_drive
+	push	es
+	push	ds
+	pushf
+	mov	ax,ds
+	mov	es,ax
+	mov	ax,cs
+	mov	ds,ax
+	cld
+	mov	di,offset spool_extension
+	mov	si,offset configured_spool_extension
+	mov	cx,3h
+	rep	movsb
+	popf
+	pop	ds
+	pop	es
+	xor	ax,ax
+	mov	al,byte ptr queue_length
+	inc	al
+	mov	byte ptr queue_length,al
+	add	ax,80h
+	xchg	ax,bx
+	mov	word ptr [bx],20h
+	call	next_queued_file
+	cmp	cs:byte ptr directory_mode,0ffh
+	jz	initialize_directory_mode
+	or	al,al
+	jz	start_printing
+	call	next_queued_file
+	jz	start_printing
+	test	cs:byte ptr console_hook_enabled,0ffh
+	jz	initialize_queue_at_0b2d
+	call	restore_bios_hook
+initialize_queue_at_0b2d:
+	jmp	no_file_exit
+initialize_directory_mode:
+	or	al,al
+	jz	start_printing
+	call	next_queued_file
+	jz	start_printing
+	mov	byte ptr spool_phase,2h
+	jmps	activate_resident
+start_printing:
+	mov	byte ptr spool_phase,1h
+
+; ----------------------------------------------------------------------
+; Install interrupt handlers, mark the resident active and terminate with
+; DX=1 so CP/M retains its memory.
+; ----------------------------------------------------------------------
+activate_resident:
+	cmp	cs:byte ptr debug_breaks,0ffh
+	jnz	activate_resident_at_0b4e
+	int	3
+activate_resident_at_0b4e:
+	cli
+	call	install_interrupts
+	mov	dx,0fh
+	mov	al,1h
+	call	set_bdos_byte
+	mov	dx,1h
+	sti
+	jmp	reset_or_stay_resident
+
+; ----------------------------------------------------------------------
+; Reserved CODE patch area, followed by resident state and paragraph padding.
+; The DS slot and lock are accessed by later invocations through the installed
+; interrupt vector, so their offsets must match the resident copy.
+; ----------------------------------------------------------------------
+code_patch_area	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+resident_data_segment	dw	0
+reserved_code_state	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+saved_bdos_bx	dw	0
+reserved_code_word	db	0h,0h
+saved_bios_offset	dw	0
+saved_bios_segment	dw	0
+spooler_lock	db	0h
+interrupt_source	db	0h
+e3_countdown	db	0h
+e2_countdown	db	0h
+code_padding	db	0h,0h,0h,0h,0h,0h,0h
+
+	dseg
+	org	0
+
+; ----------------------------------------------------------------------
+; DATA layout: base page/command-tail queue, directory buffer, BDOS context
+; snapshots, interrupt and startup stacks, parser state, diagnostics and the
+; four-record (512-byte) input buffer. All original bytes are materialized.
+; ----------------------------------------------------------------------
+base_page	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+file_fcb	db	0h
+file_name	db	0h,0h,0h,0h,0h,0h,0h,0h
+file_extension	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+file_current_record	db	0h,0h,0h,0h
+queue_length	db	0h
+filename_queue	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+directory_buffer	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+bdos_segment	dw	0h
+bdos_state_pointer	dw	0h
+read_position	dw	0h
+buffer_byte_count	dw	0h
+short_read	db	0h
+saved_dma_record	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+; Printer position and deferred-character state.
+printer_column	db	0h
+slice_remaining	db	0h
+character_pending	db	0h
+pending_character	db	0h
+; Interrupted foreground register/stack snapshot.
+interrupted_ss	dw	0h
+interrupted_sp	dw	0h
+interrupted_ds	dw	0h
+interrupted_ax	dw	0h
+interrupted_bx	dw	0h
+interrupted_es	dw	0h
+; Original interrupt vectors, restored during spooler removal.
+saved_e2_offset	dw	0h
+saved_e2_segment	dw	0h
+saved_e3_offset	dw	0h
+saved_e3_segment	dw	0h
+; Kernel context snapshots; some fields below are interior pointers.
+saved_bdos_state	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+saved_dma_offset	db	0h,0h
+saved_dma_segment	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+saved_directory_buffer	dw	0h
+	db	0h,0h
+saved_bdos_word	dw	0h
+spool_phase	db	0h
+saved_bdos_ax	dw	0h
+directory_countdown	dw	12ch
+saved_bdos_byte	db	0h
+default_drive	db	0h
+spool_user	db	0h
+foreground_user	db	0h
+user_switched	db	0h
+; BDOS 50 direct-BIOS parameter block: function byte and argument words.
+bios_request	db	0h
+bios_request_argument	dw	0h
+bios_request_value	dw	0h
+; Private interrupt stack; its upper boundary is interrupt_stack_top.
+interrupt_stack	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+; Startup stack begins here and grows down from argument_start (03F3h).
+interrupt_stack_top	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+argument_start	dw	0h
+argument_length	dw	0h
+active_code_segment	dw	0h
+active_data_segment	dw	0h
+reserved_data_byte	db	0h
+records_remaining	dw	0h
+records_read	dw	0h
+read_dma_offset	dw	0h
+file_finished_pending	db	0h
+argument_pointer	dw	81h
+token_start	dw	0h
+; Parser separators, spool extension, OFF token and drive-name lookup.
+delimiters	db	' =_.:;<>,'
+spool_extension	db	'INT'
+option_length	db	0h
+off_keyword	db	'OFF'
+drive_letters	db	'0ABCDEFGHIJKLMNOP'
+startup_flags	dw	0h
+msg_no_file	db	'NO FILE$'
+msg_read_error	db	'READ ERROR',0h
+msg_mode_error	db	'MODE ERROR, ABORT CODE SET',0h
+msg_open_spool_error	db	'BAD OPEN INT FILE',0h
+msg_delete_error	db	'ERROR IN DELETING INT FILE',0h
+msg_banner	db	'CP/M-86 V1.1 PRINTER/SPOOLER V1.1',0dh,0ah,0h
+msg_version	db	'WRONG BDOS VERSION,(REQUIRES CP/M-86 V1.1)',0h
+msg_wrong_user	db	'PRINTER/SPOOLER UTILITY CURRENTLY ACTIVE ON ANOTHER USER.',0dh,0ah,0h
+msg_queue_full	db	'THERE IS NOT ENOUGH ROOM IN THE CURRENTLY RUNNING PRINT Q',0dh,0ah
+	db	'TRY AGAIN AFTER SOME OF THE FILES HAVE BEEN SPOOLED TO THE P','RINTER',0dh,0ah
+	db	0h
+; Four 128-byte records. Original serialized storage and padding follow.
+read_buffer	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+data_padding	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+	end
