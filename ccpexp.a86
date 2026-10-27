@@ -677,7 +677,11 @@ FEAT144_CCP_STK2:
 	mov	USRCOD,al
 	call	GETUSS			;set user code
 	call	INBDOS
-	mov	MDSUBE,al		;save submit mode
+; Ts patch start ignore stale submit file on cold start
+;	mov	MDSUBE,al		;save submit mode
+	xor	al,al
+	nop
+; Ts patch end ignore stale submit file on cold start
 	call	MEMFRE			;free all memory
 	pop	ax
 	and	al,0Fh

@@ -40,3 +40,4 @@ extra/*.obj
 extra/*.com
 extra/*.tmp
 extra/*.cmd
+!/pcdisks.lib

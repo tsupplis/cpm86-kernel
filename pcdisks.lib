@@ -1,0 +1,74 @@
+;	DISKS 2
+dpbase	equ	$		;Base of Disk Parameter Blocks
+dpe0	dw	xlt0,0000h	;Translate Table
+	dw	0000h,0000h	;Scratch Area
+	dw	dirbuf,dpb0	;Dir Buff, Parm Block
+	dw	csv0,alv0	;Check, Alloc Vectors
+dpe1	dw	xlt1,0000h	;Translate Table
+	dw	0000h,0000h	;Scratch Area
+	dw	dirbuf,dpb1	;Dir Buff, Parm Block
+	dw	csv1,alv1	;Check, Alloc Vectors
+;	DISKDEF 0,0,31,,1024,156,64,64,1
+;
+;	 1248:	128 Byte Record Capacity
+;	  156:	Kilobyte Drive  Capacity
+;	   64:	32 Byte Directory Entries
+;	   64:	Checked Directory Entries
+;	  128:	Records / Extent
+;	    8:	Records / Block
+;	   32:	Sectors / Track
+;	    1:	Reserved  Tracks
+;
+dpb0	equ	offset $	;Disk Parameter Block
+	dw	32		;Sectors Per Track
+	db	3		;Block Shift
+	db	7		;Block Mask
+	db	0		;Extnt Mask
+	dw	155		;Disk Size - 1
+	dw	63		;Directory Max
+	db	192		;Alloc0
+	db	0		;Alloc1
+	dw	16		;Check Size
+	dw	1		;Offset
+xlt0	equ	0		;No Translate Table
+als0	equ	20		;Allocation Vector Size
+css0	equ	16		;Check Vector Size
+;	DISKDEF 1,0,31,,2048,158,64,64,1
+;
+;	 2528:	128 Byte Record Capacity
+;	  316:	Kilobyte Drive  Capacity
+;	   64:	32 Byte Directory Entries
+;	   64:	Checked Directory Entries
+;	  256:	Records / Extent
+;	   16:	Records / Block
+;	   32:	Sectors / Track
+;	    1:	Reserved  Tracks
+;
+dpb1	equ	offset $	;Disk Parameter Block
+	dw	32		;Sectors Per Track
+	db	4		;Block Shift
+	db	15		;Block Mask
+	db	1		;Extnt Mask
+	dw	157		;Disk Size - 1
+	dw	63		;Directory Max
+	db	128		;Alloc0
+	db	0		;Alloc1
+	dw	16		;Check Size
+	dw	1		;Offset
+xlt1	equ	0		;No Translate Table
+als1	equ	20		;Allocation Vector Size
+css1	equ	16		;Check Vector Size
+;	ENDEF
+;
+;	Uninitialized Scratch Memory Follows:
+;
+begdat	equ	offset $	;Start of Scratch Area
+dirbuf	rs	128		;Directory Buffer
+alv0	rs	als0		;Alloc Vector
+csv0	rs	css0		;Check Vector
+alv1	rs	als1		;Alloc Vector
+csv1	rs	css1		;Check Vector
+enddat	equ	offset $	;End of Scratch Area
+datsiz	equ	offset $-begdat	;Size of Scratch Area
+	db	0		;Marks End of Module
+

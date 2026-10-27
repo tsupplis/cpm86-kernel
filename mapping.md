@@ -54,6 +54,7 @@ distinction is purely an assembler convention for separating code from data.
 | `0800h` | DSEG | `CODCMD` | CCP data area: variables, FCBs, stack, tables |
 | `00DAh` | CSEG | `SUBMITSELDRV` | CCP helper; falls through directly to `SELDRV` at `00DDh` |
 | `051Fh` | CSEG | `DIRPAT` | Inline CCP TS patch before `DIROUP` |
+| `0347h` | CSEG | — | Inline CCP TS patch in `CCPCLD`: `mov MDSUBE,al` replaced by `xor al,al` / `nop` (same 3 bytes; `0344h` in `ccp.a86`/`ccporg.a86`). A cold start ignores a leftover `$$$.SUB`, so a typed-ahead startup command (PC BIOS `ATINIT`, MBC `SUBMIT AUTOEXEC`) is read first. Warm boots (`CCPHOT`) and the SUBMIT stub still use `MDSUBE`. |
 | `09C0h` | CSEG | — | Reserved upper CCP patch area |
 
 ### CCP data area layout (DSEG, from 0800h)
@@ -62,6 +63,7 @@ distinction is purely an assembler convention for separating code from data.
 0800h  CODCMD     'CMD' transient-type tag (3 bytes)
 0803h  DDMASG     base-page segment (dw)
 0805h  MDSUBE     submit mode flag       ← referenced by BDOS as MDSUBE EQU 0805h
+                                         (no longer set by CCPCLD, see 0347h patch)
 0806h  SUBFCB     submit file FCB (1 byte, then SUBNAM)
 0807h  SUBNAM     '$$$     SUB' + 4 zero bytes
 0816h  (zero fill, to 0827h)
