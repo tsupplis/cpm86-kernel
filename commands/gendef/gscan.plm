@@ -1,0 +1,424 @@
+$title('SCAN module for GENDEF')
+scanmod:
+do;
+/* D I S K D E F   l i b   s c a n n e r   m o d u l e */
+declare
+    major literally '''1''',   /* major release number */
+    minor literally '''0''';   /* minor release number */
+
+declare
+    parm (26) byte public;    /* initial parameters */
+    /* a b c d e f g h i j k l m n o p q r s t u v w x y z
+       0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 */
+
+declare
+    defbuf literally '0080h';  /* default buffer */
+
+mon1: procedure(f,a) external;
+    declare f byte, a address;
+    end mon1;
+
+mon2: procedure(f,a) byte external;
+    declare f byte, a address;
+    end mon2;
+
+boot: procedure external;
+    end boot;
+
+$include (:f1:gpas.plb)
+
+/* file control blocks */
+declare
+    fcb (16) byte external,
+    fcb16 (16) byte external,
+    parms (8) byte  at (.fcb16(1)),      /* $ parameters */
+    ifcb (33) byte at (.fcb),       /* default input fcb */
+    ifcbr byte at (.fcb(32));     /* record to read next */
+
+
+/* buffers */
+declare
+    dbuff (512) byte,              /* disk input buffer 128 * 4 */
+    dbp address,                   /* disk buffer pointer */
+    lbuff(75) byte public,         /* 80 character line (5 char prefix) */
+    lbp byte,                      /* line buffer pointer */
+    lblen byte public,             /* line buffer length */
+    lineout   byte public,         /* true if line out to .asm file */
+    lineready byte public;         /* true if line is prepared for output */
+
+declare
+    errset byte public,            /* true if error already flagged */
+    eofset byte public,            /* true if eof encountered */
+    cbuff (8) byte public;
+
+
+/* miscellaneous non graphic characters */
+declare
+    lit literally 'literally',
+    eofile    lit '1ah',     /* ascii end of file */
+    eject     lit '0ch',     /* page eject for title */
+    tab       lit '09h';     /* horizontal tab */
+
+/* code emitters for inline mode */
+emitbyte: procedure(b) external;
+    declare b byte;
+    end emitbyte;
+
+emitcrlf: procedure external;
+    end emitcrlf;
+
+declare
+    title (*) byte data
+       (eject,'    DISKDEF Table Generator, Vers ',major,'.',minor,
+        cr,lf,'$');
+
+/* error message */
+declare
+    /* the first positions are counted up in the errptr subroutine */
+    errmsg (17) byte initial('        Error(s)$');
+
+abort: procedure(msg) public;
+    /* print message and reboot */
+    declare msg address;
+    call crlf;
+    call print(msg);
+    call boot;
+    end abort;
+
+gnd: procedure byte;
+    /* get next disk character */
+
+    checkeof: procedure byte;
+        /* check for end of file before returning */
+        declare c byte;
+        if (c := dbuff(dbp)) = eofile then eofset = true;
+        return c;
+        end checkeof;
+
+    if eofset then return eofile;
+    if (dbp := dbp + 1) <= last(dbuff) then return checkeof;
+    /* otherwise, read buffers to dbuff */
+    dbp = 0;
+        do while dbp < length(dbuff);
+        call setdma(.dbuff(dbp));
+        if diskread(.ifcb) <> 0 then /* end of file */
+            do; dbuff(dbp) = eofile; dbp = length(dbuff);
+            end;
+        else /* disk read was successful */
+            dbp = dbp + 128;
+        end;
+    dbp = 0;
+    return checkeof;
+    end gnd;
+
+incline: procedure(buffa);
+    declare buffa address;
+    /* increment line number in buff */
+    declare buff based buffa (4) byte;
+    declare (i,c) byte;
+    i = 4;
+        do while (i := i - 1) <> 255;
+        if (c := buff(i)) = ' ' then c = '0';
+        if (buff(i) := c + 1) > '9' then
+            buff(i) = '0'; else i = 0;
+        end;
+    end incline;
+
+putline: procedure public;
+    /* print the current line */
+    declare i byte;
+    if lineready then /* line has not yet been sent */
+        do;
+        call print(.cbuff); /* 7 character prefix */
+        if lblen > 0 then
+            do i = 0 to lblen-1;
+            call printchar(lbuff(i));
+            end;
+        end;
+    lineready = false; /* marked as sent */
+    end putline;
+
+getline: procedure;
+    /* read next line and place into lbuff */
+    declare char byte;
+
+    putchar: procedure(c);
+        declare c byte;
+        if lbp+1 < length(lbuff) then
+            do; lbuff(lbp:=lbp+1) = c;
+            end;
+        end putchar;
+
+    /* read line until overflow or lf or eofile */
+    call putline;
+    lbp = -1; lblen = 0;
+    if (char := gnd) <> eofile then
+        do; call incline(.cbuff);
+            do while not (char = lf or char = eofile);
+            if char = cr then call putchar(cr); else
+            if char = tab then /* expand to next tab position */
+                do; call putchar(' ');
+                    do while ((lbp + 1) and 111b) <> 0;
+                    call putchar(' '); /* tabs at every 8 columns */
+                    end;
+                end; else
+            if char >= ' ' then /* graphic */
+                do; /* convert lower to upper case alphabetics */
+                if char <> 7fh then /* not a delete character */
+                    do; if (char - 'a') < 26 then /* lower alpha */
+                            char = char and 5fh;  /* converted */
+                    call putchar(char); /* placed into line buffer */
+                    end;
+                end;
+            char = gnd;
+            end; /* end of file is detected in gnt */
+        lblen = lbp + 1;
+        lineready = true; /* not yet sent, but ready */
+        lineout = false;  /* not yet sent to .asm file */
+        end;
+    lbp = 0;
+    end getline;
+
+setup: procedure public;
+    declare (i,c) byte;
+    /* get the initial parameters */
+        do i = 0 to last(parm);
+        parm(i) = false;
+        end;
+    if parms(0) = '$' then
+        do i = 1 to 7;
+        if (c := parms(i) - 'A') < 26 then
+            parm(c) = true;
+        end;
+    /* set up the input file */
+    if ifcb(9) = ' ' then
+        call move(4,.('DEF',0),.ifcb(9));
+    call setdma(defbuf); /* reset to default area */
+    call open(.ifcb);
+    if dcnt = 255 then /* not present */
+        do;
+        call print(.(cr,lf,'No Input File Present, Command Form is:',
+                     cr,lf,cr,lf,
+                     'GENDEF x $'));
+        call printchar('$');
+        call printn(.('<parameters>',
+                     cr,lf,
+                     'Where x.DEF Holds Disk Definitions',
+                     cr,lf,
+                     'With Optional Parameters <parameters>:',
+                     cr,lf,
+                     'C:  Create Diskdef Comment',
+                     cr,lf,
+                     'O:  Generate Offset-Relative Labels',
+                     cr,lf,
+                     'Z:  Z80, 8080, or 8085 (else 8086, 8088)',
+                     cr,lf,
+                     'x.LIB is Created Upon Completion.',
+                     cr,lf,'$'));
+        call boot;
+        end;
+    errset,eofset,lineready = false;
+    ifcbr = 0;  /* read starting at record 00 */
+    dbp = length(dbuff); /* causes immediate read from disk */
+    /* initialize line and error counts */
+        do i=0 to last(cbuff);
+        cbuff(i) =  ' ';
+        errmsg(i) = ' ';
+        end;
+    cbuff(last(cbuff)) = '$';
+    /* print title line */
+    call print(.title);
+    call getline; /* reads the first line */
+    end setup;
+
+writerrs: procedure public;
+    /* write error message at end of pass */
+    call putline;
+    if errmsg(6) = ' ' then
+        do; errmsg(5)='N'; errmsg(6)='o';
+        end;
+    call print(.errmsg(2));
+    end writerrs;
+
+errptr: procedure(msg) public;
+    declare msg address;
+    /* place question mark under error position */
+    declare i byte;
+    if errset then return;
+    /* push line if not already printed */
+    call putline;
+    errset = true;
+
+    call incline(.errmsg(3)); /* count errors up */
+    call print(msg); /* message is seven characters long */
+    i = lbp - acclen;
+        do while (i := i - 1) > 0;
+        call printchar(' ');
+        end;
+    call printchar('?');
+    end errptr;
+
+/* literals for scanner tokens */
+declare
+    ident    lit '1',       /* identifier */
+    number   lit '2',       /* number token */
+    string   lit '3',       /* character string */
+    special  lit '4';       /* special character */
+
+/* scanner declarations */
+declare
+    value   address public, /* value for number token */
+    nextc      byte public, /* next character look ahead symbol */
+    token      byte public, /* vocabulary number for item scanned */
+    continue   byte public, /* set if more of the same token remains */
+    acclen     byte public, /* accumulator length */
+    accum(32)  byte public;        /* accumulator */
+
+putemitchar: procedure(b);
+    declare b byte;
+    if b <> 0 then call emitbyte(b);
+    end putemitchar;
+
+gnc: procedure byte;
+    /* get next input character, check for line boundaries */
+    declare c byte;
+        do while lbp >= lblen;
+        call getline;
+        if eofset then return eofile;
+        end;
+    /* line read, character ready */
+    c = lbuff(lbp); lbp = lbp + 1;
+    return c;
+    end gnc;
+
+declare
+    errv lit '0',
+    binv lit '2',
+    octv lit '8',
+    decv lit '10',
+    hexv lit '16';
+ 
+gnt: procedure public;
+    declare
+        (b, i, d, stype, lastc) byte,
+        v address;
+ 
+    numeric: procedure byte; return (nextc-'0') <= 9;
+        end numeric;
+ 
+    hex: procedure byte; return numeric or ((nextc-'A') <= 5);
+        end hex;
+ 
+    letter: procedure byte; return (nextc-'A') <= 25;
+        end letter;
+ 
+    alphanum: procedure byte; return numeric or letter;
+        end alphanum;
+ 
+    stype, acclen = 0;
+ 
+    if continue then
+        continue = false; else token = 0;
+
+        do while token = 0;
+        /* deblank input */
+        if nextc = ' ' or nextc = 0 then nextc = gnc; else
+        if letter then token = ident; else
+        if numeric then token = number; else
+        if nextc = '''' then
+            do; token = string; nextc = 0;
+            end; else
+        token = special;
+        if eofset then
+            call abort(.('Premature End-of-File$'));
+        end; /* of token = 0 */
+ 
+    /* scan remainder of token */
+        do forever;
+        if nextc <> 0 then
+            do;
+            accum(acclen) = nextc;
+            if (acclen := acclen + 1) > last (accum) then
+                do;
+                if token = string then
+                    do;
+                    continue = true;
+                    return;
+                    end;
+                call errptr(.('Length $'));
+                acclen = 0;
+                end;
+            end;
+        lastc = nextc;
+        nextc = gnc;
+ 
+        if token = ident then
+            do;
+            if nextc = '$' then nextc = 0; else
+            if not alphanum then
+                return;
+            end; else
+ 
+        if token = number then
+            do;
+            if nextc = '$' then nextc = 0; else
+            if not hex then
+                do; /* look for radix indicator */
+                if (nextc='O') or (nextc='Q') then stype = octv; else
+                if nextc = 'H' then stype = hexv;
+                if stype > 0 then nextc = 0; else
+                if lastc = 'B' then
+                    do; acclen = acclen - 1; stype = binv;
+                    end; else
+                if lastc = 'D' then
+                    do; acclen = acclen - 1; stype = decv;
+                    end; else stype = decv;
+                /* now convert the number and place into value */
+                    do;
+                    value = 0;
+                      do i = 1 to acclen;
+                      if (d := accum(i-1)) >= 'A' then
+                          d = d - 'A' + 10; else d = d - '0';
+                      if (b:=stype) <= d then token = errv;
+                      v = value; value = d;
+                        do while b <> 0;
+                        v = shl(v,1);
+                        if (b:=shr(b,1)) then
+                          do; value = value + v;
+                          if carry then token = errv;
+                          end;
+                        end;
+                      end;
+                    end;
+                if token = errv then
+                    call errptr(.('Convert$'));
+                token = number;
+                return;
+                end;
+            end; else
+ 
+        if token = string then
+            do;
+            if nextc = '''' then
+                do; if (nextc:=gnc) <> '''' then return;
+                end;
+            if nextc = cr then
+                do;
+                call errptr(.('Quote  $'));
+                return;
+                end;
+            end; else
+        /* must be special */
+            return;
+        end; /* of do forever */
+    end gnt;
+ 
+scan$ini: procedure public;
+    /* initialize scanner parameters */
+    value,nextc,token = 0;
+    continue = false;
+    end scan$ini;
+
+end;
+

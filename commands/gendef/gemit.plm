@@ -1,0 +1,341 @@
+$title('EMIT module for GENDEF')
+emit:
+do;
+/* D I S K D E F   l i b   g e n e r a t o r   e m i t t e r */
+
+mon1: procedure(f,a) external;
+    declare f byte, a address;
+    end mon1;
+
+mon2: procedure(f,a) byte external;
+    declare f byte, a address;
+    end mon2;
+
+boot: procedure public;
+    call mon1(0,0);
+    end boot;
+
+abort: procedure(msg) external;
+    declare msg address;
+    end abort;
+
+/* global variables */
+declare
+    parm (26) byte external;  /* initial parameters */
+    /* a b c d e f g h i j k l m n o p q r s t u v w x y z
+       0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 */
+
+declare
+    acclen   byte external,    /* accumulator length */
+    accum(32)byte external;    /* accumulator */
+
+declare
+    lbuff(75) byte external,   /* physical line */
+    lblen     byte external,   /* lbuff length */
+    lineready byte external,   /* line ready flag */
+    lineout   byte external,   /* true if current line out */
+    cbuff(8)  byte external;   /* line prefix */
+
+declare
+    lit literally 'literally',
+    true    lit '1',
+    false   lit '0',
+    forever lit 'while true',
+    eofile  lit '1ah',         /* end of file */
+    tab     lit '09h',         /* horizontal tab */
+    cr      lit '0dh',
+    lf      lit '0ah';
+
+declare dcnt byte external;
+
+close: procedure(fcb) external;
+    declare fcb address;
+    end close;
+
+delete: procedure(fcb) external;
+    declare fcb address;
+    end delete;
+
+diskwrite: procedure(fcb) byte external;
+    declare fcb address;
+    end diskwrite;
+
+make: procedure(fcb) external;
+    declare fcb address;
+    end make;
+
+rename: procedure(fcb) external;
+    declare fcb address;
+    end rename;
+
+setdma: procedure(dma) external;
+    declare dma address;
+    end setdma;
+
+/* local variables */
+declare
+    fcb (33) byte external,
+    ifcb (33) byte at (.fcb),  /* initial input file control block */
+    efcb (33) byte,           /* .asm file control block */
+    eufb  byte at (.efcb(13)),/* unfilled bytes field */
+    efcbr byte at (.efcb(32));/* next record field */
+
+/* buffers */
+declare
+    comcol lit '32',          /* beginning column for comments */
+    ecolumn     byte,         /* output column 0,1,... */
+    ebuff (512) byte,         /* emit file buffer */
+    ebp address;              /* emit buffer pointer */
+
+/* sector size definitions */
+declare
+    sectsize lit '128',       /* bytes per sector */
+    sectmsk  lit '7fh',       /* sectsize - 1 */
+    sectshf  lit '7';         /* shl(1,sectshf) = sectsize */
+
+setemit: procedure public;
+    /* set up code emitter file */
+    call move(16,.ifcb(0),.efcb(0)); /* copy name */
+    call move(4,.('LIB',0),.efcb(9));/* copy type */
+    if ifcb(16) <> 0 then /* select destination drive */
+        efcb(0) = ifcb(16);
+    call delete(.efcb);
+    call make(.efcb);
+    if dcnt = 255 then /* no space */
+        call abort(.('no ".LIB" directory space$'));
+    efcbr,ebp,ecolumn = 0;
+    lineout = true; /* prevent initial line write */
+    end setemit;
+
+clearebuff: procedure;
+    /* clear the ebuff buffer up to (not including) ebp */
+    declare (i,n) byte;
+    /* skip the case of no buffers to write */
+    if low(n:=shr(ebp,7)-1) = 255 then return;
+    /* n is last buffer to write */
+    ebp = 0;
+        do i = 0 to n;
+        call setdma(.ebuff(ebp));
+        if diskwrite(.efcb) <> 0 then
+            call abort(.('".LIB" disk full$'));
+        ebp = ebp + sectsize;
+        end;
+    ebp = 0;
+    end clearebuff;
+
+emitbyte: procedure(b) public;
+    declare b byte;
+    /* write b to emit file */
+    if b = cr then
+        ecolumn = 0;
+    if b = tab then
+        ecolumn = (ecolumn + 8) and 11111000b;
+    if b >= ' ' then
+        ecolumn = ecolumn + 1;
+    if ebp >= length(ebuff) then call clearebuff;
+    ebuff(ebp) = b;
+    ebp = ebp + 1;
+    end emitbyte;
+
+efinis: procedure public;
+    /* emit file finis */
+    /* CP/M-86 writes complete records: pad and retain the last record. */
+    do while (ebp and sectmsk) <> 0;
+        call emitbyte(eofile);
+    end;
+    call clearebuff; /* write all buffers */
+    call close(.efcb);
+    if dcnt = 255 then
+        call abort(.('cannot close ".LIB"$'));
+    end efinis;
+
+emitcrlf: procedure public;
+    /* emit end of physical line */
+    call emitbyte(cr);
+    call emitbyte(lf);
+    end emitcrlf;
+
+emittab: procedure public;
+    call emitbyte(tab);
+    end emittab;
+
+emitcomma: procedure public;
+    call emitbyte(',');
+    end emitcomma;
+
+emitdigit: procedure(d);
+    declare d byte;
+    /* emit the decimal digit given by d */
+    call emitbyte('0'+d);
+    end emitdigit;
+
+emitnulcom: procedure public;
+    call emitbyte(';');
+    call emitcrlf;
+    end emitnulcom;
+
+declare
+    /* literals for decimal output control */
+    zsup$on   lit 'true',   /* zero suppression on */
+    zsup$off  lit 'false',  /* zero suppression off */
+    bsup$on   lit 'true',   /* blank suppress */
+    bsup$off  lit 'false',  /* blank suppress off */
+    byte$base lit '100',    /* byte value */
+    word$base lit '10000';  /* word value */
+
+emitdecz: procedure(v,zsup,bsup,base) public;
+    declare
+        v address, /* value to emit */
+        zsup byte, /* zero suppress if true */
+        bsup byte,    /* blank suppression */
+        base address, /* 100 for byte, 10000 for word */
+        d byte;
+        do while base <> 0;
+        d = v/base mod 10;
+        if (zsup := zsup and (d = 0) and (base > 1)) then
+            do;
+            if not bsup then call emitbyte(' ');
+            end; else
+            call emitdigit(d);
+        base = base/10;
+        end;
+    end emitdecz;
+
+emitnib: procedure(n);
+    declare n byte;
+    if n > 9 then
+        n = n - 10 + 'A'; else
+        n = n + '0';
+    call emitbyte(n);
+    end emitnib;
+
+emithex8: procedure(h) public;
+    declare h byte;
+    call emitnib(shr(h,4));
+    call emitnib(h and 0fh);
+    end emithex8;
+
+emithex16: procedure(a) public;
+    declare a address;
+    call emithex8(high(a));
+    call emithex8(low(a));
+    end emithex16;
+
+emitaddr: procedure(a) public;
+    declare a address;
+    call emithex16(a);
+    call emitbyte('h');
+    end emitaddr;
+
+emitdec8: procedure(b) public;
+    declare b byte;
+    call emitdecz(b,zsup$on,bsup$on,byte$base);
+    end emitdec8;
+
+emitdec16: procedure(w) public;
+    declare w address;
+    call emitdecz(w,zsup$on,bsup$on,word$base);
+    end emitdec16;
+
+emitdecb: procedure(w) public;
+    declare w address;
+    call emitdecz(w,zsup$on,bsup$off,word$base);
+    end emitdecb;
+
+emitline: procedure public;
+    /* write current line to emit file */
+    declare i byte;
+    if lineready then /* line is ready to write */
+        do;
+        if lineout then return; /* already written */
+        lineout = true;
+        if lblen = 0 then return;
+        /* non - zero line length */
+        call emitbyte(';');
+        call emittab;
+        i = 0;
+            do while (i:=i+1) < lblen;
+            call emitbyte(lbuff(i-1));
+            end;
+        call emitcrlf;
+        end;
+    end emitline;
+
+emitchar: procedure(a) public;
+    /* emit literal string */
+    declare a address;
+    declare s based a byte;
+        do while s <> '$';
+        call emitbyte(s);
+        a = a + 1;
+        end;
+    end emitchar;
+
+emitcharn: procedure(a,n) public;
+    declare
+        a address,
+        n byte;
+    /* emitchar(a), followed by number */
+    call emitchar(a);
+    call emitdecz(n,zsup$on,bsup$on,byte$base);
+    end emitcharn;
+
+emitop: procedure(a) public;
+    /* tab, operator */
+    declare a address;
+    call emittab;
+    call emitchar(a);
+    end emitop;
+
+emitoptab: procedure(a) public;
+    /* emit tab, operator, tab */
+    declare a address;
+    call emitop(a);
+    call emittab;
+    end emitoptab;
+
+emitcomment: procedure(a) public;
+    declare a address;
+        do while ecolumn < comcol;
+        call emittab;
+        end;
+    call emitbyte(';');
+    call emitchar(a);
+    call emitcrlf;
+    end emitcomment;
+
+emitdw: procedure public;
+    call emitoptab(.('dw$'));
+    end emitdw;
+
+emitdb: procedure public;
+    call emitoptab(.('db$'));
+    end emitdb;
+
+emitdwn: procedure(n) public;
+    declare n address;
+    call emitdw;
+    call emitdec16(n);
+    end emitdwn;
+
+emitdbn: procedure(n) public;
+    declare n byte;
+    call emitdb;
+    call emitdec8(n);
+    end emitdbn;
+
+emitdwnc: procedure(n,c) public;
+    declare (n,c) address;
+    call emitdwn(n);
+    call emitcomment(c);
+    end emitdwnc;
+
+emitdbnc: procedure(n,c) public;
+    declare n byte, c address;
+    call emitdbn(n);
+    call emitcomment(c);
+    end emitdbnc;
+
+end;
+

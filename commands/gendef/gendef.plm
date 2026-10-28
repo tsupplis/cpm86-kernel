@@ -1,0 +1,838 @@
+$title ('GENDEF - Library Generator for DISKDEF')
+gd:
+do;
+
+/* l i b r a r y   g e n e r a t o r   f o r   D I S K D E F */
+
+$include(copyrt.lit)
+
+/*	Generation Procedure on VAX
+
+asm86 scd.a86
+plm86 gendef.plm debug xref optimize(3) date(10/5/81) pagewidth(100)
+plm86 gscan.plm debug xref optimize(3) date(10/5/81) pagewidth(100)
+plm86 emit.plm debug xref optimize(3) date(10/5/81) pagewidth(100)
+plm86 token.plm debug xref optimize(3) date(10/5/81) pagewidth(100)
+link86 scd.obj,gendef.obj,gscan.obj,emit.obj,token.obj -
+         to gendef.lnk
+loc86 gendef.mod od(sm(code,dats,data,stack,const)) -
+        ad(sm(code(0h))) ss(stack(+32))
+h86 gendef
+
+	Then on a micro
+
+vax gendef $fans
+gencmd gendef data[b17c]
+
+notes:
+	b17c is derived from module map in the GENDEF.MP2 file generated
+	by LOC86.  The 'CONST segment' is located last to force hex
+	generation.  Stack is extended to insure against interrupts on
+	MP/M-86.
+
+*/
+
+
+$include (:f1:glit.plb)
+
+declare
+    true    lit '1',
+    false   lit '0',
+    forever lit 'while true',
+    cr      lit '0dh',
+    tab     lit '09h';
+
+/* global procedures */
+
+boot: procedure external;
+end boot;
+
+printchar: procedure(c) external;
+    declare c byte;
+    end printchar;
+
+print: procedure(a) external;
+    declare a address;
+    end print;
+
+crlf: procedure external;
+    end crlf;
+
+abort: procedure(msg) external;
+    declare msg address;
+    end abort;
+
+scan: procedure external;
+    end scan;
+
+scan$ini: procedure external;
+    end scan$ini;
+
+setup: procedure external;
+    /* set up the input file on each pass */
+    end setup;
+
+putline: procedure external;
+    end putline;
+
+writerrs: procedure external;
+    end writerrs;
+
+errptr: procedure(msg) external;
+    declare msg address;
+    end errptr;
+
+/* code emitters */
+emitbyte: procedure(b) external;
+    declare b byte;
+    end emitbyte;
+
+emitcrlf: procedure external;
+    end emitcrlf;
+
+emitoptab: procedure(a) external;
+    declare a address;
+    end emitoptab;
+
+emitcomma: procedure external;
+    end emitcomma;
+
+emitaddr: procedure(a) external;
+    declare a address;
+    end emitaddr;
+
+emitchar: procedure(a) external;
+    declare a address;
+    end emitchar;
+
+emitline: procedure external;
+    end emitline;
+
+emitcharn: procedure(a,n) external;
+    declare a address, n byte;
+    /* symbol, followed by two digit n */
+    end emitcharn;
+
+emitcomment: procedure(a) external;
+    declare a address;
+    end emitcomment;
+
+emitdec8: procedure(b) external;
+    declare b byte;
+    end emitdec8;
+
+emitdec16: procedure(w) external;
+    declare w address;
+    end emitdec16;
+
+emitdecb: procedure(w) external;
+    declare w address;
+    end emitdecb;
+
+emitdw: procedure external;
+    end emitdw;
+
+emitdb: procedure external;
+    end emitdb;
+
+emitdwn: procedure(n) external;
+    declare n address;
+    end emitdwn;
+
+emitdbn: procedure(n) external;
+    declare n byte;
+    end emitdbn;
+
+emitdwnc: procedure(n,c) external;
+    declare (n,c) address;
+    end emitdwnc;
+
+emitdbnc: procedure(n,c) external;
+    declare n byte, c address;
+    end emitdbnc;
+
+efinis: procedure external;
+    end efinis;
+
+emittab: procedure external;
+    end emittab;
+
+emitnulcom: procedure external;
+    end emitnulcom;
+
+/* global variables */
+declare
+    parm (26) byte external,
+    comm$tog  byte at (.parm(2)),  /* disk comment */
+    off$tog   byte at (.parm(14)), /* generate 'offset' */
+    scan$tog  byte at (.parm(18)), /* scanner trace */
+    z80$tog   byte at (.parm(25)); /* z80, 8080, 8085 mode */
+
+declare
+    errset  byte external,
+    eofset  byte external,
+    cbuff(8) byte external,
+    value   address external,
+    nextc   byte external,
+    token   byte external,
+    continue byte external,
+    acclen  byte external,
+    accum(32) byte external;
+
+/* code emitters */
+setemit: procedure external;
+    end setemit;
+
+prnib: procedure(d);
+    declare d byte;
+    /* print nibble d */
+    if d > 9 then
+        d = 'A' + d - 10; else
+        d = d + '0';
+    call printchar(d);
+    end prnib;
+
+prhex: procedure(h);
+    declare h byte;
+    call prnib(shr(h,4));
+    call prnib(h and 0fh);
+    end prhex;
+
+praddr: procedure(a);
+    declare a address;
+    call prhex(high(a));
+    call prhex(low(a));
+    end praddr;
+
+prdig: procedure(d);
+    declare d byte;
+    /* print the decimal number given by d */
+    call printchar('0'+d);
+    end prdig;
+
+prdec: procedure(b);
+    declare b byte;
+    /* print the decimal value of b */
+    call prdig(b/100);
+    call prdig(b/10 mod 10);
+    call prdig(b mod 10);
+    end prdec;
+
+/* trace functions */
+
+declare
+    ident    lit '1',
+    number   lit '2',
+    string   lit '3',
+    special  lit '4';
+
+trace: procedure(msga);
+    declare
+        msga address,
+        (i,c) byte;
+    if scan$tog then
+        do;
+        call putline;
+        call print(msga);
+        call printchar(',');
+            do i = 1 to acclen;
+            if (c:=accum(i-1)) < ' ' then
+                do;
+                call printchar('#');
+                call prhex(c);
+                end; else
+            call printchar(c);
+            end;
+        call printchar(':');
+        call prdec(token);
+        if token = number then
+            do;
+            call printchar(',');
+            call praddr(value);
+            call printchar('H');
+            end;
+        if eofset then
+            call print(.('End-File$'));
+        end;
+    end trace;
+
+/* parsing procedures for non terminals */
+
+bypass: procedure(x) byte;
+    declare x byte;
+    if token = x then
+        do;
+        call scan;
+        return true;
+        end;
+    return false;
+    end bypass;
+
+declare eltinx byte;   /* index into set when 'element' returns true */
+
+element: procedure(list) byte;
+    declare list address; /* address of set to search */
+    /* element searches for the current token in the set of
+    tokens addressed by 'list' and returns true if item is
+    found.  as a side-effect, 'eltinx' is set to the item's index */
+    declare set based list (1) byte, x byte;
+    eltinx = -1;
+        do forever;
+        if (x := set(eltinx:=eltinx+1)) = 0 then return false;
+        if token = x then return true;
+        end;
+    end element;
+
+endline: procedure byte;
+    /* return true if end of line or file */
+    return (token = cr) or eofset;
+    end endline;
+
+recover: procedure;
+        do while not endline;
+        call scan;
+        end;
+    end recover;
+
+emitdollar: procedure;
+    if not z80$tog then
+        call emitchar(.('offset $'));
+    call emitbyte('$');
+    end emitdollar;
+
+declare
+    /* diskdef parameter values */
+    maxdisks lit '16',
+    ndisks   byte,            /* number of disks */
+    diskset  (maxdisks) byte; /* true if included in diskdef */
+
+disks: procedure;
+    /* handle the disks n macro */
+    declare i byte;
+    if ndisks > 0 then
+       ndisks = 0; else
+    if token = number then
+        ndisks = value; else
+        ndisks = 0;
+    if ndisks = 0 or ndisks > maxdisks then
+        call errptr(.('bad val$'));
+    call scan;
+    /* dpbase equ $ */
+    call emitchar(.('dpbase$'));
+    call emitoptab(.('equ$'));
+    if off$tog then
+        call emitdollar; else
+        call emitbyte('$');
+    call emitcomment(.('Base of Disk Parameter Blocks$'));
+        do i = 1 to ndisks;
+        /* dpe00: dw xlt00,0000h */
+        call emitcharn(.('dpe$'),i-1);
+        if z80$tog then
+            call emitbyte(':');
+        call emitdw;
+        call emitcharn(.('xlt$'),i-1);
+        call emitcomma;
+        call emitaddr(0);
+        call emitcomment(.('Translate Table$'));
+        /* dw 0000h,0000h */
+        call emitdw;
+        call emitaddr(0);
+        call emitcomma;
+        call emitaddr(0);
+        call emitcomment(.('Scratch Area$'));
+        /* dw dirbuf,dpb00 */
+        call emitdw;
+        call emitchar(.('dirbuf,$'));
+        call emitcharn(.('dpb$'),i-1);
+        call emitcomment(.('Dir Buff, Parm Block$'));
+        /* dw csv00,alv00 */
+        call emitdw;
+        call emitcharn(.('csv$'),i-1);
+        call emitcomma;
+        call emitcharn(.('alv$'),i-1);
+        call emitcomment(.('Check, Alloc Vectors$'));
+        end;
+    end disks;
+
+declare
+    npar   lit '11',
+    rpar   lit '9',  /* no. of required parms */
+    dn     lit '0',  /* disk number */
+    fsc    lit '1',  /* first sector */
+    lsc    lit '2',  /* last sector */
+    skf    lit '3',  /* skew factor */
+    bls    lit '4',  /* block size */
+    dks    lit '5',  /* disk size */
+    dir    lit '6',  /* directory size */
+    cks    lit '7',  /* check sum size */
+    ofs    lit '8',  /* offset tracks */
+    com    lit '9',  /* CP/M 1.4 compatibility flag */
+    prm    lit '10'; /* permanent disk drive */
+
+declare
+    lower (*) address data
+   /* dn    fsc    lsc    skf    bls  */
+    (0000,  0000,  0001,  0000,  1024,
+   /* dks   dir    cks    ofs    com  */
+     0001,  0001,  0000,  0000,  0000,
+   /* prm */
+     0000),
+    upper (*) address data
+   /* dn    fsc    lsc    skf    bls  */
+    (0015,  0015,  65535, 0255,  16384,
+   /* dks   dir    cks    ofs    com  */
+     65535, 65534, 65534, 65535, 0000,
+   /* prm */
+     0000),
+    optional (*) byte data
+   /* dn    fsc    lsc    skf    bls  */
+    (false, false, false, true,  false,
+   /* dks   dir    cks    ofs    com  */
+     false, false, false, false, true,
+   /* prm */
+     true);
+
+declare
+    dsmax (*) address data
+    /*         value of bls          */
+    /* 1024  2048  4096  8192  16384 */
+    (  8192, 4096, 2048, 1024, 512  );
+
+declare
+    bsh (*) byte data
+    /* 1024  2048  4096  8192  16384 */
+    (   3,    4,    5,    6,    7   ),
+    blm (*) byte data
+    /* 1024  2048  4096  8192  16384 */
+    (   7,    15,   31,   63,   127 ),
+    dsm (*) byte data
+    /* 1024  2048  4096  8192  16384 */
+    (   0,    1,    3,    7,    15  );
+
+declare
+    ddir (*) address data
+    /* 1024  2048  4096  8192  16384 */
+    (   32,   64,  128,  256,  512   );
+
+range: procedure;
+    call errptr(.('range  $'));
+    end range;
+
+diskdef: procedure;
+    /* handle diskdef, first item scanned */
+    declare
+        pv  (npar) address,
+        parmissing (npar) byte,
+        (pc, i)  byte,
+        (d, v) address;
+    declare
+        sectors address,
+        (nxtsec, nxtbas, neltst, nelts) address;
+
+    gcd: procedure(m,n) address;
+        declare (m,n,r) address;
+            do forever;
+            r = m mod n;
+            if r = 0 then
+                return n;
+            m = n;
+            n = r;
+            end;
+        end gcd;
+
+    equiv: procedure(a,b);
+        declare (a,b) address;
+        /* dpb1 equ dpb0 */
+        call emitcharn(a,pv(0));
+        call emitoptab(.('equ$'));
+        call emitcharn(a,pv(1));
+        call emitcomment(b);
+        end equiv;
+
+        comment: procedure(v,a);
+            declare (v, a) address;
+            /* write diskdef comment line */
+            call emitbyte(';');
+            call emittab;
+            call emitdecb(v);
+            call emitbyte(':');
+            call emittab;
+            call emitchar(a);
+            call emitcrlf;
+            end comment;
+
+        do i = 0 to last(parmissing);
+        parmissing(i) = true;
+        end;
+    pc = 0;
+    token = ',';
+        do while not (endline or pc = npar);
+        call trace(.('   diskparm$'));
+        pv(pc) = 0;
+        if not bypass(',') then
+            call errptr(.('delimit$')); else
+        if (parmissing (pc) :=
+            (token = cr or token = ',')) then
+            do;
+            if not optional(pc) then
+                call errptr(.('missing$'));
+            end; else
+            do;
+            if token <> number then
+                call errptr(.('numeric$')); else
+                do;
+                /* numeric value, check range */
+                if value < lower(pc) or
+                   value > upper(pc) then
+                    call range; else
+                /* make special range checks */
+                if pc = dn then
+                    do;
+                    if diskset(value) then
+                        call errptr(.('duplic $'));
+                    diskset(value) = true;
+                    end; else
+                if pc = lsc and value <= pv(fsc) then
+                    call range; else
+                if pc = skf and
+                    value > (pv(lsc) - pv(fsc)) then
+                    call range; else
+                if pc = bls then
+                    do;
+                    if value = 1024  then value = 0; else
+                    if value = 2048  then value = 1; else
+                    if value = 4096  then value = 2; else
+                    if value = 8192  then value = 3; else
+                    if value = 16384 then value = 4; else
+                        call range;
+                    end; else
+                if pc = dks then
+                    do;
+                    if value > 256 and pv(bls) = 0 then
+                        call range; else
+                    if value > dsmax(pv(bls)) then
+                       call range;
+                    end; else
+                 if pc = dir then
+                     do;
+                     if (value and 11b) <> 0 then
+                         call range; else
+                         do;
+                         /* compute alloc vector */
+                         v = 0;
+                         d = value;
+                             /* loop until zero or negative */
+                             do while not rol(high(d-1),1);
+                             d = d - ddir(pv(bls));
+                             if low(v) then
+                                 do;
+                                 call errptr(.('Alloc  $'));
+                                 d = 0;
+                                 end; else
+                             v = shr(v,1) or 8000h;
+                             end;
+                         end;
+                     end; else
+                if pc = cks and ((value and 11b) <> 0 or
+                                 value > pv(dir)) then
+                    call range;
+                if pc = prm and pv(cks) > 0 then
+                    call errptr(.('conflict$'));
+                pv(pc) = value;
+                end;
+            call scan;
+            end;
+        if errset then
+            return;
+        pc = pc + 1;
+        end;
+    /* check for abbreviated form */
+    if not endline then
+        return;
+    if pc = 2 then
+        do;
+        if not diskset(pv(1)) then
+            call errptr(.('no disk$'));
+        if comm$tog then
+            do;
+            call emitnulcom;
+            call emitbyte(';');
+            call emittab;
+            call emitchar(.('Disk $'));
+            call emitdec8(pv(0));
+            call emitchar(.(' is the same as Disk $'));
+            call emitdec8(pv(1));
+            call emitcrlf;
+            call emitnulcom;
+            end;
+        call equiv(.('dpb$'),.('Equivalent Parameters$'));
+        call equiv(.('als$'),.('Same Allocation Vector Size$'));
+        call equiv(.('css$'),.('Same Checksum Vector Size$'));
+        call equiv(.('xlt$'),.('Same Translate Table$'));
+        return;
+        end; else
+    if pc < rpar then
+        do;
+        call errptr(.('too few$'));
+        return;
+        end;
+    /* write general disk statistics */
+    sectors = pv(lsc) - pv(fsc) + 1;
+    if pv(skf) = 0 then parmissing(skf) = true;
+    if comm$tog then
+        do;
+        /* ;<crlf>;<tab>Disk 000 is CP/M 1.4 Single(/Double) .. */
+        call emitnulcom;
+        if not parmissing(com) then
+            do;
+            call emitbyte(';');
+            call emittab;
+            call emitchar(.('Disk $'));
+            call emitdec8(pv(dn));
+            call emitchar(
+                .(' is CP/M 1.4 Double Density Compatible$'));
+            call emitcrlf;
+            end;
+        /* pv(dks) * 8/16/32/64/128 for 1k/2k/4k/8k/16k */
+        d = pv (dks) * shl(100b,pv(bls)+1);
+        call emitbyte(';');
+        call emittab;
+        if d > 0 then
+            call emitdecb(d); else
+            call emitchar(.('65536$'));
+        call emitbyte(':');
+        call emittab;
+        call emitchar(.('128 Byte Record Capacity$'));
+        call emitcrlf;
+        /* pv(dks) * 1k/2k/4k/8k/16k */
+        d = 1;
+        if pv(bls) > 0 then
+            d = shl(d,pv(bls));
+        call comment(pv(dks) * d,.('Kilobyte Drive  Capacity$'));
+        call comment(pv(dir),.('32 Byte Directory Entries$'));
+        call comment(pv(cks),.('Checked Directory Entries$'));
+        if not parmissing(com) then
+            d = 128; else
+            do;
+            /* extents are folded */
+            if pv(dks) > 256 then
+                d = 32; else d = 64;
+            d = shl(d,pv(bls)+1);
+            end;
+        call comment(d,.('Records / Extent$'));
+        call comment(shl(100b,pv(bls)+1),
+            .('Records / Block$'));
+        call comment(sectors,.('Sectors / Track$'));
+        call comment(pv(ofs),.('Reserved  Tracks$'));
+        if not parmissing(skf) then
+            call comment(pv(skf),.('Sector Skew Factor$'));
+        call emitnulcom;
+        end;
+    /* dpb0 equ $ */
+    call emitcharn(.('dpb$'),pv(dn));
+    call emitoptab(.('equ$'));
+    call emitdollar;
+    call emitcomment(.('Disk Parameter Block$'));
+    call emitdwnc(sectors,
+        .('Sectors Per Track$'));
+    call emitdbnc(bsh(pv(bls)),
+        .('Block Shift$'));
+    call emitdbnc(blm(pv(bls)),
+        .('Block Mask$'));
+    i = pv(bls);
+    if pv(dks) > 256 then
+        i = i - 1;
+    if parmissing(com) then
+        call emitdbnc(dsm(i),.('Extnt Mask$')); else
+        call emitdbnc(pv(com),.('1.4 Compatible$'));
+    call emitdwnc(pv(dks)-1,.('Disk Size - 1$'));
+    call emitdwnc(pv(dir)-1,.('Directory Max$'));
+    /* compute allocation vector initialization */
+    call emitdbnc(high(v),.('Alloc0$'));
+    call emitdbnc(low(v),.('Alloc1$'));
+    if parmissing(prm) then
+        call emitdwnc(pv(cks)/4,.('Check Size$')); else
+        call emitdwnc(8000h,.('Permanent Disk$'));
+    call emitdwnc(pv(ofs),.('Offset$'));
+
+    /* generate allocation vector */
+    call emitcharn(.('xlt$'),pv(dn));
+    call emitoptab(.('equ$'));
+    if parmissing(skf) then
+        do;
+        call emitdec8(0);
+        call emitcomment(.('No Translate Table$'));
+        end; else
+        do;
+        call emitdollar;
+        call emitcomment(.('Translate Table$'));
+        nxtsec, nxtbas = 0;
+        neltst = sectors/gcd(sectors,pv(skf));
+        nelts = neltst;
+            do d = 0 to sectors-1;
+            if d mod 4 <> 0 then
+                call emitcomma; else
+                do;
+                if d > 0 then
+                    call emitcrlf;
+                if sectors < 256 then
+                    call emitdb; else
+                    call emitdw;
+                end;
+            call emitdec16(nxtsec+pv(fsc));
+            nxtsec = nxtsec + pv(skf);
+            if nxtsec >= sectors then
+                nxtsec = nxtsec - sectors;
+            if (nelts := nelts - 1) = 0 then
+                do;
+                nxtsec = (nxtbas := nxtbas + 1);
+                nelts = neltst;
+                end;
+            end;
+        call emitcrlf;
+        end;
+
+    /* generate allocation vector size */
+    call emitcharn(.('als$'),pv(dn));
+    call emitoptab(.('equ$'));
+    d = pv(dks)/8;
+    if pv(dks) mod 8 <> 0 then
+        d = d + 1;
+    call emitdec16(d);
+    call emitcomment(.('Allocation Vector Size$'));
+
+    /* generate checksum vector size */
+    call emitcharn(.('css$'),pv(dn));
+    call emitoptab(.('equ$'));
+    call emitdec16(pv(cks)/4);
+    call emitcomment(.('Check Vector Size$'));
+    end diskdef;
+
+endef: procedure;
+    /* generate end of disk def code */
+    declare i byte;
+    reserve: procedure;
+        if z80$tog then
+            /* $z set for z80, 8080, or 8085 */
+            call emitoptab(.('ds$')); else
+            call emitoptab(.('rs$'));
+        end reserve;
+    call emitnulcom;
+    call emitbyte(';');
+    call emittab;
+    call emitchar(.('Uninitialized Scratch Memory Follows:$'));
+    call emitcrlf;
+    call emitnulcom;
+
+    /* begdat equ $ */
+    call emitchar(.('begdat$'));
+    call emitoptab(.('equ$'));
+    call emitdollar;
+    call emitcomment(.('Start of Scratch Area$'));
+
+    /* dirbuf: ds/rs 128 */
+    call emitchar(.('dirbuf$'));
+    if z80$tog then
+        call emitbyte(':');
+    call reserve;
+    call emitdec8(128);
+    call emitcomment(.('Directory Buffer$'));
+
+    /* alv0: ds als0, csv0: ds css0 */
+        do i = 0 to last(diskset);
+        if diskset(i) then
+            do;
+            call emitcharn(.('alv$'),i);
+            if z80$tog then
+                call emitbyte(':');
+            call reserve;
+            call emitcharn(.('als$'),i);
+            call emitcomment(.('Alloc Vector$'));
+            call emitcharn(.('csv$'),i);
+            if z80$tog then
+                call emitbyte(':');
+            call reserve;
+            call emitcharn(.('css$'),i);
+            call emitcomment(.('Check Vector$'));
+            end;
+        end;
+
+    /* enddat equ $, datsiz equ $-begdat */
+    call emitchar(.('enddat$'));
+    call emitoptab(.('equ$'));
+    call emitdollar;
+    call emitcomment(.('End of Scratch Area$'));
+    call emitchar(.('datsiz$'));
+    call emitoptab(.('equ$'));
+    call emitdollar;
+    call emitchar(.('-begdat$'));
+    call emitcomment(.('Size of Scratch Area$'));
+    call emitdbnc(0,.('Marks End of Module$'));
+    end endef;
+
+program: procedure;
+    /* handle the entire genlib program */
+    declare
+        i byte;
+        do i = 0 to last(diskset);
+        diskset(i) = false;
+        end;
+    ndisks = 0;
+        do while not eofset;
+        errset = false;
+        call scan;
+        call emitline;
+        call trace(.('program$'));
+        if token <> cr then
+        if not element(.(
+            tmaclib,
+            tdisks,
+            tdiskdef,
+            tendef,
+            0)) then
+            call errptr(.('No Stmt$')); else
+          do;
+            do case eltinx;
+            /* maclib */
+                do;
+                call scan;
+                call trace(.('  maclib$'));
+                call scan;
+                call trace(.('  macpar$'));
+                end;
+            /* disks */
+                do;
+                call scan;
+                call trace(.(' disks$'));
+                call disks;
+                end;
+            /* diskdef (10 parameters) */
+                do;
+                call trace(.(' diskdef$'));
+                call diskdef;
+                end;
+            /* endef */
+                do;
+                call scan;
+                call endef;
+                end;
+            end;
+          if token <> cr then
+              call errptr(.('extra  $'));
+          end;
+        call recover;
+        end;
+    end program;
+
+plmstart: procedure public;
+    /* main program, called from transient interface */
+    call setemit; /* setup the code emitters */
+    call scan$ini; /* initialize the scanner */
+    call setup; /* set up the input file */
+    call program;
+    call writerrs;
+    call efinis;     /* close the code file */
+    call boot;
+    end plmstart;
+end;
+

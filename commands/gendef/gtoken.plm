@@ -1,0 +1,116 @@
+$title('TOKEN module for GENDEF')
+token:
+do;
+$include (:f1:glit.plb)
+
+declare
+    cr lit '0dh';
+
+/* token tables given below are each addressed by tokadr(length), and
+each start with the number of items in the table of that particular
+length.  the tables are in sorted order so that they could be searched
+with a binary search algorithm (sequential is used at this time) */
+
+declare
+    /* tokens are not listed for length 0,1 */
+    tok0 (*) byte data(0), tok1 (*) byte data(0),
+    /* single character tokens are given by their ascii representation */
+    tok2 (*) byte data
+    (0),
+    tok3 (*) byte data
+    (0),
+    tok4 (*) byte data
+    (0),
+    tok5 (*) byte data
+    (2,'DISKS','ENDEF'),
+    tok6 (*) byte data
+    (1,'MACLIB'),
+    tok7 (*) byte data
+    (1,'DISKDEF');
+
+declare
+    /* index to base address of each table */
+    tokadr (*) address data
+    (.tok0,.tok1,.tok2,.tok3,.tok4,.tok5,.tok6,.tok7),
+
+    /* starting token number for each length */
+    tokbas (*) byte data
+    (0,0,token2,token3,token4,token5,token6,token7);
+
+/* external declarations */
+declare
+    nextc      byte external,   /* next char (lookahead) */
+    token      byte external,   /* current token */
+    continue   byte external,   /* true for long idents, strings */
+    acclen     byte external,   /* accumulator length */
+    accum(32)  byte external;   /* actual characters scanned */
+
+gnt: procedure external;
+    /* produces token = tiden, tnumb, tstrng, or tspecl */
+    end gnt;
+
+scan: procedure public;
+    /* scan produces the actual token number for each item returned by
+    gnt (get next token).  in the case of identifiers and special chars,
+    the token tables are searched before returning the token number */
+
+    nextchar: procedure(lookchr) byte;
+        declare lookchr byte;
+        /* nextchar is used to look ahead for special two character
+        sequences.  if 'lookchr' is found, then nextc is zeroed and true is
+        returned from the call */
+        declare tf byte;
+        if (tf := nextc = lookchr) then nextc = 0;
+        return tf;
+        end nextchar;
+
+    declare /* local variables for the token matching */
+        ta address,       /* set to beginning of string of symbols */
+        tokstr based ta (tokenm) byte, /* string template at ta */
+        n byte,           /* number of symbols remaining to scan in string */
+        i byte;           /* index used while matching characters */
+
+    call gnt; /* sets external variables */
+    if token = tstrng or token = tnumb then return;
+
+    /* otherwise token = tspecl or token = tiden */
+
+    if token = tspecl then
+        do;
+        /* may be a comment */
+        if accum(0) = ';' then
+            do while accum(0) <> cr;
+            call gnt;
+            end;
+        token = accum(0);
+        return;
+        end;
+
+    if acclen > tokenm then
+        /* cannot be a reserved word */
+        return;
+
+    ta = tokadr(acclen);  /* ta is set to the base string to match */
+    n  = tokstr(0);   /* n is the number of symbols in the string */
+
+    /* token must be set to tiden at this point */
+    token  = tokbas(acclen);  /* base token number */
+
+        do while n > 0; /* more match attempts */
+        n = n - 1;  i = acclen;
+            do while i > 0 and accum(i-1) = tokstr(i);
+            /* one more character has been matched */
+            i = i - 1;
+            end;
+        if i = 0 then /* a complete match was found */
+            return;
+        /* current token does not match, try again */
+        token = token + 1; /* move to next token in sequence */
+        ta = ta + acclen; /* base address advanced to next item */
+        end;
+    /* cannot find the token, leave 'token' set to tiden */
+    token = tiden;
+    return;
+    end scan;
+end;
+
