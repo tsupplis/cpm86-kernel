@@ -32,5 +32,6 @@ files for the repository `pcdisks.def`, for default, $C, $O, $Z and $COZ
 options, including complete CP/M records and EOF padding. This covers the
 command-tail parsing addressed by patch 03 and both processor output modes.
 It does not prove identity for every accepted disk geometry or error case.
-The original `base/gendef.cmd` remains the distribution reference pending
-broader validation; the source build is available in this directory.
+Distribution recipes and `tools/gendef.sh` use the rebuilt
+`commands/gendef/gendef.cmd`. The original `base/gendef.cmd` remains the
+reference used by `make check`.

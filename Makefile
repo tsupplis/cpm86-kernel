@@ -10,6 +10,7 @@ ASM86    = $(CMDDIR)/asm86/asm86.cmd
 DDT86    = $(CMDDIR)/ddt86/ddt86.cmd
 ED       = $(CMDDIR)/ed/ed.cmd
 GENCMD   = $(CMDDIR)/gencmd/gencmd.cmd
+GENDEF   = $(CMDDIR)/gendef/gendef.cmd
 HELP     = $(CMDDIR)/help/help.cmd
 HLP      = $(CMDDIR)/help/help.hlp
 PIP      = $(CMDDIR)/pip/pip.cmd
@@ -32,7 +33,7 @@ DATPFK   = $(CMDDIR)/function/data.pfk
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
 # take everything; the smaller formats take subsets.
-ASMTOOLS   = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
+ASMTOOLS   = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
              dev/sid86.cmd
 BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
@@ -57,7 +58,7 @@ CORETOOLS  = $(PIP) $(STAT) $(SUBMIT) $(ED) $(FUNCTION) \
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
              $(MFORM) $(FUNCTION) $(SHARED) $(DSKMAINT) $(HLP) $(TESTSUB) \
              $(DATPFK)
-EXPASM     = $(ASM86) $(DDT86) $(GENCMD) base/gendef.cmd
+EXPASM     = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS) $(EXTTOOLS)
 EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
@@ -67,8 +68,8 @@ EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
 .SECONDEXPANSION:
 SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
                $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
-               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(EXTTOOLS)
-$(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/Makefile)
+               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(GENDEF) $(EXTTOOLS)
+$(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/*.plb $$(@D)/*.lit $$(@D)/Makefile)
 	$(MAKE) -C $(@D) $(@F)
 $(HLP): commands/help/help.dat
 
