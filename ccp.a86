@@ -1,101 +1,104 @@
-;***********************************************************
-;  CCP.A86 - CP/M-86 Console Command Processor
-;  Part of the CP/M-86 kernel; linked ahead of BDOS and the
-;  BIOS into a single image by the root Makefile.
+;-----------------------------------------------------------------------------
+; CCP.A86 - CP/M-86 console command processor
 ;
-;  Build:   make cpm.sys
-;  Check:   make check
-;***********************************************************
+; Purpose: read command lines, execute resident commands and load transient
+; CMD programs. Resident commands include DIR, ERA, TYPE, REN and USER;
+; SUBMIT processing reads commands from the submit file.
+; Image: offsets 0000h..09FFh, before BDOS at 0A00h.
+; Build: make cpm.sys
+; Verify: make check (per-module bytes, complete image and pinned reference).
+; Reference: ccporg.a86 is frozen. Formatting and comments may change here;
+; instructions, operands, strings, addresses and emitted bytes must not.
+;-----------------------------------------------------------------------------
 
-;  Equations of BDOS function
-;
-CRSTSY	equ	0		;reset system
-CCONIN	equ	1		;console input
-CCONOT	equ	2		;console output
-CRDCBF	equ	10		;read console buffer
-CCONST	equ	11		;console status
-CINBDS	equ	13		;initialize BDOS
-CSELDR	equ	14		;select drive
-COPEN	equ	15		;open file
-CCLOSE	equ	16		;close file
-CSERCH	equ	17		;search directory first
-CSERCN	equ	18		;search next
-CDELET	equ	19		;delete file
-CREADN	equ	20		;read sequential
-CRENAM	equ	23		;rename
-CGTDRV	equ	25		;interrogate drive
-CSTDMA	equ	26		;set DMA offset
-CGTUSR	equ	32		;get/set user code
-CDBIOS	equ	50		;direct BIOS call
-CSTDMS	equ	51		;set DMA segment
-CMFREE	equ	58		;free all memory
-CLOADP	equ	59		;load program
-;
-;  Equations of data
-;
-BDOSI	equ	0E0h		;BDOS interrupt
-LF	equ	0Ah		;line feed
-CR	equ	0Dh		;carriagte return
-EOF	equ	1Ah		;end of file
-SCTLNG	equ	128		;one sector data length
-;
-BDOS	equ	.0B00h		;bods entry
-;
-;  Equations of base page offset
-;
-DFPAGE	equ	0		;base page top
-DFESSG	equ	0Fh		;extra segment
-DFCB	equ	5Ch		;default FCB
-DFCMBF	equ	80h		;default command buffer
-SYSDMA	equ	80h		;system DMA address
-;
-;
+; BDOS function numbers
+
+CRSTSY	equ	0		; reset system
+CCONIN	equ	1		; console input
+CCONOT	equ	2		; console output
+CRDCBF	equ	10		; read console buffer
+CCONST	equ	11		; console status
+CINBDS	equ	13		; initialize BDOS
+CSELDR	equ	14		; select drive
+COPEN	equ	15		; open file
+CCLOSE	equ	16		; close file
+CSERCH	equ	17		; search directory first
+CSERCN	equ	18		; search next
+CDELET	equ	19		; delete file
+CREADN	equ	20		; read sequential
+CRENAM	equ	23		; rename
+CGTDRV	equ	25		; interrogate drive
+CSTDMA	equ	26		; set DMA offset
+CGTUSR	equ	32		; get/set user code
+CDBIOS	equ	50		; direct BIOS call
+CSTDMS	equ	51		; set DMA segment
+CMFREE	equ	58		; free all memory
+CLOADP	equ	59		; load program
+
+; Constants and shared offsets
+
+BDOSI	equ	0E0h		; BDOS interrupt
+LF	equ	0Ah		; line feed
+CR	equ	0Dh		; carriage return
+EOF	equ	1Ah		; end of file
+SCTLNG	equ	128		; Bytes per logical record
+
+BDOS	equ	.0B00h		; BDOS entry
+
+; Base-page offsets
+
+DFPAGE	equ	0		; base page top
+DFESSG	equ	0Fh		; extra segment
+DFCB	equ	5Ch		; default FCB
+DFCMBF	equ	80h		; default command buffer
+SYSDMA	equ	80h		; system DMA address
+
 	cseg
 	org	0
-;
-TOP:				;tag for biased address
-;
-;  CCP entry jump table
-;
-	jmp	CCPCLD			;cold start
+
+TOP:				; tag for biased address
+
+; CCP entry jump table
+
+	jmp	CCPCLD			; cold start
 	jmp	CCPABE
-	jmp	CCPHOT			;hot start
-;
-;  Command read buffer
-;
-CMBUFF	db	127		;buffer length
-	db	0		;length of code
+	jmp	CCPHOT			; hot start
+
+; Command read buffer
+
+CMBUFF	db	127		; buffer length
+	db	0			; length of code
 	db	'                '
 	db	'COPYRIGHT (C) 1980, '
 	db	'DIGITAL RESEARCH  '
 	rs	74
-;
-;  To BDOS
-;
+
+; To BDOS
+
 ENBDOS:
-	int	BDOSI			;to BDOS
+	int	BDOSI			; to BDOS
 	mov	bp,cs
 	mov	es,bp
 	ret
-;
-;  System reset
-;
+
+; System reset
+
 SYSRST:
 	mov	cl,CRSTSY
 	xor	dx,dx
 	jmps	ENBDOS
-;
-;  Console out
-;  Input
-;  AL:code
-;
+
+; Console out
+; Input
+; AL:code
+
 CONOUT:
 	mov	dl,al
 	mov	cl,CCONOT
 	jmps	ENBDOS
-;
-;  Space
-;
+
+; Space
+
 SPACE:
 	mov	al,' '
 CONOTB:
@@ -103,537 +106,533 @@ CONOTB:
 	call	CONOUT
 	pop	cx
 	ret
-;
-;  Carriage return & line feed
-;
+
+; Carriage return & line feed
+
 CRLF:
 	mov	al,CR
 	call	CONOTB
 	mov	al,LF
 	jmps	CONOTB
-;
-;  Print buffered string
-;  Input
-;  CX:string pointer
-;
+
+; Print buffered string
+; Input
+; CX:string pointer
+
 BUFPRN:
 	push	cx
 	call	CRLF
 	pop	bx
 BUFPRL:
-	mov	al,[bx]			;get code
+	mov	al,[bx]			; get code
 	or	al,al
-	jnz	BUFPRS			;get active code
-	ret				;end by 0
-;
+	jnz	BUFPRS			; get active code
+	ret				; end by 0
+
 BUFPRS:
 	inc	bx
 	push	bx
 	call	CONOUT
 	pop	bx
-	jmps	BUFPRL			;to next
-;
-;  Load program
-;
+	jmps	BUFPRL			; to next
+
+; Load program
+
 LOADPR:
 	mov	dx,offset WKFCB
 	mov	cl,CLOADP
 	jmps	ENBDOS
-;
-;  Direct BIOS select disk
-;
+
+; Direct BIOS select disk
+
 SELDSK:
 	mov	cx,CDBIOS
 	mov	dx,offset WKBIOS
 	jmps	ENBDOS
-;
-;  Free all memory
-;
+
+; Free all memory
+
 MEMFRE:
 	mov	cl,CMFREE
 	jmps	ENBDOS
-;
-;  Initialize BDOS
-;
+
+; Initialize BDOS
+
 INBDOS:
 	mov	cl,CINBDS
 	jmps	ENBDOS
-;
-;  Select drive
-;  Input
-;  AL:drive number
-;
+
+; Select drive
+; Input
+; AL:drive number
+
 SELDRV:
 	mov	dl,al
 	mov	cl,CSELDR
 	jmps	ENBDOS
-;
-;  Directory process common
-;  Output
-;  Zf:on error
-;
+
+; Directory process common
+; Output
+; Zf:on error
+
 DIRCOM:
 	call	ENBDOS
-	mov	BSDIRC,al		;save bias of directory
+	mov	BSDIRC,al		; save bias of directory
 	inc	al
 	ret
-;
-;  Open file
-;
+
+; Open file
+
 OPEN:
 	mov	cl,COPEN
 	jmps	DIRCOM
-;
-;  Open by work FCB
-;
+
+; Open by work FCB
+
 OPENW:
-	mov	WKFCB+32,0		;clear current record
+	mov	WKFCB+32,0		; clear current record
 	mov	dx,offset WKFCB
 	jmps	OPEN
-;
-;  Close file
-;
+
+; Close file
+
 CLOSE:
 	mov	cl,CCLOSE
 	call	DIRCOM
 	jz	CLOSER
 	ret
-;
-CLOSER:				;close error
+
+CLOSER:				; close error
 	mov	cx,offset CCLSER
 	jmps	WHYPR
-;
-;  Search first
-;
+
+; Search first
+
 SEARCH:
 	mov	cl,CSERCH
 	jmps	DIRCOM
-;
-;  Search next
-;
+
+; Search next
+
 SEARCN:
 	mov	cl,CSERCN
 	jmps	DIRCOM
-;
-;  Search by work FCB
-;
+
+; Search by work FCB
+
 SEARCW:
 	mov	dx,offset WKFCB
 	jmps	SEARCH
-;
-;  Delete file
-;
+
+; Delete file
+
 DELETF:
 	mov	cl,CDELET
 	jmps	TENBDS
-;
-;  Read write common
-;  Output
-;  Zf:on OK
-;
+
+; Read write common
+; Output
+; Zf:on OK
+
 FRWCOM:
 	call	ENBDOS
 	or	al,al
 	ret
-;
-;  Read sequential
-;
+
+; Read sequential
+
 READNX:
 	mov	cl,CREADN
 	jmps	FRWCOM
-;
-;  Read work FCB file
-;
+
+; Read work FCB file
+
 READNW:
 	mov	dx,offset WKFCB
 	jmps	READNX
-;
-;  Error comment out & end
-;
+
+; Error comment out & end
+
 WHYPR:
 	call	BUFPRN
 	jmp	ENCPRC
-;
-;  Rename
-;
+
+; Rename
+
 RENAME:
 	mov	cl,CRENAM
 	jmps	TENBDS
-;
-;  Get/set user code
-;
+
+; Get/set user code
+
 GETUSR:
 	mov	dl,0FFh
 GETUSS:
 	mov	cl,CGTUSR
 TENBDS:
 	jmp	ENBDOS
-;
-;  Modify lower case to uper case alphabet
-;  Input/output
-;  AL:code
-;
+
+; Modify lower case to uper case alphabet
+; Input/output
+; AL:code
+
 MODIFY:
 	cmp	al,'A'+20h
-	jc	MODIFE			;too small
+	jc	MODIFE			; too small
 	cmp	al,'Z'+21h
-	jnc	MODIFE			;too large
-	and	al,05Fh			;to lower case
+	jnc	MODIFE			; too large
+	and	al,05Fh			; to lower case
 MODIFE:
 	ret
-;
-;  Read command line
-;
+
+; Read command line
+
 RDCOMN:
 	test	MDSUBE,0FFh
-	jz	RDCOMK			;NO submit file to key input
+	jz	RDCOMK			; NO submit file to key input
 	test	CURDRV,0FFh
-	jz	RDCOMS			;current drive is home
+	jz	RDCOMS			; current drive is home
 	xor	ax,ax
-; Ts patch start fix submit out of home
-; call  SELDRV    ;to home drive
-	call    PATCHSUBMITSELDSK
-; Ts patch end fix submit out of home
+; SUBMIT drive-selection patch: return to the saved command drive.
+	call	PATCHSUBMITSELDSK
+
 RDCOMS:
 	mov	dx,offset SUBFCB
-	call	OPEN			;open submit file
-	jz	RDCOMK			;not found so to key input
+	call	OPEN			; open submit file
+	jz	RDCOMK			; not found so to key input
 	mov	al,SUBFCB+15
 	dec	al
-	mov	SUBFCB+32,al		;set bottom record of file
+	mov	SUBFCB+32,al		; set bottom record of file
 	mov	dx,offset SUBFCB
-	call	READNX			;get last line
-	jnz	RDCOMK			;read error so to key input
+	call	READNX			; get last line
+	jnz	RDCOMK			; read error so to key input
 	mov	di,offset CMBUFF+1
 	mov	si,offset RWBUFF
 	mov	cx,SCTLNG
-	call	COPY			;move to command buffer
-	mov	SUBFCB+14,0		;clear extent
-	dec	SUBFCB+15		;down length
+	call	COPY			; move to command buffer
+	mov	SUBFCB+14,0		; clear extent
+	dec	SUBFCB+15		; down length
 	mov	dx,offset SUBFCB
-	call	CLOSE			;set record count
-	jz	RDCOMK			;close error so to key input
+	call	CLOSE			; set record count
+	jz	RDCOMK			; close error so to key input
 	mov	al,CURDRV
-	call	SELDRV			;to current drive
+	call	SELDRV			; to current drive
 	mov	bx,offset CMBUFF+2
-	call	BUFPRL			;out current command line
-	call	CHKCIT			;check key interrupt
+	call	BUFPRL			; out current command line
+	call	CHKCIT			; check key interrupt
 ; Ts patch start NO submit interrupt
-	;jz	    RDCOMD		;OK to interpret command line
-    ;nop
-	jmps     RDCOMD			;OK to interpret command line
+    ; nop
+	jmps	RDCOMD			; OK to interpret command line
 ; Ts patch end NO submit interrupt
-	call	DELSUB			;cancel submit mode
+	call	DELSUB			; cancel submit mode
 	jmp	CCPLOP
-;
-RDCOMK:				;key input mode
-	call	DELSUB			;delete submit file
+
+RDCOMK:				; key input mode
+	call	DELSUB			; delete submit file
 	mov	cl,CRDCBF
 	mov	dx,offset CMBUFF
-	call	ENBDOS			;get command from key
+	call	ENBDOS			; get command from key
 RDCOMD:
 	mov	bx,offset CMBUFF+2
 	xor	cx,cx
-	mov	cl,CMBUFF+1		;get count
-	jcxz	RDCOME			;NO length
-RDCOML:				;command line modify loop
+	mov	cl,CMBUFF+1		; get count
+	jcxz	RDCOME			; NO length
+RDCOML:				; command line modify loop
 	mov	al,[bx]
-	call	MODIFY			;lower case to uper case
+	call	MODIFY			; lower case to uper case
 	mov	[bx],al
 	inc	bx
 	loop	RDCOML
 RDCOME:
-	mov	[bx],ch			;set end mark
-	mov	PNTCMD,offset CMBUFF+2	;set command pointer to top
+	mov	[bx],ch			; set end mark
+	mov	PNTCMD,offset CMBUFF+2	; set command pointer to top
 	ret
-;
-;  Check key interrupt
-;  Output
-;  Zf:off interrupted
-;
+
+; Check key interrupt
+; Output
+; Zf:off interrupted
+
 CHKCIT:
 	mov	cl,CCONST
 	call	ENBDOS
 	or	al,al
-	jnz	CHKCIG			;get some data
-	ret				;not interrupted
-;
+	jnz	CHKCIG			; get some data
+	ret				; not interrupted
+
 CHKCIG:
 	mov	cl,CCONIN
-	call	ENBDOS			;get data
-	or	al,al			;set flag
+	call	ENBDOS			; get data
+	or	al,al			; set flag
 	ret
-;
-;  Interrogate drive number
-;
+
+; Interrogate drive number
+
 GTDRVN:
 	mov	cl,CGTDRV
 	jmps	STDMAC
-;
-;  Set DMA segment
-;
+
+; Set DMA segment
+
 STDMAS:
 	mov	cl,CSTDMS
 	jmps	STDMAC
-;
-;  Set default DMA address
-;
+
+; Set default DMA address
+
 STDMAA:
 	mov	dx,DDMASG
 	call	STDMAS
-	mov	dx,SYSDMA		;system DMA address offset
-;
-;  Set DMA offset
-;
+	mov	dx,SYSDMA		; system DMA address offset
+
+; Set DMA offset
+
 STDMAO:
 	mov	cl,CSTDMA
 STDMAC:
 	jmp	ENBDOS
-;
-;  Delete submit file
-;
+
+; Delete submit file
+
 DELSUB:
 	test	MDSUBE,0FFh
-	jnz	DELSUS			;exist submit file
-	ret				;NO submit file
-;
+	jnz	DELSUS			; exist submit file
+	ret				; NO submit file
+
 DELSUS:
 	mov	al,0
-	mov	MDSUBE,al		;clear submit file exist mode
-; Ts patch start fix submit out of home
-; call  SELDRV    ;to home drive
-	call    PATCHSUBMITSELDSK
-; Ts patch start fix submit out of home
+	mov	MDSUBE,al		; clear submit file exist mode
+; SUBMIT drive-selection patch: return to the saved command drive.
+	call	PATCHSUBMITSELDSK
+; SUBMIT drive-selection patch: return to the saved command drive.
 	mov	dx,offset SUBFCB
-	call	DELETF			;delete submit file
+	call	DELETF			; delete submit file
 	mov	al,CURDRV
-	jmp	SELDRV			;to current drive
-;
-;  Check user ID code
-;
+	jmp	SELDRV			; to current drive
+
+; Check user ID code
+
 CHKUID:
 	mov	di,offset IDCODE
-	mov	si,offset BDOS		;ID code in BDOS
-	mov	cx,6			;ID code length
+	mov	si,offset BDOS		; ID code in BDOS
+	mov	cx,6			; ID code length
 	repz	cmpsb
-	jcxz	CHKUIP			;OK end
-	jmps	CHKUIM			;miss match
-;
+	jcxz	CHKUIP			; OK end
+	jmps	CHKUIM			; miss match
+
 CHKUIP:
 	ret
-;
-CHKUIM:				;miss match stop
+
+CHKUIM:				; miss match stop
 	hlt
-;
-;  Check terminator
-;  Input
-;  SI:data pointer
-;  Output
-;  Zf:on terminator
-;
+
+; Check terminator
+; Input
+; SI:data pointer
+; Output
+; Zf:on terminator
+
 CHKTRM:
-	mov	al,[si]			;get code
+	mov	al,[si]			; get code
 	or	al,al
 	jnz	CHKTRN
-	ret				;zero is end code
-;
+	ret				; zero is end code
+
 CHKTRN:
 	cmp	al,' '
 	jnc	CHKTRT
-	jmp	COMERR			;control code so error
-;
+	jmp	COMERR			; control code so error
+
 CHKTRT:
 	push	di
 	mov	di,offset IXTERM
 	mov	cx,9
 	cld
-	repnz	scasb			;check
+	repnz	scasb			; check
 	pop	di
 	ret
-;
-;  Search top
-;  Output
-;  Zf:on NO data
-;
+
+; Search top
+; Output
+; Zf:on NO data
+
 SRCHTP:
 	mov	al,[si]
 	cmp	al,0
 	jnz	SRCHTT
-	ret				;end of data
-;
+	ret				; end of data
+
 SRCHTT:
 	cmp	al,' '
-	jz	SRCHTN			;to next
-	ret				;get some code
-;
-SRCHTN:				;to next
+	jz	SRCHTN			; to next
+	ret				; get some code
+
+SRCHTN:				; to next
 	inc	si
 	jmps	SRCHTP
-;
-;  Fill by space  for file name
-;
+
+; Fill by space  for file name
+
 FILLSP:
 	inc	bx
 	mov	byte ptr [bx],' '
 	loop	FILLSP
 	ret
-;
-;  Get one command block
-;  Input
-;  CX:block length
-;  BX:destination pointer
-;  SI:source pointer
-;
+
+; Get one command block
+; Input
+; CX:block length
+; BX:destination pointer
+; SI:source pointer
+
 GTONBK:
 	push	cx
-	call	CHKTRM			;check terminator
+	call	CHKTRM			; check terminator
 	pop	cx
-	jz	FILLSP			;get terminator so end
+	jz	FILLSP			; get terminator so end
 	inc	bx
 	cmp	al,'*'
-	jnz	GTONBN			;normal code
-	mov	al,'?'			;wild card
+	jnz	GTONBN			; normal code
+	mov	al,'?'			; wild card
 	jmps	GTONBG
-;
-GTONBN:				;normal code
+
+GTONBN:				; normal code
 	inc	si
 GTONBG:
-	mov	[bx],al			;set code
+	mov	[bx],al			; set code
 	loop	GTONBK
-GTONBF:				;over count code pass read
+GTONBF:				; over count code pass read
 	call	CHKTRM
-	jz	GTONBE			;get terminator
+	jz	GTONBE			; get terminator
 	inc	si
-	jmps	GTONBF			;to next
-;
+	jmps	GTONBF			; to next
+
 GTONBE:
 	ret
-;
-;  Get file name
-;  Output
-;  AH:wild card count  -1 error
-;  Zf:on NO wild card
-;
-GTFNAM:				;read normal
+
+; Get file name
+; Output
+; AH:wild card count  -1 error
+; Zf:on NO wild card
+
+GTFNAM:				; read normal
 	mov	ax,0
 GTFNAS:
 	mov	bx,offset WKFCB
-	add	bx,ax			;get FCB top
+	add	bx,ax			; get FCB top
 	push	bx
-	mov	TDRVNU,0		;clear temporary drive
-	mov	si,PNTCMD		;get command pointer
-	call	SRCHTP			;get top
-	mov	TPNCMD,si		;save temporary top for recover
-	jz	GTFNAC			;end of data
+	mov	TDRVNU,0		; clear temporary drive
+	mov	si,PNTCMD		; get command pointer
+	call	SRCHTP			; get top
+	mov	TPNCMD,si		; save temporary top for recover
+	jz	GTFNAC			; end of data
 	sbb	al,'A'-1
 	cmp	byte ptr 1[si],':'
-	jz	GTFNAT			;with drive code
-GTFNAC:				;NO drive specification
+	jz	GTFNAT			; with drive code
+GTFNAC:				; NO drive specification
 	mov	al,CURDRV
 	jmps	GTFNAN
-;
-GTFNAT:				;with drive code
+
+GTFNAT:				; with drive code
 	cmp	al,16
-	ja	GTFNAR			;over
+	ja	GTFNAR			; over
 	cmp	al,0
-	ja	GTFNAD			;OK in range
-GTFNAR:				;drive number miss
+	ja	GTFNAD			; OK in range
+GTFNAR:				; drive number miss
 	mov	ah,0FFh
 	pop	bx
 	jmps	GTFNAE
-;
-GTFNAD:				;with drive code
-	mov	TDRVNU,al		;set drive
+
+GTFNAD:				; with drive code
+	mov	TDRVNU,al		; set drive
 	inc	si
 	inc	si
 GTFNAN:
-	mov	[bx],al			;set drive code
+	mov	[bx],al			; set drive code
 	mov	cx,8
-	call	GTONBK			;get file name
+	call	GTONBK			; get file name
 	mov	cx,3
 	cmp	al,'.'
-	jnz	$+3			;not available terminator
+	jnz	$+3			; not available terminator
 	inc	si
-	call	GTONBK			;get file type
+	call	GTONBK			; get file type
 	inc	bx
 	mov	di,bx
 	mov	ax,cx
 	mov	cx,3
 	cld
 	xor	ax,ax
-	rep	stosb			;clear extent & record count
-	mov	PNTCMD,si		;set next point to command pointer
+	rep	stosb			; clear extent & record count
+	mov	PNTCMD,si		; set next point to command pointer
 	pop	bx
-	mov	cx,11			;file name length
-GTFNAW:				;check wild card
+	mov	cx,11			; file name length
+GTFNAW:				; check wild card
 	inc	bx
 	cmp	byte ptr [bx],'?'
 	jnz	$+4
-	inc	ah			;wild card
+	inc	ah			; wild card
 	loop	GTFNAW
-	mov	al,[si]			;get next code
+	mov	al,[si]			; get next code
 GTFNAE:
-	or	ah,ah			;set flag by wild card count
+	or	ah,ah			; set flag by wild card count
 	ret
-;
-;  Check resident command
-;  Output
-;  AX:code  1-6 resident command 7 not found
-;
+
+; Check resident command
+; Output
+; AX:code  1-6 resident command 7 not found
+
 CKRSCM:
 	mov	di,offset IXRSCM
-	mov	bx,6			;count of command
+	mov	bx,6			; count of command
 CKRSCL:
 	mov	si,offset WKFCB+1
-	mov	cx,4			;compare length
+	mov	cx,4			; compare length
 	repz	cmpsb
-	jz	CKRSCG			;OK get
-	add	di,cx			;fail to next
+	jz	CKRSCG			; OK get
+	add	di,cx			; fail to next
 	dec	bx
 	jnz	CKRSCL
-CKRSCE:				;not found end
-	mov	al,7			;not found code      AX is better
+CKRSCE:				; not found end
+	mov	al,7			; not found code      AX is better
 	ret
-;
-CKRSCG:				;match first 4 bytes
+
+CKRSCG:				; match first 4 bytes
 	mov	al,[si]
 	cmp	al,' '
-	jnz	CKRSCE			;error net code must be space
-	mov	ax,bx			;OK set number
+	jnz	CKRSCE			; error net code must be space
+	mov	ax,bx			; OK set number
 	ret
-;
-;  Set DMA address to R/W work
-;
+
+; Set DMA address to R/W work
+
 STWKDM:
 	mov	dx,cs
-	call	STDMAS			;set DMA segment
+	call	STDMAS			; set DMA segment
 	mov	dx,offset RWBUFF
-	call	STDMAO			;set offset
+	call	STDMAO			; set offset
 	ret
-;
-;  CCP main
-;
-;  Hot start
-;
+
+; CCP main
+
+; Hot start
+
 CCPHOT:
-	mov	PNTCMD,offset CMBUFF+2	;set command pointer
-	cmp	CMBUFF+2,3		;ctrl-C
-	jnz	CCPHOC			;command buffer is active
-	mov	CMBUFF+1,0		;command buffer canceled
+	mov	PNTCMD,offset CMBUFF+2	; set command pointer
+	cmp	CMBUFF+2,3		; ctrl-C
+	jnz	CCPHOC			; command buffer is active
+	mov	CMBUFF+1,0		; command buffer canceled
 CCPHOC:
 FEAT144_CCP_STK1:
 	mov	sp,offset STACK
-	call	STDRUC			;set user code & drive
+	call	STDRUC			; set user code & drive
 	jmps	CCPLOE
-;
-;
-CCPABE:				;abort entry
+
+CCPABE:				; abort entry
 	mov	CMBUFF+1,0
-;
-;  Cold start
-;  Input
-;  CL:user code & drive
-;
+
+; Cold start
+; Input
+; CL:user code & drive
+
 CCPCLD:
 FEAT144_CCP_STK2:
 	mov	sp,offset STACK
@@ -641,512 +640,511 @@ FEAT144_CCP_STK2:
 	mov	al,cl
 	mov	cl,4
 	rcr	al,cl
-	and	al,00Fh			;get user code
+	and	al,00Fh			; get user code
 	mov	dl,al
 	mov	USRCOD,al
-	call	GETUSS			;set user code
+	call	GETUSS			; set user code
 	call	INBDOS
 ; Ts patch start ignore stale submit file on cold start
-;	mov	MDSUBE,al		;save submit mode
 	xor	al,al
 	nop
 ; Ts patch end ignore stale submit file on cold start
-	call	MEMFRE			;free all memory
+	call	MEMFRE			; free all memory
 	pop	ax
 	and	al,0Fh
-	mov	CURDRV,al		;drive
-	call	SELDRV			;set drive
+	mov	CURDRV,al		; drive
+	call	SELDRV			; set drive
 CCPLOE:
-	call	STWKDM			;set DMA address to work
+	call	STWKDM			; set DMA address to work
 	cmp	CMBUFF+1,0
-	jnz	CCPLOS			;some data
-;
-;  loop of CCP
-;
+	jnz	CCPLOS			; some data
+
+; loop of CCP
+
 CCPLOP:
 	cld
 FEAT144_CCP_STK3:
 	mov	sp,offset STACK
 	call	CRLF
-	call	GTDRVN			;get current drive
+	call	GTDRVN			; get current drive
 	add	al,'A'
 	call	CONOUT
 	mov	al,'>'
-	call	CONOUT			;X>  out prompt
-	call	STWKDM			;set DMA address
-	call	RDCOMN			;read command
+	call	CONOUT			; X>  out prompt
+	call	STWKDM			; set DMA address
+	call	RDCOMN			; read command
 CCPLOS:
 	cld
-	call	GTDRVN			;get drive
-	mov	CURDRV,al		;save current drive
+	call	GTDRVN			; get drive
+	mov	CURDRV,al		; save current drive
 	cmp	CMBUFF+2,';'
-	jz	CCPLOP			;comment line to next
-	mov	si,PNTCMD		;get command point
-	call	SRCHTP			;to top of code
-	jz	CCPLOP			;NO code
-	call	GTFNAM			;get command
-	jnz	COMERR			;wild card is error
+	jz	CCPLOP			; comment line to next
+	mov	si,PNTCMD		; get command point
+	call	SRCHTP			; to top of code
+	jz	CCPLOP			; NO code
+	call	GTFNAM			; get command
+	jnz	COMERR			; wild card is error
 	test	TDRVNU,0FFh
-	jz	$+5			;check resident command
-	jmp	TRCDSL			;not resident command as some drive specified
-;
+	jz	$+5			; check resident command
+	jmp	TRCDSL			; not resident command as some drive specified
+
 	cmp	WKFCB+1,' '
-	jz	COMERR			;NO code so error
-	call	CKRSCM			;check resident command
+	jz	COMERR			; NO code so error
+	call	CKRSCM			; check resident command
 	dec	ax
 	mov	bx,offset IXRSRT
 	add	bx,ax
 	add	bx,ax
-	mov	dx,[bx]			;get routine
-	jmp	dx			;to each routine
-;
-;  Read error
-;
+	mov	dx,[bx]			; get routine
+	jmp	dx			; to each routine
+
+; Read error
+
 REDERR:
 	mov	cx,offset CRDERR
 	jmps	FNFERS
-;
-;  File not found
-;
+
+; File not found
+
 FNFERR:
 	mov	cx,offset CNOFIL
 FNFERS:
 	jmp	BUFPRN
-;
-;  Command error
-;
+
+; Command error
+
 COMERR:
 	call	CRLF
-	mov	bx,TPNCMD		;current processed command top
+	mov	bx,TPNCMD		; current processed command top
 COMERL:
 	mov	al,[bx]
 	cmp	al,' '
-	jz	COMERE			;end of block
+	jz	COMERE			; end of block
 	or	al,al
 	jz	COMERE
 	push	bx
-	call	CONOUT			;out command line
+	call	CONOUT			; out command line
 	pop	bx
 	inc	bx
 	jmps	COMERL
-;
+
 COMERE:
 	mov	al,'?'
 	call	CONOUT
 	call	CRLF
-	mov	CMBUFF+1,0		;cancel current command line
+	mov	CMBUFF+1,0		; cancel current command line
 	jmp	CCPLOP
-;
-;  Get decimal number
-;  Output
-;  AL:number by binary		NO data 21H
-;
+
+; Get decimal number
+; Output
+; AL:number by binary		NO data 21H
+
 GTDNUM:
-	call	GTFNAM			;get block
+	call	GTFNAM			; get block
 	test	TDRVNU,0FFh
-	jnz	COMERR			;cannot have drive name
+	jnz	COMERR			; cannot have drive name
 	mov	bx,offset WKFCB+1
-	mov	cx,11			;code max length & data 0
+	mov	cx,11			; code max length & data 0
 	cmp	byte ptr [bx],' '
-	jnz	GTDNUL			;some code
-	mov	al,021h			;NO code
+	jnz	GTDNUL			; some code
+	mov	al,021h			; NO code
 	ret
-;
+
 GTDNUL:
 	mov	al,[bx]
 	cmp	al,' '
-	jz	GTDNUE			;end of code
+	jz	GTDNUE			; end of code
 	inc	bx
 	sub	al,'0'
 	cmp	al,10
-	jnc	COMERR			;illegal character
+	jnc	COMERR			; illegal character
 	mov	dh,al
 	test	ch,0E0h
-	jnz	COMERR			;overflow
+	jnz	COMERR			; overflow
 	mov	al,ch
 	mov	cl,3
-	rol	al,cl			;*8
-	add	al,ch			;*9
-	jc	COMERR			;over
-	add	al,ch			;*10
-	jc	COMERR			;over
+	rol	al,cl			; *8
+	add	al,ch			; *9
+	jc	COMERR			; over
+	add	al,ch			; *10
+	jc	COMERR			; over
 	add	al,dh
-	jc	COMERR			;over
-	mov	ch,al			;to next
+	jc	COMERR			; over
+	mov	ch,al			; to next
 	dec	cl
 	jnz	GTDNUL
-	ret				;length full
-;
+	ret				; length full
+
 GTDNUE:
 	cmp	byte ptr [bx],' '
-	jnz	COMERR			;end form error
+	jnz	COMERR			; end form error
 	inc	bx
 	dec	cl
 	jnz	GTDNUE
 	mov	al,ch
 	ret
-;
-;  Copy data
-;  Input
-;  DI:destination pointer
-;  SI:source pointer
-;  CX:length count
-;
+
+; Copy data
+; Input
+; DI:destination pointer
+; SI:source pointer
+; CX:length count
+
 COPY:
 	cld
 	rep	movsb
 	ret
-;
-;  Get directory top
-;  Input
-;  AL:bias 1
-;  CL:bias 2
-;
+
+; Get directory top
+; Input
+; AL:bias 1
+; CL:bias 2
+
 GTDRTP:
 	mov	bx,offset RWBUFF
 	mov	ah,0
 	add	al,cl
 	add	bx,ax
-	mov	al,[bx]			;get code
+	mov	al,[bx]			; get code
 	ret
-;
-;  Select target drive
-;
+
+; Select target drive
+
 SLTGDR:
 	mov	WKFCB,0
 	mov	al,TDRVNU
 	or	al,al
-	jz	SLCRDE			;default
+	jz	SLCRDE			; default
 	dec	al
 	mov	bx,offset CURDRV
-	cmp	al,[bx]			;check with current
-	jz	SLCRDE			;same
-	jmps	SLCRDD			;select drive
-;
-;  Set user code & drive
-;
+	cmp	al,[bx]			; check with current
+	jz	SLCRDE			; same
+	jmps	SLCRDD			; select drive
+
+; Set user code & drive
+
 STDRUC:
 	mov	dl,USRCOD
-	call	GETUSS			;set user code
-	jmps	SLCRDS			;select drive
-;
-;  Select to current drive
-;
+	call	GETUSS			; set user code
+	jmps	SLCRDS			; select drive
+
+; Select to current drive
+
 SLCRDR:
 	mov	al,TDRVNU
 	or	al,al
-	jz	SLCRDE			;current drive
+	jz	SLCRDE			; current drive
 	dec	al
 	mov	bx,offset CURDRV
 	cmp	al,[bx]
-	jnz	SLCRDS			;not same drive
+	jnz	SLCRDS			; not same drive
 SLCRDE:
 	ret
-;
-SLCRDS:				;select to current drive
+
+SLCRDS:				; select to current drive
 	mov	al,CURDRV
 SLCRDD:
 	jmp	SELDRV
-;
-;  DIRS:directory out of system file
-;
+
+; DIRS:directory out of system file
+
 DIRSYS:
-	mov	MODDIR,1		;to system file mode
-	call	DIROUT			;directory out boddy
+	mov	MODDIR,1		; to system file mode
+	call	DIROUT			; directory out boddy
 	cmp	MODIRE,0
-	jz	DIRSYE			;NO non-system file
+	jz	DIRSYE			; NO non-system file
 	mov	cx,offset CNSYSF
-	call	BUFPRN			;with non-system file
+	call	BUFPRN			; with non-system file
 DIRSYE:
 	jmps	DIRNOE
-;
-;  DIR:directory out of non-system file
-;
+
+; DIR:directory out of non-system file
+
 DIRNON:
-	mov	MODDIR,0		;to non-system file mode
+	mov	MODDIR,0		; to non-system file mode
 	call	DIROUT
 	cmp	MODIRE,0
-	jz	DIRNOE			;NO system file
+	jz	DIRNOE			; NO system file
 	mov	cx,offset CSYSFL
-	call	BUFPRN			;with system file
+	call	BUFPRN			; with system file
 DIRNOE:
 	jmp	ENCPRC
-;
-;  Directory out boddy
-;
+
+; Directory out boddy
+
 DIROUT:
-	mov	CMBUFF+1,0		;clear command count
-	mov	MODIRE,0		;clear unvisible directory exist mode
-	call	GTFNAM			;get file name
+	mov	CMBUFF+1,0		; clear command count
+	mov	MODIRE,0		; clear unvisible directory exist mode
+	call	GTFNAM			; get file name
 	cmp	ah,0FFh
-	jnz	DIROUG			;OK get some name
-	jmp	COMERR			;file name error
-;
+	jnz	DIROUG			; OK get some name
+	jmp	COMERR			; file name error
+
 DIROUG:
-	call	SLTGDR			;to target drive
+	call	SLTGDR			; to target drive
 	mov	bx,offset WKFCB+1
 	cmp	byte ptr [bx],' '
-	jnz	DIROUS			;exist some file name
+	jnz	DIROUS			; exist some file name
 	mov	ch,11
-DIROUW:				;fill wild card
+DIROUW:				; fill wild card
 	mov	byte ptr [bx],'?'
 	inc	bx
 	dec	ch
 	jnz	DIROUW
 DIROUS:
-	mov	dl,0			;clear position count
+	mov	dl,0			; clear position count
 	push	dx
-	call	SEARCW			;search first
-	jnz	DIROUL			;get first
-	call	FNFERR			;not found end
-DIROUL:				;one directory out loop
-	jnz	DIROUO			;get file
-	jmp	DIROUE			;end of directory
-;
-DIROUO:				;get file
+	call	SEARCW			; search first
+	jnz	DIROUL			; get first
+	call	FNFERR			; not found end
+DIROUL:				; one directory out loop
+	jnz	DIROUO			; get file
+	jmp	DIROUE			; end of directory
+
+DIROUO:				; get file
 	mov	al,BSDIRC
 	mov	cl,3
-	ror	al,cl			;get bias to directory data
+	ror	al,cl			; get bias to directory data
 	mov	cl,al
 	mov	al,10
-	call	GTDRTP			;get system file mode byte
+	call	GTDRTP			; get system file mode byte
 	rcl	al,1
-	jnc	DIRONS			;non-system file
-	test	MODDIR,0FFh		;system file
-	jnz	DIROUD			;system file  out mode
-	mov	MODIRE,1		;not out mode so set flag
+	jnc	DIRONS			; non-system file
+	test	MODDIR,0FFh		; system file
+	jnz	DIROUD			; system file  out mode
+	mov	MODIRE,1		; not out mode so set flag
 	jmps	DIRONO
-;
-DIRONS:				;non-system file
+
+DIRONS:				; non-system file
 	test	MODDIR,0FFh
-	jz	DIROUD			;non-system file out mode
-	mov	MODIRE,1		;not out mode set flag
+	jz	DIROUD			; non-system file out mode
+	mov	MODIRE,1		; not out mode set flag
 	jmps	DIRONO
-;
-DIROUD:				;out file name
+
+DIROUD:				; out file name
 	pop	dx
 	mov	al,dl
-	inc	dl			;up display position count
+	inc	dl			; up display position count
 	push	dx
-	jmp	DIRPAT			;get display width mode
-;
+	jmp	DIRPAT			; get display width mode
+
 DIROUP:
-	and	al,3			;get position
+	and	al,3			; get position
 	push	ax
-	jnz	DIRONP			;not line top
-	call	CRLF			;line top
+	jnz	DIRONP			; not line top
+	call	CRLF			; line top
 	push	cx
 	call	GTDRVN
 	pop	cx
 	add	al,'A'
-	call	CONOTB			;out drive name
+	call	CONOTB			; out drive name
 	mov	al,':'
 	call	CONOTB
 	jmps	DIRONN
-;
-DIRONP:				;not line top
+
+DIRONP:				; not line top
 	call	SPACE
 	mov	al,':'
 	call	CONOTB
 DIRONN:
 	call	SPACE
-	mov	ch,1			;character count
+	mov	ch,1			; character count
 DIRONL:
 	mov	al,ch
-	call	GTDRTP			;get data
+	call	GTDRTP			; get data
 	and	al,07Fh
 	cmp	al,' '
-	jnz	DIROON			;exist code
+	jnz	DIROON			; exist code
 	pop	ax
 	push	ax
 	cmp	al,3
-	jnz	DIROSP			;not end position
+	jnz	DIROSP			; not end position
 	mov	al,9
-	call	GTDRTP			;get type
+	call	GTDRTP			; get type
 	and	al,07Fh
 	cmp	al,' '
-	jz	DIRONX			;to line end
-DIROSP:				;out space
+	jz	DIRONX			; to line end
+DIROSP:				; out space
 	mov	al,' '
 DIROON:
-	call	CONOTB			;out code
+	call	CONOTB			; out code
 	inc	ch
 	cmp	ch,12
-	jnc	DIRONX			;all code end
+	jnc	DIRONX			; all code end
 	cmp	ch,9
 	jnz	DIRONL
-	call	SPACE			;name to type
+	call	SPACE			; name to type
 	jmps	DIRONL
-;
-DIRONX:				;end of one file name out
+
+DIRONX:				; end of one file name out
 	pop	ax
 DIRONO:
-	call	CHKCIT			;check console interrupt
-	jnz	DIROUE			;interrupted
-	call	SEARCN			;to next
+	call	CHKCIT			; check console interrupt
+	jnz	DIROUE			; interrupted
+	call	SEARCN			; to next
 	jmp	DIROUL
-;
-DIROUE:				;directory out end
+
+DIROUE:				; directory out end
 	pop	dx
 	ret
-;
-;  Era:erase file
-;
+
+; Era:erase file
+
 ERASE:
-	mov	CMBUFF+1,0		;clear command counter
-	call	GTFNAM			;get file name
+	mov	CMBUFF+1,0		; clear command counter
+	call	GTFNAM			; get file name
 	cmp	ah,11
-	jnz	ERASES			;not all erase
+	jnz	ERASES			; not all erase
 	mov	cx,offset CALLOK
-	call	BUFPRN			;all erase
-	call	RDCOMN			;check erase OK
+	call	BUFPRN			; all erase
+	call	RDCOMN			; check erase OK
 	mov	bx,offset CMBUFF+1
 	dec	byte ptr [bx]
-	jz	ERASEA			;response length OK
-	jmp	CCPLOP			;response is not suitable
-;
+	jz	ERASEA			; response length OK
+	jmp	CCPLOP			; response is not suitable
+
 ERASEA:
 	inc	bx
 	cmp	byte ptr [bx],'Y'
-	jz	ERASEO			;OK erase
-	jmp	CCPLOP			;cancel
-;
-ERASEO:				;erase
+	jz	ERASEO			; OK erase
+	jmp	CCPLOP			; cancel
+
+ERASEO:				; erase
 	inc	bx
-	mov	PNTCMD,bx		;set command pointer
+	mov	PNTCMD,bx		; set command pointer
 ERASES:
 	cmp	WKFCB+1,' '
-	jz	TYPERR			;NO file specification
-	call	SLTGDR			;to target drive
+	jz	TYPERR			; NO file specification
+	call	SLTGDR			; to target drive
 	mov	dx,offset WKFCB
-	call	DELETF			;delete
+	call	DELETF			; delete
 	inc	al
-	jnz	ERASEN			;OK erased
-ERASNF:				;not found
+	jnz	ERASEN			; OK erased
+ERASNF:				; not found
 	call	FNFERR
 ERASEN:
 	jmps	TYPEOF
-;
-;  Type:type out file
-;
+
+; Type:type out file
+
 TYPEOT:
-	mov	CMBUFF+1,0		;clear command length
-	call	GTFNAM			;get file name
-	jnz	TYPERR			;cannot have wild card
+	mov	CMBUFF+1,0		; clear command length
+	call	GTFNAM			; get file name
+	jnz	TYPERR			; cannot have wild card
 	cmp	WKFCB+1,' '
-	jz	TYPERR			;NO file name
-	call	SLTGDR			;to target drive
-	call	OPENW			;open
-	jz	ERASNF			;not found
+	jz	TYPERR			; NO file name
+	call	SLTGDR			; to target drive
+	call	OPENW			; open
+	jz	ERASNF			; not found
 	call	CRLF
-	mov	bx,255			;dummy for read first sector
-TYPEOL:				;one byte out loop
+	mov	bx,255			; dummy for read first sector
+TYPEOL:				; one byte out loop
 	cmp	bx,SCTLNG
-	jc	TYPEOS			;not sector boundary
-	push	bx			;to next sector
-	call	READNW			;get one sector
+	jc	TYPEOS			; not sector boundary
+	push	bx			; to next sector
+	call	READNW			; get one sector
 	pop	bx
-	jnz	TYPEOE			;end or error
+	jnz	TYPEOE			; end or error
 	mov	bx,0
 TYPEOS:
 	inc	bx
 	mov	si,offset RWBUFF-1
-	add	si,bx			;get data point
+	add	si,bx			; get data point
 	mov	al,[si]
 	cmp	al,EOF
-	jz	TYPEOF			;end of file
+	jz	TYPEOF			; end of file
 	push	bx
-	call	CONOUT			;out code
-	call	CHKCIT			;check console interrupt
+	call	CONOUT			; out code
+	call	CHKCIT			; check console interrupt
 	pop	bx
-	jnz	TYPEOF			;interrupted end
-	jmps	TYPEOL			;to next charatcter
-;
-TYPEOE:				;end or error
+	jnz	TYPEOF			; interrupted end
+	jmps	TYPEOL			; to next charatcter
+
+TYPEOE:				; end or error
 	dec	al
-	jnz	TYPEOR			;read error
-TYPEOF:				;end of command
+	jnz	TYPEOR			; read error
+TYPEOF:				; end of command
 	jmp	ENCPRC
-;
-TYPEOR:				;read error
+
+TYPEOR:				; read error
 	call	REDERR
-	call	SLCRDR			;to current drive
-TYPERR:				;error
+	call	SLCRDR			; to current drive
+TYPERR:				; error
 	jmp	COMERR
-;
-;  REN:rename file
-;
+
+; REN:rename file
+
 RENAMP:
-	mov	CMBUFF+1,0		;clear command count
-	call	GTFNAM			;get new file name
-	jnz	TYPERR			;cannot have wild card
+	mov	CMBUFF+1,0		; clear command count
+	call	GTFNAM			; get new file name
+	jnz	TYPERR			; cannot have wild card
 	mov	al,TDRVNU
-	push	ax			;save drive
-	call	SLTGDR			;to target drive
-	call	SEARCW			;search
-	jz	RENAMS			;not found OK
-	jmps	RENADP			;duplicate file error
-;
+	push	ax			; save drive
+	call	SLTGDR			; to target drive
+	call	SEARCW			; search
+	jz	RENAMS			; not found OK
+	jmps	RENADP			; duplicate file error
+
 RENAMS:
 	mov	si,offset WKFCB
 	mov	di,offset WKFCB+16
 	mov	cx,16
-	call	COPY			;set to new name position
+	call	COPY			; set to new name position
 	mov	si,PNTCMD
-	call	SRCHTP			;get next top
+	call	SRCHTP			; get next top
 	cmp	al,'='
-	jz	RENAMF			;terminator OK
+	jz	RENAMF			; terminator OK
 	cmp	al,'_'
-	jnz	RENAER			;terminator error
+	jnz	RENAER			; terminator error
 RENAMF:
 	inc	si
 	mov	PNTCMD,si
-	call	GTFNAM			;get old file name
-	jnz	RENAER			;cannot have wild card
+	call	GTFNAM			; get old file name
+	jnz	RENAER			; cannot have wild card
 	pop	ax
 	mov	ch,al
 	mov	bx,offset TDRVNU
 	mov	al,[bx]
 	or	al,al
-	jz	RENAMK			;NO drive specification
+	jz	RENAMK			; NO drive specification
 	cmp	al,ch
 	mov	[bx],ch
-	jnz	RENAER			;different drive is error
+	jnz	RENAER			; different drive is error
 RENAMK:
 	mov	[bx],ch
-	mov	WKFCB,0			;clear drive code
+	mov	WKFCB,0			; clear drive code
 	call	SEARCW
-	jz	RENANF			;old file not found
+	jz	RENANF			; old file not found
 	mov	dx,offset WKFCB
-	call	RENAME			;rename
+	call	RENAME			; rename
 RENAMN:
 	jmps	TYPEOF
-;
-RENANF:				;not found error
+
+RENANF:				; not found error
 	call	FNFERR
 	jmps	RENAMN
-;
-RENAER:				;error
+
+RENAER:				; error
 	call	SLCRDR
 	jmps	USERER
-;
-RENADP:				;duplicate file error
+
+RENADP:				; duplicate file error
 	mov	cx,offset CFLEXT
 	call	BUFPRN
 	jmps	RENAMN
-;
-;  User:set user number
-;
+
+; User:set user number
+
 USER:
-	call	GTDNUM			;get number
+	call	GTDNUM			; get number
 	cmp	al,021h
-	jnz	USERST			;set mode
-	call	CRLF			;interrogate mode
-	call	GETUSR			;get user code
+	jnz	USERST			; set mode
+	call	CRLF			; interrogate mode
+	call	GETUSR			; get user code
 	or	al,'0'
 	cmp	al,'9'
-	jbe	USEROT			;0 to 9
-	push	ax			;10 to 15
+	jbe	USEROT			; 0 to 9
+	push	ax			; 10 to 15
 	mov	al,'1'
 	call	CONOUT
 	pop	ax
@@ -1154,223 +1152,222 @@ USER:
 USEROT:
 	call	CONOUT
 	jmps	TRCDSE
-;
-USERST:				;set mode
+
+USERST:				; set mode
 	cmp	al,16
-	jc	USERSS			;OK in range
-	jmps	USERER			;over
-;
+	jc	USERSS			; OK in range
+	jmps	USERER			; over
+
 USERSS:
 	mov	dl,al
 	cmp	WKFCB+1,' '
-	jnz	USERSE			;have some number
-USERER:				;error
+	jnz	USERSE			; have some number
+USERER:				; error
 	jmp	COMERR
-;
+
 USERSE:
-	mov	USRCOD,al		;set user code
+	mov	USRCOD,al		; set user code
 	call	GETUSS
 	jmp	ENDPRT
-;
-;  Memory not available in program loading
-;
+
+; Memory not available in program loading
+
 MEMNAV:
 	mov	cx,offset CMNAVL
 	call	BUFPRN
 	jmps	RENAMN
-;
-;  Transient command or change drive
-;
+
+; Transient command or change drive
+
 TRCDSL:
-	call	CHKUID			;check user ID
+	call	CHKUID			; check user ID
 	cmp	WKFCB+1,' '
-	jnz	TRNCMD			;some command
-	mov	al,TDRVNU		;change drive
+	jnz	TRNCMD			; some command
+	mov	al,TDRVNU		; change drive
 	or	al,al
-	jz	TRCDSE			;NO drive specification
+	jz	TRCDSE			; NO drive specification
 	dec	al
-	mov	CURDRV,al		;set as current drive
+	mov	CURDRV,al		; set as current drive
 	mov	word ptr WKBIOS+1,ax
-	call	SELDSK			;select by direct BIOS call
+	call	SELDSK			; select by direct BIOS call
 	or	bx,bx
-	jz	USERER			;select error
-	mov	al,CURDRV		;OK select
+	jz	USERER			; select error
+	mov	al,CURDRV		; OK select
 	call	SELDRV
 TRCDSE:
 	jmp	ENDPRT
-;
-;  Transient command
-;
+
+; Transient command
+
 TRNCMD:
 	cmp	WKFCB+9,' '
-	jz	TRNCMK			;OK
-	jmps	USERER			;non resident command name cannot have type
-;
+	jz	TRNCMK			; OK
+	jmps	USERER			; non resident command name cannot have type
+
 TRNCMK:
-	call	SLTGDR			;to target drive
+	call	SLTGDR			; to target drive
 	mov	di,offset WKFCB+9
 	mov	si,offset CODCMD
 	mov	cx,3
-	rep	movsb			;set 'cmd'  type
+	rep	movsb			; set 'cmd'  type
 	mov	dx,offset WKFCB
-	call	OPENW			;open command file
-	jnz	TRNCMO			;OK
-	call	SLCRDR			;not found so command error
+	call	OPENW			; open command file
+	jnz	TRNCMO			; OK
+	call	SLCRDR			; not found so command error
 	jmp	COMERR
-;
+
 TRNCMO:
-	call	LOADPR			;load program
+	call	LOADPR			; load program
 	inc	ax
-	jz	MEMNAV			;too large cannot load in memory
-	mov	DDMASG,bx		;save base page segment  DS
+	jz	MEMNAV			; too large cannot load in memory
+	mov	DDMASG,bx		; save base page segment  DS
 	mov	es,bx
-	call	SLCRDR			;to current drive
+	call	SLCRDR			; to current drive
 	mov	ax,ds
 	mov	es,ax
-	call	GTFNAM			;get left command first file name
+	call	GTFNAM			; get left command first file name
 	mov	bx,offset TDRVNU
 	push	bx
 	mov	al,[bx]
 	mov	WKFCB,al
 	mov	ax,16
-	call	GTFNAS			;get second file name
+	call	GTFNAS			; get second file name
 	pop	bx
 	mov	al,[bx]
 	mov	WKFCB+16,al
-	mov	WKFCB+32,0		;clear current record count
-	mov	di,DFCB			;default FCB in base page
-	mov	es,DDMASG		;base page segment
+	mov	WKFCB+32,0		; clear current record count
+	mov	di,DFCB			; default FCB in base page
+	mov	es,DDMASG		; base page segment
 	mov	si,offset WKFCB
-	mov	cx,33			;FCB length
-	call	COPY			;set to default FCB
+	mov	cx,33			; FCB length
+	call	COPY			; set to default FCB
 	mov	si,offset CMBUFF+2
-	call	SRCHTP			;get top
+	call	SRCHTP			; get top
 	or	al,al
-	jz	TRNCMS			;NO code
+	jz	TRNCMS			; NO code
 TRNCMT:
 	lodsb
 	or	al,al
-	jz	TRNCMS			;NO left code
+	jz	TRNCMS			; NO left code
 	cmp	al,' '
-	jz	TRNCMN			;get left code top
-	jmps	TRNCMT			;pass transient command name
-;
-TRNCMN:				;get left code point
+	jz	TRNCMN			; get left code top
+	jmps	TRNCMT			; pass transient command name
+
+TRNCMN:				; get left code point
 	call	SRCHTP
 TRNCMS:
-	mov	ch,0			;left code length count
+	mov	ch,0			; left code length count
 	mov	di,DFCMBF+1
 	dec	si
 TRNCMM:
 	lodsb
-	stosb				;set left command code
+	stosb				; set left command code
 	or	al,al
-	jz	TRNCMG			;end of code
+	jz	TRNCMG			; end of code
 	inc	ch
-	jmps	TRNCMM			;to next
-;
+	jmps	TRNCMM			; to next
+
 TRNCMG:
 	mov	al,ch
 	mov	di,DFCMBF
-	stosb				;set length count
-	mov	di,DFPAGE		;base page top
-	mov	ax,es:3[di]		;get code segment
+	stosb				; set length count
+	mov	di,DFPAGE		; base page top
+	mov	ax,es:3[di]		; get code segment
 	mov	CMDPTR+2,ax
-	mov	al,es:5[di]		;get entry offset  XX00H
+	mov	al,es:5[di]		; get entry offset  XX00H
 	mov	byte ptr CMDPTR+1,al
 	call	CRLF
-	call	STDMAA			;set default DMA address
-	mov	TRCMOD,0		;				not used  ????
-	mov	CMBUFF+1,0		;clear command count
+	call	STDMAA			; set default DMA address
+	mov	TRCMOD,0		; Original trace-mode field; initialized to zero.
+	mov	CMBUFF+1,0		; clear command count
 	mov	es,DDMASG
 	mov	ds,DDMASG
 	mov	bx,DFESSG
 	cmp	word ptr [bx],0
-	jz	$+4			;8080 model or small model
-	mov	es,[bx]			;compact model
-	CALLF	dword ptr CMDPTR	;to command routine
+	jz	$+4			; 8080 model or small model
+	mov	es,[bx]			; compact model
+	CALLF	dword ptr CMDPTR	; to command routine
 FEAT144_CCP_STK4:
 	mov	sp,offset STACK
-	jmp	SYSRST			;end of command
-;
-;  CCP command end process
-;
+	jmp	SYSRST			; end of command
+
+; CCP command end process
+
 ENCPRC:
-	call	SLCRDR			;to current drive
+	call	SLCRDR			; to current drive
 ENDPRT:
-	call	GTFNAM			;check left code
+	call	GTFNAM			; check left code
 	mov	al,WKFCB+1
 	sub	al,' '
 	mov	bx,offset TDRVNU
 	or	al,[bx]
-	jnz	ENDPRE			;some code left so error
-	jmp	CCPLOP			;OK end
-;
+	jnz	ENDPRE			; some code left so error
+	jmp	CCPLOP			; OK end
+
 ENDPRE:
 	jmp	COMERR
-;
-;  Work for call to command file
-;
+
+; Work for call to command file
+
 CMDPTR	dw	0,0
-;
-;  Data area
-;
+
+; Data area
+
 	dseg
 	org	800h
-;
-;  MENUSIG/SUBNAM: signature checked by menu.cmd (os.asm ccpseg) before it
-;  writes MDSUBE (0805h) or reads CMBUFF (0009h): 'CMD' must stay at 0800h
-;  and '$$$' at 0807h. Moving this data area breaks menu.cmd's $$$.SUB
-;  hand-over (it then safely does nothing).
+
+; MENUSIG/SUBNAM: signature checked by menu.cmd (os.asm ccpseg) before it
+; writes MDSUBE (0805h) or reads CMBUFF (0009h): 'CMD' must stay at 0800h
+; and '$$$' at 0807h. Moving this data area breaks menu.cmd's $$$.SUB
+; hand-over (it then safely does nothing).
 MENUSIG:
-CODCMD:				;transient command type
+CODCMD:				; transient command type
 	db	'CMD'
-;
-DDMASG	dw	0		;base page segment
-MDSUBE	db	0		;submit mode
-SUBFCB	db	0		;FCB for submit file
+
+DDMASG	dw	0		; base page segment
+MDSUBE	db	0		; submit mode
+SUBFCB	db	0		; FCB for submit file
 SUBNAM	db	'$$$     SUB',0,0,0,0
 	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-;
-WKFCB	db	0		;FCB for work
+
+WKFCB	db	0		; FCB for work
 	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	db	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	db	0,0,0,0
-;
-RWBUFF:				;one sector read work
+
+RWBUFF:				; one sector read work
 	rs	128
-	db	0,0		;not used		???
-BSDIRC	db	0		;bias of directory
-USRCOD	db	0		;user code
-TRCMOD	db	0		;transient command mode    not used ???
-;
-;
+	db	0,0			; Reserved bytes; original use not established.
+BSDIRC	db	0		; bias of directory
+USRCOD	db	0		; user code
+TRCMOD	db	0		; Original transient-command mode field; initialized to zero.
+
 	rs	96
-STACK:				;CCP stack
-;
-WKBIOS	db	9		;BIOS direct call work  9 is select disk
-	dw	0		;CX
-	dw	1		;DX
-;
-PNTCMD	dw	CMBUFF+2	;command buffer pointer
-TPNCMD	dw	0		;command buffer temporary pointer for error
-CURDRV	db	0		;current drive
-TDRVNU	db	0		;temporary drive mode
-;
-;  Indexed data
-;
-IXTERM:				;terminator
+STACK:				; CCP stack
+
+WKBIOS	db	9		; BIOS direct call work  9 is select disk
+	dw	0			; CX
+	dw	1			; DX
+
+PNTCMD	dw	CMBUFF+2	; command buffer pointer
+TPNCMD	dw	0		; command buffer temporary pointer for error
+CURDRV	db	0		; current drive
+TDRVNU	db	0		; temporary drive mode
+
+; Indexed data
+
+IXTERM:				; terminator
 	db	' =_.:;<>,'
-IXRSCM:				;resident command
+IXRSCM:				; resident command
 	db	'DIRS'
 	db	'USER'
 	db	'REN '
 	db	'TYPE'
 	db	'ERA '
 	db	'DIR '
-;
-;  Comments
-;
+
+; Comments
+
 CNOFIL	db	'NO FILE',0
 CALLOK	db	'ALL (Y/N)?',0
 CFLEXT	db	'FILE EXISTS',0
@@ -1379,65 +1376,57 @@ CRDERR	db	'READ ERROR',0
 CCLSER	db	CR,LF,'CANNOT CLOSE',0
 CNSYSF	db	CR,LF,'NON-SYSTEM FILE(S) EXIST',0
 CSYSFL	db	CR,LF,'SYSTEM FILE(S) EXIST',0
-;
-;  User ID code
-;
+
+; User ID code
+
 IDCODE:
-    ;Ts: start patch align on ref version
-	;Db	1		;oem code
-	;Db	10		;version number
-	;Db	0		;product number
-	;Db	0,0,0	;user ID number
-	db	0		;oem code
-	db	0Ah		;version number
-	db	0		;product number
-	db	0,9,9Ah	;user ID number
-    ;Ts: end patch align on ref version
-;
-;  Resident command routine index
-;
+    ; patch align on ref version
+	db	0			; oem code
+	db	0Ah			; version number
+	db	0			; product number
+	db	0,9,9Ah			; user ID number
+
+; Resident command routine index
+
 IXRSRT:
-	dw	DIRNON		;DIR
-	dw	ERASE		;era
-	dw	TYPEOT		;type
-	dw	RENAMP		;REN
-	dw	USER		;user
-	dw	DIRSYS		;DIRS
-	dw	TRCDSL		;not resident
-;
-;
-;
-MODIRE	db	0		;other side file exist mode  0 not exist
-MODDIR	db	0		;directory mode  0 non-system  1 system file
-;
-;  Patch area
-;
-;  Equations of external labels
-;
-				;24D8H	is system page ???
-CONWID	equ	024E0h		;max column (conwid in BDOS)
-;
-;
+	dw	DIRNON			; DIR
+	dw	ERASE			; era
+	dw	TYPEOT			; type
+	dw	RENAMP			; REN
+	dw	USER			; user
+	dw	DIRSYS			; DIRS
+	dw	TRCDSL			; not resident
+
+MODIRE	db	0		; other side file exist mode  0 not exist
+MODDIR	db	0		; directory mode  0 non-system  1 system file
+
+; Patch area
+
+; Equations of external labels
+
+				; External BDOS console-width field; retain its fixed address.
+CONWID	equ	024E0h		; max column (conwid in BDOS)
+
 	cseg
 
 	org	09FAh
 
-; Ts patch start fix submit out of home
+; SUBMIT drive-selection patch: return to the saved command drive.
 PATCHSUBMITSELDSK:
-	mov al, CURDRV
-	jmp SELDRV
-; Ts patch end fix submit out of home
+	mov	al, CURDRV
+	jmp	SELDRV
+
 
 	org	0A40h
-;
-;  Directory out patch for short line display
-;
+
+; Directory out patch for short line display
+
 DIRPAT:
 	cmp	byte ptr .CONWID,60
-	jc	DIRPAS			;short line
+	jc	DIRPAS			; short line
 	jmp	DIROUP
-;
-DIRPAS:				;short line
+
+DIRPAS:				; short line
 	and	al,01h
 	jmp	DIROUP
 

@@ -1,0 +1,49 @@
+{
+  "images": {
+    "cpm.sys": "50c82582b08d73ddf1ee5e43e2b1ed9cbf04d579708dc05d0b2715fc6031a8f0",
+    "cpmorg.sys": "50c82582b08d73ddf1ee5e43e2b1ed9cbf04d579708dc05d0b2715fc6031a8f0",
+    "cpmexp.sys": "72df0f06fbbf0e66368efd6aba82bd6fc1d36fe853b4cdc57626c52e0818a289"
+  },
+  "frozen_sources": {
+    "ccporg.a86": "d739bbb6de2784073f02e796ee64bbb27d84c1b36ecdedfc18260814a5431569",
+    "bdosorg.a86": "3c8c48aedbf99f96723352fad8ca1d9f94c348f3a7d40717ec1969f1a6a61c4b",
+    "pcbioorg.a86": "7654515c68a5197541b3aadfbbcd579312cca7dd5910c2b844c6c28b0520a30b"
+  },
+  "module_pairs": [
+    [
+      "ccp.h86",
+      "ccporg.h86"
+    ],
+    [
+      "bdos.h86",
+      "bdosorg.h86"
+    ],
+    [
+      "pcbios.h86",
+      "pcbioorg.h86"
+    ]
+  ],
+  "module_hashes": {
+    "ccpexp.h86": "8324c460422811f3295ef2a629f3a3405e07da08f8f8e503fb9923585e9b80f6",
+    "bdosexp.h86": "059802e99d0f71fb60b685cc1a266f70bdd4e900c354ded7ef226e14e6f0524c",
+    "pcbioexp.h86": "723794fce153c13917feeed33a4cf458745b69b13898a5aa228d8588c3297008"
+  },
+  "variant_differences": {
+    "standard": "pcbios.h86",
+    "expanded": "pcbioexp.h86",
+    "bytes": [
+      [
+        129,
+        12832,
+        10,
+        14
+      ],
+      [
+        130,
+        14087,
+        51,
+        52
+      ]
+    ]
+  }
+}

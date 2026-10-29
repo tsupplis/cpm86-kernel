@@ -1,18 +1,17 @@
-
-;***********************************************************
-;  PCBIOS.A86 - IBM PC BIOS for CP/M-86 v1.1
-;  The hardware-dependent layer between CP/M-86 and the IBM PC
-;  ROM BIOS: character I/O, disk I/O, interrupt handling and
-;  system initialisation.  Part of the CP/M-86 kernel; linked
-;  after CCP and BDOS into a single image by the root Makefile.
+;-----------------------------------------------------------------------------
+; PCBIOS.A86 - CP/M-86 IBM PC/XT hardware interface
 ;
-;  Build:   make cpm.sys
-;  Check:   make check
-;
-;  Note: in the original disassembly DI was used instead of SI
-;  in PENRDB (light pen buffer fill) - this is a bug in the
-;  original Digital Research code, preserved here as-is.
-;***********************************************************
+; Purpose: provide character and disk I/O, ROM BIOS calls, interrupt handlers,
+; startup, memory/drive discovery and saved BIOS configuration handling.
+; Image: BIOS jump vector at 2500h; resident data follows data_offset;
+; INIT overlays DSKBUF at 3BE2h and is reclaimed after cold start.
+; Build: make cpm.sys
+; Verify: make check (per-module bytes, complete image and pinned reference).
+; Reference: pcbioorg.a86 is frozen. Preserve the existing hardware ABI,
+; fixed buffers, intentional overlays and uninitialized storage directives.
+; The original PENRDB light-pen code uses DI rather than SI; its behavior
+; is retained. This cleanup does not introduce a functional correction.
+;-----------------------------------------------------------------------------
 
 ; ASCII control character codes
 
@@ -21,7 +20,7 @@ BEL		equ	07h		; Bell
 BS		equ	08h		; Backspace
 LF		equ	0Ah		; Line feed
 CR		equ	0Dh		; Carriage return
-ESC		equ	1Bh		; Escape
+esc		equ	1Bh		; Escape
 
 ; Boolean constants
 
@@ -36,16 +35,16 @@ BIOS_CODE	equ	2500h		; BIOS code starts here
 
 ;----------------------------------------
 ; BIOS memory map (offsets within the CP/M load segment, 2500h–end):
-;
-;   2500h  BIOS jump vector   20 × jmp entries + config data + copyright
-;   ~2560h BIOS code          character I/O, disk I/O, interrupt handlers
-;   ~????h dseg data area     I/O vectors, drive tables, disk parameters,
-;                             DPHs, stacks, sector buffers (data_offset)
-;   ~????h INIT / once-only   cold-start code overlaid on DSKBUF at runtime;
-;                             Freed after boot (data_offst2)
-;   4980h  HDDBUF             hdd sector buffer  (512 bytes, fixed address)
-;   4BE2h  DIRBUF             directory scratch buffer (128 bytes)
-;   4C62h  CSV14              allocation vector for drive 4 (grows upward)
+
+; 2500h  BIOS jump vector   20 × jmp entries + config data + copyright
+; ~2560h BIOS code          character I/O, disk I/O, interrupt handlers
+; 32C5h  Resident data      I/O vectors, drive tables, disk parameters,
+; DPHs, stacks, sector buffers (data_offset)
+; 3BE2h  INIT / once-only   cold-start code overlaid on DSKBUF at runtime;
+; 4063h  INIT data          reclaimed with INIT after boot (data_offst2)
+; 4980h  HDDBUF             hdd sector buffer  (512 bytes, fixed address)
+; 4BE2h  DIRBUF             directory scratch buffer (128 bytes)
+; 4C62h  CSV14              allocation vector for drive 4 (grows upward)
 ;----------------------------------------
 
 ;----------------------------------------
@@ -55,28 +54,28 @@ BIOS_CODE	equ	2500h		; BIOS code starts here
 ; No actual data is emitted here.
 ;----------------------------------------
 
-		dseg	0		; address segment 0 (interrupt vector table)
+	dseg	0			; address segment 0 (interrupt vector table)
 
-		org 	0
+	org	0
 ZEROOFF		rw	1		; int 0 offset  — divide-by-zero handler
 ZEROSEG		rw	1		; int 0 segment
 
-		org	4*01Bh		; = 006Ch  int 1Bh vector (user break / Ctrl-Break)
+	org	4*01Bh			; = 006Ch  int 1Bh vector (user break / Ctrl-Break)
 BREAKOFF	rw	1		; int 1Bh offset — user break (Ctrl-Break)
 BREAKSEG	rw	1		; int 1Bh segment
 
 TIMEROFF	rw	1		; int 1Ch offset — timer tick  (sequential: 0070h)
 TIMERSEG	rw	1		; int 1Ch segment
 
-		org	4*01Eh		; = 0078h  int 1Eh vector (diskette parameter table)
+	org	4*01Eh			; = 0078h  int 1Eh vector (diskette parameter table)
 I1EOFF		rw	1		; int 1Eh offset — diskette parameter table pointer
 I1ESEG		rw	1		; int 1Eh segment
 
-		org	4*0E0h		; = 0380h  int E0h vector (BDOS entry)
+	org	4*0E0h			; = 0380h  int E0h vector (BDOS entry)
 BDOSOFF		rw	1		; int E0h offset — BDOS entry
 BDOSSEG		rw	1		; int E0h segment
 
-		org	4*0E6h		; = 0398h  int E6h vector (unknown disk handler)
+	org	4*0E6h			; = 0398h  int E6h vector (unknown disk handler)
 UNDSKOFF	rw	1		; int E6h offset — unknown disk drive handler
 UNDSKSEG	rw	1		; int E6h segment
 
@@ -89,14 +88,14 @@ UNDSKSEG	rw	1		; int E6h segment
 ; Making cpm.sys differ from cpmorg.sys and breaking `make check`.
 ;----------------------------------------
 
-		dseg			; segment supplied at runtime in ES (0040h)
+	dseg				; segment supplied at runtime in ES (0040h)
 
-		org	10h		; offset 0010h = equipment byte
+	org	10h			; offset 0010h = equipment byte
 BIOSHDW		rb	1		; ROM BIOS equipment byte (bit 5-4 = video mode)
 
 ;----------------------------------------
 ; BDOS internal variables — symbol aliases within the CP/M load segment
-;
+
 ; All of CP/M-86 (CCP at 0000h, BDOS at 0B06h, BIOS at 2500h) occupies
 ; One single segment.  The bare dseg below re-opens that same segment so
 ; The org directives can name fixed offsets inside the running BDOS.
@@ -104,44 +103,44 @@ BIOSHDW		rb	1		; ROM BIOS equipment byte (bit 5-4 = video mode)
 ; To read and write BDOS state at runtime via DS (=CS = load segment).
 ;----------------------------------------
 
-		dseg			; same segment as cseg (the CP/M load segment)
+	dseg				; same segment as cseg (the CP/M load segment)
 
-		org	24A5h		; offset of BDOSUSER within the load segment
+	org	24A5h			; offset of BDOSUSER within the load segment
 BDOSUSER	rb	1		; Current user number
 
-		org	24AFh
+	org	24AFh
 BDOSMODABT	rb	1		; Non-zero: BDOS abort mode active
 
-		org	24B7h
+	org	24B7h
 BDOSCURDRV	rb	1		; Current default drive (0=A:)
 
-		org	24BDh
+	org	24BDh
 DHOUR		rb	1		; Clock: hours   (decimal, 0-23)
 DMINUTE		rb	1		; Clock: minutes (decimal, 0-59)
 DSECOND		rb	1		; Clock: seconds (decimal, 0-59)
-;
+
 ; Real-time clock values in ASCII (maintained by TIMERINT)
 ; Layout: mm/dd/yy,hh:mm:SS
-;
+
 AMONTH		rw	1		; ASCII month  (2 digits)
-		rb	1		; separator '/'
+	rb	1			; separator '/'
 ADAY		rw	1		; ASCII day    (2 digits)
-		rb	1		; separator '/'
+	rb	1			; separator '/'
 AYEAR		rw	1		; ASCII year   (2 digits)
-		rb	1		; separator ','
+	rb	1			; separator ','
 AHOUR		rw	1		; ASCII hours  (2 digits)
-		rb	1		; separator ':'
+	rb	1			; separator ':'
 AMINUTE		rw	1		; ASCII minutes (2 digits)
-		rb	1		; separator ':'
+	rb	1			; separator ':'
 ASECOND		rw	1		; ASCII seconds (2 digits)
-		rb	1
+	rb	1
 
 SYSMESSAGE	rb	14		; System status message buffer
 BDOSCONWID	rb	1		; Console width reported to BDOS
 
 ;----------------------------------------
 ; CCP label — forward reference into the CP/M load segment
-;
+
 ; The first cseg+org places the CCP label at offset 0000h so that
 ; WBOOT can jump to CCP+6 (the warm-boot entry inside the CCP).
 ; No code is emitted here; the CCP image is loaded separately.
@@ -198,7 +197,7 @@ CCP:					; label only; no code emitted here
 ;----------------------------------------
 ; WBOOT — warm boot entry (BDOS function 0)
 ; Resets the disk-dirty state, then hands control to CCP.
-;
+
 WBOOT:
 	mov	byte ptr DSK_DIRTY,0	; clear write-pending flag
 	mov	byte ptr DSK_LAST,0FFh	; invalidate track cache
@@ -206,72 +205,72 @@ WBOOT:
 
 ;----------------------------------------
 ; CP/M-86 character I/O interface
-;
+
 ; Each BIOS entry point loads the I/O vector word for that
 ; Device into AX (SYS_CONI, SYS_CONO, etc.), then falls
 ; Through to the common XINPUT / XOUTPUT dispatcher.
 ; The vector word is a bitmask: bit N selects device N in
 ; INROUTINES / OUTROUTINES.
 ;----------------------------------------
-;
+
 ; Conin — read one character from the console input device
-;   Out: AL = character (bit 7 masked off)
-;
+; Out: AL = character (bit 7 masked off)
+
 CONIN:
 	mov	ax,word ptr SYS_CONI	; console input device vector
 	jmps	XINPUT
-;
+
 ; CONOUT — write one character to the console output device
-;   In:  CL = character
-;
+; In:  CL = character
+
 CONOUT:
 	mov	ax,word ptr SYS_CONO	; console output device vector
 	jmps	XOUTPUT
-;
+
 ; CONST — return console input ready status
-;   Out: AL = 0FFh if a character is waiting, 00h if not
-;
+; Out: AL = 0FFh if a character is waiting, 00h if not
+
 CONST:
 	mov	ax,word ptr SYS_CONI	; console input device vector
 	mov	cl,01h			; status request flag
 	jmps	XOSTATUS
-;
+
 ; Reader — read one character from the auxiliary input device
-;   Out: AL = character (bit 7 masked off)
-;
+; Out: AL = character (bit 7 masked off)
+
 READER:
 	mov	ax,word ptr SYS_AUXI	; auxiliary input device vector
 	jmps	XINPUT
-;
+
 ; Punch — write one character to the auxiliary output device
-;   In:  CL = character
-;
+; In:  CL = character
+
 PUNCH:
 	mov	ax,word ptr SYS_AUXO	; auxiliary output device vector
 	jmps	XOUTPUT
-;
+
 ; LISTOUT — write one character to the list (printer) device
-;   In:  CL = character
-;
+; In:  CL = character
+
 LISTOUT:
 	mov	ax,word ptr SYS_LST	; list device vector
 	jmps	XOUTPUT
-;
+
 ; LISTST — return list device ready status
-;   Out: AL = 0FFh if ready, 00h if not
-;
+; Out: AL = 0FFh if ready, 00h if not
+
 LISTST:
 	mov	ax,word ptr SYS_LST	; list device vector
 	mov	cl,20h			; status request flag
 	jmps	XOSTATUS
-;
+
 ;----------------------------------------
 ; XINPUT — common input dispatcher
-;
+
 ; AX = device vector bitmask; scans INROUTINES table,
 ; Calls the first routine whose bit is set in AX.
 ; Falls back to KEYIN if no bit matches.
-;
+
 XINPUT:
 	cld
 	mov	bx,offset INROUTINES	; -> device routine table
@@ -286,13 +285,13 @@ XINPUT2:
 	inc	bx
 	loop	XINPUT1
 	jmp	KEYIN			; no device matched, use keyboard
-;
+
 ;----------------------------------------
 ; XOUTPUT — common output dispatcher
-;
+
 ; AX = device vector bitmask; calls all routines whose bit
 ; Is set in AX (output can go to multiple devices at once).
-;
+
 XOUTPUT:
 	cld
 	mov	bx,offset OUTROUTINES	; -> device routine table
@@ -315,14 +314,14 @@ XOUTPUT2:
 	dec	ch			; all devices checked?
 	jnz	XOUTPUT1		; no, continue
 	ret
-;
+
 ;----------------------------------------
 ; XOSTATUS — common input status dispatcher
-;
+
 ; AX = device vector bitmask; scans OUTSTATUS table,
 ; Returns 0FFh if the matching device is ready, 00h if not.
 ; If no bit is set, returns 0FFh (always ready).
-;
+
 XOSTATUS:
 	mov	bx,offset OUTSTATUS	; -> device status table
 	mov	ch,0Bh			; 11 possible devices
@@ -338,14 +337,14 @@ XOSTAT1:
 	ret
 XOSTAT2:
 	jmp	word ptr [bx]		; call device status routine
-;
+
 ;----------------------------------------
 ; KEYSTAT — keyboard ready status
-;   Out: AL = 0FFh if a character is available, 00h if not
-;
+; Out: AL = 0FFh if a character is available, 00h if not
+
 ; Checks the PFK (programmable function key) buffer first;
 ; If empty, polls the ROM BIOS keyboard status.
-;
+
 KEYSTAT:
 	push	si
 	mov	si,word ptr KEYPTR	; pointer into PFK buffer
@@ -353,7 +352,7 @@ KEYSTAT:
 	pop	si
 	test	al,al			; zero = buffer empty
 	jnz	KEYSTAT1		; non-zero: character ready
-;
+
 	mov	ah,01h			; int 16h: peek keyboard buffer
 	int	16h			; PC ROM BIOS Keyboard Service
 	mov	al,0			; assume not ready
@@ -362,15 +361,15 @@ KEYSTAT1:
 	mov	al,0FFh			; character available
 KEYSTAT2:
 	ret
-;
+
 ;----------------------------------------
 ; KEYIN — read one character from the keyboard
-;   Out: AL = ASCII character
-;
+; Out: AL = ASCII character
+
 ; Drains the PFK expansion buffer first.  If the buffer is
 ; Empty, reads the ROM BIOS keyboard and checks whether the
 ; Scan code maps to a programmable function key string.
-;
+
 KEYIN:
 	push	si
 
@@ -389,16 +388,16 @@ KEYIN3:
 	int	16h			; PC ROM BIOS Keyboard Service
 	and	al,7Fh			; strip high bit
 	jnz	KEYIN2			; printable ASCII: return it
-;
+
 ; Scan code only (AL=0, AH=scan code) — check PFK table
-;
+
 	push	cx
 	push	di
 	push	es
 	mov	al,ah			; scan code to look up
 	call	GETPFK			; find PFK entry; AX -> string, CX = length
 	jc	KEYIN4			; carry set: not a PFK, ignore
-;
+
 	mov	si,ax			; SI -> PFK string in table
 	mov	di,offset KEYBUF	; DI -> key expansion buffer
 	mov	word ptr KEYPTR,di	; reset buffer pointer to start
@@ -408,14 +407,14 @@ KEYIN4:
 	pop	di
 	pop	cx
 	jmp	KEYIN1			; re-enter: drain the buffer
-;
+
 ;----------------------------------------
 ; GETPFK — look up a scan code in the PFK table
-;   In:  AL = keyboard scan code
-;   Out: AX = offset of matching PFK string
-;        CX = length of string (20 bytes per entry)
-;        Carry set if scan code not found in table
-;
+; In:  AL = keyboard scan code
+; Out: AX = offset of matching PFK string
+; CX = length of string (20 bytes per entry)
+; Carry set if scan code not found in table
+
 GETPFK:
 	mov	di,cs
 	mov	es,di
@@ -424,38 +423,38 @@ GETPFK:
 	repne	scasb			; search for matching code
 	stc				; preset carry (not found)
 	jnz	GETPFK2			; jump if no match
-;
+
 	mov	ax,20
 	mul	cl			; CX remaining -> entry index
 	add	ax,offset PFKTABLE	; compute offset of PFK string
 	mov	cx,20			; each PFK entry is 20 bytes
 GETPFK2:
 	ret
-;
+
 ;----------------------------------------
 ; VIDOUT — video output entry point
-;
+
 ; Jumps through state vector, which normally points to
 ; VIDNORM but is redirected during multi-byte ESC sequences.
-;
+
 VIDOUT:
 	jmp	word ptr STATE
-;
+
 ; NULLST — always-ready status stub (used for devices with no status)
-;   Out: AL = 0FFh
-;
+; Out: AL = 0FFh
+
 NULLST:
 	mov	al,0FFh
 	ret
-;
+
 ;----------------------------------------
 ; VIDNORM — normal ASCII video output
-;   In: CL = character to display
-;
+; In: CL = character to display
+
 ; Dispatches control characters (BS, LF, CR, ESC, bel)
 ; To their handlers; all other characters are written
 ; Directly to the screen via the ROM BIOS.
-;
+
 VIDNORM:
 	mov	al,cl
 VIDNORM1:
@@ -468,34 +467,34 @@ VIDNORM1:
 	cmp	al,CR
 	jz	VIDCR			; Carriage return
 
-	cmp	al,ESC
+	cmp	al,esc
 	jz	VIDESC			; Escape
 	cmp	al,BEL
 	jz	VIDBEL			; Beep
-;
+
 ; Printable ascii characters fall through
-;
+
 VIDASCII:
 	mov	ah,09h			; int 10h: write char+attr at cursor
 	mov	bh,0			; Page 0
 	mov	cx,1			; One copy of char
 	mov	bl,byte ptr ATTRIB	; Attribute
 	call	VIDCOM			; Issue int 10h
-;
+
 	inc	dl			; Next column
 	cmp	dl,byte ptr CRTCOL	; Past right edge?
 	jb	SETCURSOR		; If not, skip
-;
+
 ; Test for end of line wrap around
-;
+
 	test	byte ptr WRAPFLAG,TRUE
 	jz	VIDRETURN		; If no wrap, done
-;
+
 	call	VIDCR			; Else, do a return
 					; Fall into a line feed
-;
+
 ; Video line feed
-;
+
 VIDLF:
 	inc	dh			; Next line
 	cmp	dh,18h			; At bottom of page?
@@ -504,30 +503,30 @@ VIDLF:
 	mov	ax,0601h		; Scroll one line
 	sub	cx,cx			; Upper left corner
 	jmp	VDASLIN2		; Do it
-;
+
 ; Video carriage return
-;
+
 VIDCR:
 	mov	dl,0			; First column
-;
+
 SETCURSOR:
 	mov	word ptr CURSOR,dx	; Update our copy
 	mov	ah,2			; Set cursor code
 	mov	bh,0			; Page 0
 	call	VIDCOM
 	ret
-;
-; Video back space
-;
+
+; Video Backspace
+
 VIDBS:
 	dec	dl			; Back one column
 	jns	SETCURSOR		; If pos, no prob
-;
+
 	test	byte ptr WRAPFLAG,TRUE	; If no wrap around
-	jz	VIDRETURN		;  Then forget it
-;
+	jz	VIDRETURN		; Then forget it
+
 	dec	dh			; If top row,
-	js	VIDRETURN		;  Then forget it
+	js	VIDRETURN		; Then forget it
 	mov	dl,byte ptr CRTCOL	; Else wrap around
 	dec	dl
 	jmps	SETCURSOR
@@ -535,17 +534,17 @@ VIDBS:
 VIDBEL:
 	mov	si,offset SNDTBL1
 	jmp	BEEP
-;
+
 ; Video escape - set up state vector
-;
+
 VIDESC:
 	mov	word ptr STATE,offset VIDESC1
-;
+
 VIDRETURN:
 	ret
-;
+
 ; Character after escape comes here
-;
+
 VIDESC1:
 	call	VPCOMP			; Clear the state incase
 DISPATCH:
@@ -567,16 +566,16 @@ DISPATCH1:
 	add	cx,cx
 	sub	bx,cx
 	jmp	word ptr [bx]		; Transfer to it
-;
+
 ; ESC H - home cursor
-;
+
 VHOME:
 	sub	dx,dx			; 0,0 = Top left
 SETCUR:
 	jmp	SETCURSOR		; For local short
-;
+
 ; ESC E - erase screen and home cursor
-;
+
 VEOSALL:
 	call	VHOME			; Get to top left
 	sub	cx,cx
@@ -584,64 +583,64 @@ VEOSALL:
 	mov	dl,byte ptr CRTCOL
 	dec	dl
 	jmp	VEOLEND1		; Erase to end of screen
-;
+
 ; ESC A - cursor up
-;
+
 VUP:
 	dec	dh			; Row = row - 1
 	jns	SETCUR			; If pos, set cursor
 	ret				; Else forget it
-;
+
 ; ESC B - cursor down
-;
+
 VDOWN:
 	inc	dh			; Row = row + 1
 	cmp	dh,18h			; Too far ?
 	jb	SETCUR			; If not, set cursor
 	ret				; Else ignore
-;
+
 ; ESC C - cursor forward (right)
-;
+
 VFORW:
 	inc	dl			; Col = col + 1
 	cmp	dl,byte ptr CRTCOL	; Too far ?
 	jb	SETCUR			; If not, set cursor
 	ret				; Else ignore
-;
+
 ; ESC D - cursor back (left)
-;
+
 VBACK:
 	dec	dl			; Col = col - 1
 	jns	SETCUR			; Not to far, set cursor
 	ret				; Else ignore
-;
+
 ; ESC I - cursor up (scroll at top)
-;
+
 VUPSAT:
 	test	dh,dh			; Top of screen ?
 	jnz	VUP			; No, cursor up
 	jmp	VIASLIN			; Yes, insert line and scroll down
-;
+
 ; ESC j - save cursor position
-;
+
 VSAVCUR:
 	mov	word ptr SAVECURSOR,dx	; Stash it
 	ret
-;
+
 ; ESC k - restore (saved) cursor position
-;
+
 VRSTCUR:
 	mov	dx,word ptr SAVECURSOR	; Get it back
 	jmp	SETCUR			; and set it
-;
+
 ; ESC Y - set cursor position
-;
+
 VSETCUR:
 	mov	word ptr STATE,offset VSET1
 	ret				; Look for next char
-;
+
 ; ESC Y part 1 - set cursor row
-;
+
 VSET1:
 	sub	cl,20h			; Correct
 	jns	VSET1A			; Skip if positive
@@ -654,9 +653,9 @@ VSET1B:
 	mov	byte ptr CURROW,cl	; Save cursor row
 	mov	word ptr STATE,offset VSET2
 	ret				; Ready for column
-;
+
 ; ESC Y part 2 - set cursor column
-;
+
 VSET2:
 	sub	cl,20h			; Correct
 	jns	VSET2A			; Skip if positive
@@ -671,9 +670,9 @@ VSET2B:
 	mov	dl,cl			; Update row
 	call	VPCOMP			; Reset state
 	jmp	SETCURSOR		; Move cursor now
-;
+
 ; ESC J - erase to end of screen (from cursor)
-;
+
 VEOSEND:
 	push	dx			; Save cursor
 	call	VEOLEND			; Erase to end of line
@@ -681,7 +680,7 @@ VEOSEND:
 	cmp	dh,17h
 	jb	VEOSEND1
 	ret
-;
+
 VEOSEND1:
 	inc	dh
 	mov	ch,dh
@@ -690,27 +689,27 @@ VEOSEND1:
 	mov	dl,byte ptr CRTCOL
 	dec	dl
 	jmps	VEOLEND1		; Erase to end of screen
-;
+
 ; ESC l - Erase current line (all characters)
-;
+
 VECLIN:
 	mov	ch,dh
 	mov	cl,0
 	mov	dl,byte ptr CRTCOL
 	dec	dl
 	jmps	VEOLEND1		; Erase to end of line
-;
+
 ; ESC o - erase beginning of line to cursor
-;
+
 VEOLBEG:
 	mov	ch,dh
 	mov	cl,0
 	dec	dl
 	jns	VEOLEND1		; Erase to end of screen
 	ret
-;
+
 ; ESC K - erase to end of line
-;
+
 VEOLEND:
 	mov	cx,dx
 	mov	dl,byte ptr CRTCOL
@@ -721,24 +720,24 @@ VEOLEND1:
 	and	bh,byte ptr ERASE_ATTR
 	mov	ax,0700h
 	jmp	VIDCOM
-;
+
 ; ESC L - insert line and scroll down
-;
+
 VIASLIN:
 	mov	ax,0701h
 	jmps	VDASLIN1
-;
+
 ; ESC M - delete line and scroll up
-;
+
 VDASLIN:
 	mov	ax,0601h
-;
+
 VDASLIN1:
 	cmp	dh,17h
 	jz	VECLIN			; Erase current line (all characters)
 	mov	ch,dh
 	mov	cl,0
-;
+
 VDASLIN2:
 	mov	dh,17h
 	mov	dl,byte ptr CRTCOL
@@ -746,9 +745,9 @@ VDASLIN2:
 	mov	bh,byte ptr ATTRIB
 	and	bh,byte ptr ERASE_ATTR
 	jmp	VIDCOM
-;
+
 ; ESC N - delete character at cursor (moving other charcters to fill gap)
-;
+
 VDELCHR:
 	mov	al,byte ptr CRTCOL
 	sub	al,dl
@@ -773,15 +772,15 @@ VDELCHR1:
 	dec	di
 	jnz	VDELCHR1
 	jmp	VRSTCPT			; Restore cursor posn and type
-;
+
 ; ESC a - set video mode
-;
+
 VSETMODE:
 	mov	word ptr STATE,offset VSETMODE1
 	ret				; Get next char
-;
+
 ; ESC a (mode) - set video mode
-;
+
 VSETMODE1:
 	mov	al,cl			; Required mode
 	call	SETCURCRT		; Set current video details
@@ -801,28 +800,28 @@ VSETMODE1:
 	call	CLRBOS1			; Clear status line
 	call	VRSTCPT			; Restore cursor posn and type
 	jmp	VPCOMP			; Reset state
-;
+
 ; ESC b - set foreground colour
-;
+
 VFRGND:
 	mov	word ptr STATE,offset VFRGND1
 	ret				; Get next char
-;
+
 ; ESC b (colour) - set foreground colour
-;
+
 VFRGND1:
 	mov	al,cl
 	mov	ah,byte ptr ATTRIB
 	jmps	VFGBG			; Common routine
-;
+
 ; ESC c - set background colour
-;
+
 VBKGND:
 	mov	word ptr STATE,offset VBKGND1
 	ret				; Get next char
-;
+
 ; ESC c (colour) - set background colour
-;
+
 VBKGND1:
 	mov	ah,cl
 	mov	cl,04h
@@ -835,54 +834,54 @@ VFGBG:
 	or	al,ah			; Mash 'em
 	mov	byte ptr ATTRIB,al
 	jmp	VPCOMP			; Reset state
-;
+
 ; ESC d - redirect console input
-;
+
 VNEWCONI:
 	mov	ax,offset SYS_CONI
 	jmps	VNEW
-;
+
 ; ESC e - redirect console output
-;
+
 VNEWCONO:
 	mov	ax,offset SYS_CONO
 	jmps	VNEW
-;
+
 ; ESC f - redirect auxilary input
-;
+
 VNEWAUXI:
 	mov	ax,offset SYS_AUXI
 	jmps	VNEW
-;
+
 ; ESC g - redirect auxilary output
-;
+
 VNEWAUXO:
 	mov	ax,offset SYS_AUXO
 	jmps	VNEW
-;
-; ESC h - redirect list output
-;
+
+; ESC h - redirect List outputput
+
 VNEWLST:
 	mov	ax,offset SYS_LST
 ; ;jmps  VNEW      ; Fall through
-;
+
 ; Redirect any i/o device vector
 ; Entry: AX -> a particular vector
-;
+
 VNEW:
 	mov	word ptr DELTAVEC,ax	; Vector to change
 	mov	word ptr STATE,offset VNEW1
 	ret				; Wait for next char
-;
+
 ; Next state
-;
+
 VNEW1:
 	mov	byte ptr DELTALO,cl
 	mov	word ptr STATE,offset VNEW2	; Next time
 	ret				; Wait for one more
-;
+
 ; Last state
-;
+
 VNEW2:
 	mov	bx,word ptr DELTAVEC	; Get the vector to change
 	mov	ah,cl
@@ -890,70 +889,70 @@ VNEW2:
 	and	ax,7F7Fh		; Mask off
 	mov	word ptr [bx],ax	; Set vector
 	jmp	VPCOMP			; Reset state
-;
+
 ; ESC m - turn cursor on
-;
+
 VCURON:
 	mov	cx,word ptr CURLON	; Normal lines (on)
 	jmps	VSETCUR1
-;
+
 ; ESC n - turn cursor off
-;
+
 VCUROFF:
 	mov	cx,word ptr CURLOFF	; Cursor lines (off)
-;
+
 VSETCUR1:
 	mov	word ptr CURCUR,cx	; Save current cursor type
 VSETCUR2:
 	mov	ah,1			; Set cursor type
 	jmp	VIDCOM			; Do it
-;
+
 VSETCUR3:
 	mov	cx,word ptr CURLOFF
 	jmps	VSETCUR2
-;
+
 ; Restore cursor position and type
-;
+
 VRSTCPT:
 	mov	dx,word ptr CURSOR
 	call	SETCURSOR
 	mov	cx,word ptr CURCUR	; Current (in use) cursor type
 	jmps	VSETCUR2
-;
+
 ; ESC p - reverse video on
-;
+
 VREVON:
 	and	byte ptr ATTRIB,0F8h	; Black foreground
 	or	byte ptr ATTRIB,070h	; White background
 	ret
-;
+
 ; ESC q - reverse video off
-;
+
 VREVOFF:
 	and	byte ptr ATTRIB,8Fh
 	or	byte ptr ATTRIB,07h
 	ret
-;
+
 ; ESC s - turn blinking text on
-;
+
 VBLINKON:
 	or	byte ptr ATTRIB,80h
 	ret
-;
+
 ; ESC t - turn blinking text off
-;
+
 VBLINKOFF:
 	and	byte ptr ATTRIB,7Fh
 	ret
-;
+
 ; ESC r - turn high intensity text on
-;
+
 VINTON:
 	mov	al,0Eh
 	jmps	VINTCHG
-;
+
 ; ESC u - turn high intensity text off
-;
+
 VINTOFF:
 	mov	al,07h
 
@@ -961,33 +960,33 @@ VINTCHG:
 	and	byte ptr ATTRIB,0F0h
 	or	byte ptr ATTRIB,al
 	ret
-;
+
 ; ESC v - text wrap at end of line
-;
+
 VWRAP:
 	mov	byte ptr WRAPFLAG,TRUE
 	ret
-;
+
 ; ESC w - no text wrap at end of line
-;
+
 VNOWRAP:
 	mov	byte ptr WRAPFLAG,0
 	ret
-;
+
 ; ESC x  - set MONO80 mode
-;
+
 VMON80:
 	mov	cl,03h
 	jmp	VSETMODE1
-;
+
 ; ESC y - set COL80 mode
-;
+
 VCOL80:
 	mov	cl,07h
 	jmp	VSETMODE1
-;
+
 ; ESC / - perform int 10h function 0Bh
-;
+
 VSETPAL:
 	mov	word ptr STATE,offset VSETPAL1
 	ret				; Ready for next char
@@ -1004,16 +1003,15 @@ VSETPAL2:
 	mov	ah,0Bh
 	call	VIDCOM
 	jmp	VPCOMP			; Reset state and return
-;
+
 ; ESC : - set programmable function keys
-;
-;
+
 VPFK:
 	mov	word ptr STATE,offset EPFK1
 	ret				; Ready for key code
-;
+
 ; Get key scan code
-;
+
 EPFK1:
 	call	VPCOMP			; Reset state (default)
 	push	di
@@ -1021,7 +1019,7 @@ EPFK1:
 	mov	al,cl
 	call	GETPFK			; AX -> pfk entry
 	jc	EPFK1A			; C set if illegal
-;
+
 	mov	word ptr EPFKPTR,ax	; Save pointer
 	mov	byte ptr EPFKCOUNT,cl	; Save char count
 	mov	word ptr STATE,offset EPFK2
@@ -1029,30 +1027,30 @@ EPFK1A:
 	pop	es
 	pop	di
 	ret
-;
+
 ; Get the string
-;
+
 EPFK2:
 	mov	bx,word ptr EPFKPTR	; Point to entry
 	mov	byte ptr [bx],cl	; Store char
-;
+
 	dec	byte ptr EPFKCOUNT
 	jz	EPFK2A			; Skip if failed
-;
+
 	test	cl,cl			; Or if char = 0
 	jz	EPFK2A
-;
+
 	inc	bx			; Bump the pointer for next time
 	mov	word ptr EPFKPTR,bx
 	ret				; Keep vidstate
-;
+
 ; Process complete
-;
+
 EPFK2A:
 	jmps	VPCOMP			; Reset state to normalcy
-;
+
 ; ESC 1 - turn on/clear status line AT bottom of screen
-;
+
 VBOSON:
 	mov	al,byte ptr CRTMOD	; Current mode
 	mul	byte ptr CRTTEL
@@ -1060,23 +1058,23 @@ VBOSON:
 	mov	al,byte ptr SCRMODTBL+4[bx]	; Get statline available flag
 	mov	byte ptr BOSFLAG,al	; set as current
 	ret
-;
+
 ; ESC 0 - turn off/clear status line AT bottom of screen
-;
+
 VBOSOFF:
 	mov	byte ptr BOSFLAG,FALSE
 	jmp	CLRBOS2			; Clear status line
-;
+
 ; ESC process complete
-;
-VPCOMP:	
+
+VPCOMP:
 	mov	word ptr STATE,offset VIDNORM
 	ret				; To normalacy
 
 ;----------------------------------------
-;
+
 ; Common video i/o routine
-;
+
 VIDCOM:
 	mov	byte ptr VIDBSY,TRUE	; Flag Video Busy
 	int	10h			; PC ROM BIOS Video Driver Service
@@ -1091,7 +1089,7 @@ VIDCOM1:
 	ret
 
 ;----------------------------------------
-;
+
 ; Printer output - set the device
 PRNOUT2:
 	inc	dx
@@ -1100,11 +1098,11 @@ PRNOUT1:
 PRNOUT0:
 
 ;----------------------------------------
-;
+
 ; Printer character out
 ; Entry:  CL = char
 ; DX = printer number
-;
+
 PRNOUT:
 	mov	ch,2			; Retry count
 PRNO1:
@@ -1113,12 +1111,12 @@ PRNO1:
 	int	17h			; PC ROM BIOS - Printer service
 	test	ah,08h			; Not busy ?
 	jz	PRNOX
-;
+
 	test	ah,01h			; Timeout ?
 	jz	PRNO2
 	dec	ch
 	jnz	PRNO1			; Try again
-;
+
 PRNO2:
 	push	cx
 	push	dx
@@ -1144,16 +1142,16 @@ PRNOX:
 	ret
 
 ;----------------------------------------
-;
+
 ; Printer status - set the device number
-;
+
 PRNSTAT2:
 	inc	dx
 PRNSTAT1:
 	inc	dx
 
 PRNSTAT0:
-;
+
 ;----------------------------------------
 ; Return printer status
 ; Entry:  DX = printer number
@@ -1173,9 +1171,9 @@ PRSRET:
 	ret
 
 ;----------------------------------------
-;
+
 ; Serial port output
-;
+
 SPOUT1:
 	inc	dx
 SPOUT0:
@@ -1183,7 +1181,7 @@ SPOUT0:
 ; Serial port output
 ; Entry:  CL = char
 ; DX = serial port number
-;
+
 SERIALOUT:
 	push	cx
 SERIALOUT1:
@@ -1201,18 +1199,18 @@ SERIALOUT2:
 	ret
 
 ;----------------------------------------
-;
+
 ; Serial in for ports #1 and #0
-;
+
 SPIN1:
 	inc	dx
 SPIN0:
-;
+
 ;----------------------------------------
 ; Serial port input
 ; Entry:  DX = serial port number
 ; Exit:  AL = received char
-;
+
 SERIALIN:
 	mov	ah,02h			; Read char from port
 	int	14h			; PC ROM BIOS - Serial Port Service
@@ -1222,7 +1220,7 @@ SERIALIN:
 	ret
 
 ;----------------------------------------
-;
+
 ; Serial output status
 SOSTAT1:
 	inc	dx
@@ -1233,30 +1231,30 @@ SOSTAT0:
 ; AH = status check mask
 ; Exit:  AL = 0ffh if ready
 ; AL = 0 if not
-;
+
 SOSTAT:
 	cmp	cl,20h
 	jnz	SOSTATC
-;
+
 	mov	cl,byte ptr SERBUFSTS
 	mov	ah,03h			; Get port status
 	int	14h			; PC ROM BIOS - Serial Port Service
-;
+
 	test	al,20h			; Data-set ready ?
 	jz	SOSTATD			; Yes
-;
+
 	test	ah,01h			; data ready ?
 	jz	SOSTATC			; Yes
-;
+
 	call	SERIALIN		; Read char from serial port
 	cmp	al,13h
 	jnz	SOSTATA
-;
+
 	mov	cl,0
 SOSTATA:
 	cmp	al,11h
 	jnz	SOSTATB
-;
+
 	mov	cl,20h
 SOSTATB:
 	mov	byte ptr SERBUFSTS,cl
@@ -1265,8 +1263,8 @@ SOSTATC:
 	int	14h			; PC ROM BIOS - Serial Port Service
 	mov	al,TRUE
 	; test	CL,AH
-    ; Todots: (Vanilla was test AH,CL)
-	test ah,cl
+    ; Original instruction was TEST AH,CL; retained for reference comparison.
+	test	ah,cl
 	jnz	SORET
 SOSTATD:
 	mov	al,FALSE
@@ -1275,15 +1273,15 @@ SORET:
 
 ;----------------------------------------
 ; Light pen input
-;
+
 PENIN:
 	mov	si,word ptr PENPTR	; Buffer pointer
 	cmp	si,PENBUFEND		; Reached end?
 	jnz	PENIN1			; No, get byte
-;
+
 	call	PENRDB			; Read/buffer status info
 	jz	PENIN2			; Not ready
-;
+
 	mov	si,word ptr PENPTR
 PENIN1:
 	lodsb				; Get next byte
@@ -1298,11 +1296,11 @@ PENIN2:
 	call	VRSTCPT			; Restore cursor posn and type
 	mov	si,offset SNDTBL2
 	call	BEEP1
-;
+
 PENIN3:
 	call	PENRDB			; Read/buffer status info
 	jnz	PENIN4			; Ok
-;
+
 	mov	ah,1			; Read keyboard status
 	int	16h			; PC ROM BIOS Keyboard Service
 	jz	PENIN3
@@ -1310,65 +1308,65 @@ PENIN3:
 	int	16h			; PC ROM BIOS Keyboard Service
 	cmp	al,CTRLC		; cntrl-C pressed ?
 	jnz	PENIN3			; No, try again
-;
+
 	mov	word ptr SYS_CONI,1	; Reset to keyboard input
 	call	CLRBOS			; Clear status line
 	jmp	ABORT			; We're gone
-;
+
 PENIN4:
 	call	CLRBOS			; Clear status line
 	jmp	PENIN			; Return input
-;
+
 ; Read/Buffer light pen status info
-;
+
 PENRDB:
 	call	PENST			; Get status info
 	jz	PENRDBX			; Not ready
-;
+
 	mov	si,offset PENBUF
 	mov	word ptr PENPTR,si	; Reset buffer pointer
 	mov	[si],dh			; buff+0 = char row
 	inc	si
-	mov	[di],dl			; buff+1 = char col	(bug DI ???)
+	mov	[di],dl			; Original DI destination retained; SI advances through PENBUF.
 	inc	si
-	mov	[di],ch			; buff+2 = pixel row	(bug DI ???)
+	mov	[di],ch			; Original DI destination retained; see PENRDB header note.
 	inc	si
 	shl	bx,1h
 	shl	bx,1h
 	shr	bl,1h
 	shr	bl,1h
-	mov	[si],bh			; buff+3 = 
+	mov	[si],bh			; buff+3 =
 	inc	si
 	mov	[si],bl			; buff+4 =
 PENRDBX:
 	ret
 ;----------------------------------------
 ; Light pen status (and position information)
-;
+
 ; Exit:  AL = 0ffh if ready
 ; AL = 0 if not
-;
+
 PENST:
 	mov	ah,4			; Read light pen position
 	int	10h			; PC ROM BIOS Video Driver Service
-;
+
 ; AH = 0 = pen not down/triggered
 ; AH = 1 = pen down/triggered
-;  DH,DL = row,column of character light pen is on
-;  CH = pixel row (graphics modes 04h-06h)
-;  CX = pixel row (graphics modes with >200 rows)
-;  BX = pixel column
-;
+; DH,DL = row,column of character light pen is on
+; CH = pixel row (graphics modes 04h-06h)
+; CX = pixel row (graphics modes with >200 rows)
+; BX = pixel column
+
 	rcr	ah,1			; Result: AH=0 -> AL=0	  + zf
-	sbb	al,al			; 	  AH=1 -> AL=0ffh + nzf
+	sbb	al,al			; AH=1 -> AL=0ffh + nzf
 	ret
 
 ;----------------------------------------
 ; Select disk for next rd/write
-;
+
 SELDSK:
 	; Select disk given by register CL
-;
+
 	mov	byte ptr DISK,cl
 	sub	ax,ax			; 0 = Select disk
 	jmps	XDSKDRV			; Common disk routine
@@ -1386,69 +1384,69 @@ SELDSK:
 ; The DMA address to the selected sector
 ; (return 00 if successful, 01 if perm err)
 ;----------------------------------------
-;
+
 ; Read a 128 byte sector
-;
+
 READ:
-;
+
 	mov	ax,2			; 2 = Read
 	jmps	XDSKDRV			; Common disk routine
 
 ;----------------------------------------
 ; Write a 128 byte sector
-;
+
 WRITE:
-;
+
 	mov	ax,4			; 4 = Write
 	jmps	XDSKDRV			; Common disk routine
 
 ;----------------------------------------
 ; Move to trk 00 on cur sel drive
-;
+
 HOME:
-;
+
 	mov	word ptr TRK,0
 	mov	ax,6			; 6 = Home current disk
 ; jmps  XDSKDRV      ; Common disk routine (fall through)
-;
+
 ; Common disk routine
-;
+
 ; Disk routine dependant on disk drive
-;
+
 XDSKDRV:
 	cld
 	mov	bl,byte ptr DISK
 	mov	bh,0			; Select routine
-	shl	bx,1h			;  according
-	jmp	word ptr DSKDRVRTN[bx]	;   to required disk
-;
+	shl	bx,1h			; according
+	jmp	word ptr DSKDRVRTN[bx]	; to required disk
+
 ; Select appropriate disk routine
-;
+
 ; Entry  AX = Function
 ; BX = Disk number * 2
-;
+
 DSKRTNSEL:
 	xchg	ax,bx
 	jmp	word ptr DSKFUNRTN[bx]
-;
+
 ; Select appropriate memory disk routine
-;
+
 ; Entry  AX = Function
 ; BX = Disk number * 2
-;
+
 MEMRTNSEL:
 	xchg	ax,bx
 	jmp	word ptr MEMFUNRTN[bx]
 ;----------------------------------------
-;
+
 ; Routine for invalid disk drives
-;
+
 ; Entry  AX = function  0 = SELDSK
 ; 1 = read
 ; 2 = write
 ; 3 = home
 ; CL = deblock flag
-;
+
 DSKRTNINV:
 	mov	byte ptr DBK_FLG,cl	; deblock flag
 	mov	dx,ds
@@ -1462,18 +1460,18 @@ DSKRTNINV:
 	mov	bx,ax
 	ret
 ;----------------------------------------
-;
+
 ; Unknown disk drive interrupt
-;
+
 UNDSKINT:
 	sub	ax,ax			; not supported at present
 	iret
 ;----------------------------------------
-;
+
 ; Select physical disk
-;
+
 ; Entry  AX = disk number * 2
-;
+
 SELECT_PHYDSK:
 	mov	si,ax
 	shr	si,1			; Divide by 2
@@ -1481,94 +1479,94 @@ SELECT_PHYDSK:
 	mov	bx,word ptr DPHTBL[bx]
 	test	byte ptr DRVTYPE[si],80h	; Hard disk drive ?
 	jnz	SELECT_PHYDSKX		; Yes, skip disk reset
-;
+
 	test	dl,1			; 1st select ?
 	jnz	SELECT_PHYDSKX		; No, skip disk reset
-;
+
 	call	RESET_FLOPPY
-;
+
 SELECT_PHYDSKX:
 	ret
-;
+
 ; Select memory disk
-;
+
 SELECT_MEMDSK:
 	mov	bx,offset DPH4
 	ret
 
 ;----------------------------------------
-;
+
 ; Home current disk [physical or memory disk]
-;
+
 HOME_PHYDSK:
 HOME_MEMDSK:
 	ret				; Not supported
 
 ;----------------------------------------
 ; Set track for next rd/write
-;
+
 SETTRK:
-;
+
 	mov	word ptr TRK,cx
 	ret
-;
+
 ; Set sector for next rd/write
-;
+
 SETSEC:
-;
+
 	mov	word ptr SECT,cx
 	ret
-;
+
 ; Xlate logical->physical sector
-;
+
 SECTRAN:
-;
+
 	mov	bx,cx			; we assume logical = physical sector
 	ret
-;
+
 ; Set offset for user buff (DMA)
-;
+
 SETDMA:
-;
+
 	mov	word ptr DMA_ADR,cx
 	ret
-;
+
 ; Set seg base for buff (DMA)
-;
+
 SETDMAB:
-;
+
 	mov	word ptr DMA_SEG,cx
 	ret
-;
+
 ; Return offset of Mem Desc Table
-;
+
 GETSEGT:
-;
+
 	mov	bx,offset MRT
 	ret
-;
+
 ; Return I/O map byte (iobyte)
-;
-;    Input: none
-;    Output: AL:=iobyte
-;
+
+; Input: none
+; Output: AL:=iobyte
+
 GETIOB:
-;
+
 	sub	al,al			; Not implemented
 	ret
-;
+
 ; Set I/O map byte (iobyte)
-;
-;    Input: CL:=iobyte
-;    Output: none
-;
+
+; Input: CL:=iobyte
+; Output: none
+
 SETIOB:
-;
+
 	ret				; Not implemented
 ;----------------------------------------
-;
+
 ; Read physical disk track
-;
+
 READ_PHYTRK:
 	call	CHK_CACHE
 	jb	RPT_RET			; Failed
@@ -1576,14 +1574,14 @@ READ_PHYTRK:
 	jmps	DBA_2_DMA		; Disk buffer -> DMA
 RPT_RET:
 	ret
-;
+
 ; Read memory disk track
-;
+
 READ_MEMTRK:
 	call	CALC_MEMBUF
-;
+
 ; Copy from disk buffer address to dma buffer address
-;
+
 DBA_2_DMA:
 	push	ds
 	push	es
@@ -1594,9 +1592,9 @@ DBA_2_DMA:
 	pop	ds
 	mov	al,0			; OK return
 	ret
-;
+
 ; Write physical disk track
-;
+
 WRITE_PHYTRK:
 	mov	byte ptr WRT_COUNT,cl
 	call	CHK_CACHE
@@ -1610,15 +1608,14 @@ WRITE_PHYTRK:
 	mov	byte ptr DSK_DIRTY,0
 WPT_RET:
 	ret
-;
-;
+
 ; Write memory disk track
-;
+
 WRITE_MEMTRK:
 	call	CALC_MEMBUF
-;
-; Copy from dma buffer address to disk buffer address 
-;
+
+; Copy from dma buffer address to disk buffer address
+
 DMA_2_DBA:
 	push	ds
 	push	es
@@ -1629,9 +1626,9 @@ DMA_2_DBA:
 	pop	ds
 	mov	al,0
 	ret
-;
+
 ; Compute physical floppy disk buffer address (sector offset into DSKBUF)
-;
+
 CALC_PHYBUF:
 	mov	ax,word ptr PHY_SEC
 	call	CALC_BUFSEC
@@ -1640,9 +1637,9 @@ FEAT144_BIOS_SECTRN:
 	add	word ptr DSKBUF_ADR,ax
 	mov	word ptr DSKBUF_SEG,ds
 	ret
-;
+
 ; Compute memory disk buffer address from trk/sect
-;
+
 CALC_MEMBUF:
 	mov	ax,word ptr TRK
 	mov	cl,8
@@ -1657,9 +1654,8 @@ CALC_BUFSEC:
 	mov	cx,64			; Length of memory disk track
 	ret
 
-;
 ; Check track cache: flush dirty buffer if needed, then read new track
-;
+
 CHK_CACHE:
 	call	CALC_PHYSEC
 	mov	ax,word ptr PHY_TRK
@@ -1684,9 +1680,9 @@ CHK_CACHE_READ:
 	mov	byte ptr DSK_DIRTY,0
 CHK_CACHE_HIT:
 	ret
-;
+
 ; Translate logical disk/trk/sect to physical PHY_TRK/PHY_SEC
-;
+
 CALC_PHYSEC:
 	push	bx
 	mov	ax,word ptr SECT
@@ -1728,9 +1724,9 @@ CALC_PHYSEC_RET:
 	ret
 
 ;----------------------------------------
-;
+
 ; Write track sectors to disk (with retry)
-;
+
 WRSEC:
 	push	bx
 	push	dx
@@ -1746,18 +1742,18 @@ WRSEC_LOOP:
 	mov	ah,03h			; Write disk sector(s)
 	int	13h			; PC ROM BIOS Floppy Disk Services
 	jc	WRSEC_DONE		; Failed ?
-;
+
 	test	byte ptr VFLAG,TRUE	; Verify enabled ?
 	jz	WRSEC_DONE		; No, skip
-;
+
 	mov	al,byte ptr NOS2WRT	; Number of sectors
 	mov	ah,04h			; Verify disk sector(s)
 	int	13h			; PC ROM BIOS Floppy Disk Services
-;
+
 WRSEC_DONE:
 	pop	cx			; Retry count
 	jnc	WRSEC_OK		; Disk operation ok - exit ok
-;
+
 	push	ax
 	mov	ah,0			; Reset disk system
 	int	13h			; PC ROM BIOS Floppy Disk Services
@@ -1775,9 +1771,9 @@ WRSEC_ERR:
 	ret
 
 ;----------------------------------------
-;
+
 ; Read track sectors from disk (with retry)
-;
+
 RDSEC:
 	push	bx
 	push	dx
@@ -1792,18 +1788,18 @@ RDSEC_LOOP:
 	int	13h			; PC ROM BIOS Floppy Disk Services
 	pop	cx
 	jnc	RDSEC_OK		; Ok - exit ok
-;
-	push ax
+
+	push	ax
 	mov	ah,0			; Reset disk system
 	int	13h			; PC ROM BIOS Floppy Disk Services
 	pop	ax
-;
+
 	cmp	ah,80h			; Timeout (not ready) ?
 	loopne	RDSEC_LOOP		; No, loop - retry
-;
+
 	call	DISKERROR		; Inform other error
 	jz	RDSEC_RETRY		; Operator 'R'etry
-;
+
 	mov	byte ptr DSK_LAST,0FFh
 	mov	al,01h			; Error - exit
 	jb	RDSEC_ERR
@@ -1823,7 +1819,7 @@ FEAT144_BIOS_RESET:
 	call	CHK_CACHE
 	jnb	RESET_FLOPPY1
 	jmp	ABORT			; We're gone
-;
+
 RESET_FLOPPY1:
 	mov	word ptr 0Ah[bx],offset DPBK1
 	push	bx
@@ -1832,15 +1828,15 @@ RESET_FLOPPY1:
 	pop	bx
 	jnz	RESET_FLOPPY2
 	mov	word ptr 0Ah[bx],offset DPBK2
-;
+
 RESET_FLOPPY2:
 	pop	word ptr TRK		; Restore current track
 	ret
 
 ;----------------------------------------
-;
+
 ; Setup int 13h registers (ch/cl/dh/dl/es:BX) from PHY_TRK/PHY_SEC
-;
+
 SETUP_INTREG:
 	mov	dh,0
 	mov	si,dx
@@ -1888,9 +1884,9 @@ FEAT144_BIOS_TRKBUF:
 	ret
 
 ;----------------------------------------
-;
+
 ; Pack cylinder high bits into CL for int 13h CHS format
-;
+
 PACK_CHS:
 	mov	ch,al
 	shr	ax,1
@@ -1900,21 +1896,21 @@ PACK_CHS:
 	ret
 
 ;----------------------------------------
-;
+
 ; Musical beeps
 ; Entry  SI = sound table offset
 ; (overridden if sound flag set true)
-;
+
 BEEP:
 	test	byte ptr SNDFLG,TRUE	; Use default sound ?
 	jnz	BEEP1
 	mov	si,offset SNDTBL1	; Yes
-;
+
 BEEP1:
 	lodsw
 	test	ax,ax			; End of table
 	jz	BEEPX			; Yes, exit
-;
+
 	xchg	ax,bx
 	mov	al,0B6h
 	out	43h,al
@@ -1946,7 +1942,7 @@ BEEPX:
 ; Exit:  zf = 1 for retry
 ; Zf = 0, cf = 0 for ignore
 ; Zf = 0, cf = 1 for accept
-;
+
 DISKERROR:
 	push	di
 	push	es
@@ -1978,7 +1974,7 @@ DSKERR2:
 	mov	dx,[si]			; DX -> sub message
 	mov	si,offset ERRDISKLEN
 	jmps	DSKERR4
-;
+
 ; Error handling routine
 ; Prints message, SUB message, and question
 ; On the bottom line, and gets user response.
@@ -1986,7 +1982,7 @@ DSKERR2:
 ; DX -> SUB message
 ; Exit:  zf = 1 for retry
 ; Zf = 0 for ignore or accept
-;
+
 DSKERR3:
 	push	di			; Save
 	push	es
@@ -2018,7 +2014,7 @@ DSKERR4:
 
 DSKERR5:
 	call	BEEP
-;
+
 	mov	ah,0			; Read char from keyboard
 	int	16h			; PC ROM BIOS Keyboard Service
 	cmp	al,3			; Control-C ?
@@ -2044,24 +2040,24 @@ DSKERR_R:
 	pop	es
 	pop	di			; Restore pointer
 	ret
-;
+
 ; Abort back to BDOS
-;
+
 DSKERR_B:
 	pop	word ptr CURSOR
 	jmp	ABORT			; We're gone
 
 ;----------------------------------------
-;
+
 ; Prepend 3 spaces then store counted string into ES:DI message buffer
-;
+
 PUTMSG_SP:
 	mov	ax,'  '
 	stosw
 	stosb				; Store 3 space chars
-;
+
 ; Store counted string (byte-length prefix) from DS:SI into ES:DI
-;
+
 PUTMSG:
 	lodsb
 	cbw
@@ -2070,9 +2066,9 @@ PUTMSG:
 	ret
 
 ;----------------------------------------
-;
+
 ; Recursive: convert AX (decimal) to ASCII digits at ES:DI
-;
+
 NUM2ASCII:
 	sub	dx,dx
 	div	word ptr TEN
@@ -2086,12 +2082,12 @@ NUM2ASCII_DIGIT:
 	stosb
 	ret
 ;----------------------------------------
-;
+
 ; ***  Interrupt handling routines  ***
-;
+
 ; User break interrupt routine
 ; Entered when user hits control-break at keyboard
-;
+
 BREAKINT:
 	test	cs:byte ptr BRKFLAG,TRUE	; Here already?
 	jz	BRKINT1			; Skip if not
@@ -2107,7 +2103,7 @@ BRKINT1:
 FEAT144_BIOS_CBSTK:
 	mov	sp,offset BRKSTK	; Our own stack
 	mov	ss,ax			; In this segment
-;
+
 	push	bx			; now push the works
 	push	cx
 	push	dx
@@ -2117,22 +2113,22 @@ FEAT144_BIOS_CBSTK:
 	push	word ptr BOSMSGPTR	; Status line text pointer
 	push	word ptr CURCUR		; Current (in use) cursor type
 	push	word ptr CURSOR
-;
+
 	cli
 	mov	al,20h			; eoi command
 	out	20h,al			; To int control port
 	mov	byte ptr BRKFLAG,TRUE	; Where here now
 	sti				; Ok to interrupt
-;
+
 	mov	word ptr BOSMSGPTR,offset BREAKMES	; 'User program break'
 	call	PRN_STATUS
 	mov	si,offset SNDTBL4
 BRKINT2:
 	call	BEEP
-;
+
 	mov	ah,0			; Read char from keyboard
 	int	16h			; PC ROM BIOS Keyboard Service
-;
+
 	cmp	al,CTRLC		; cntrl-C ?
 	jz	BRKINT3
 	and	al,0DFh			; Force upper case
@@ -2141,7 +2137,7 @@ BRKINT2:
 	cmp	al,'N'			; Or back to user ?
 	mov	si,offset SNDTBL1
 	jnz	BRKINT2			; Try again
-;
+
 	pop	word ptr CURSOR
 	pop	word ptr CURCUR		; Current (in use) cursor type
 	pop	word ptr BOSMSGPTR	; Status line text pointer
@@ -2168,18 +2164,18 @@ BRKINT3:
 	mov	byte ptr BRKFLAG,0	; You may come back
 	jmp	ABORT			; We're gone
 ;----------------------------------------
-;
+
 TIMINTA:
 	test	cs:byte ptr BDOSMODABT,TRUE	; BDOS abort mode set ?
 	jz	TIMINTB			; No
 	int	0E2h
 TIMINTB:
 	iret
-;
+
 ; Timer interrupt routine
 ; Vector set up in signon
 ; Consumes about 6 sec per hour
-;
+
 TIMERINT:
 	dec	cs:word ptr TICK_CTR
 	jns	TIMINTA
@@ -2187,13 +2183,13 @@ TIMERINT:
 	xchg	al,cs:byte ptr VIDBSY	; Set video busy
 	test	al,al			; Already busy ?
 	jnz	TIMINTA			; Yes
-;
+
 ; Come here once every second
-;
+
 	mov	ax,cs			; Get this segment
 	mov	ds,ax			; for stack save
 	mov	word ptr SPSAVE,sp	; Save current stack
-	mov	word ptr SSSAVE,ss	;   and segment
+	mov	word ptr SSSAVE,ss	; and segment
 	mov	ss,ax
 	mov	sp,offset LCLSTK	; Set up local stack
 	sti
@@ -2211,9 +2207,9 @@ TIMERINT:
 	add	word ptr TICK_FRAC,34DCh
 	adc	ax,0000h
 	add	word ptr TICK_CTR,ax
-;
+
 ; Increment ram clocks
-;
+
 	mov	bx,offset DSECOND
 	mov	ah,60h			; For overflow
 	call	ADDECIMAL
@@ -2227,12 +2223,12 @@ TIMINT2:
 	mov	bx,offset ASECOND
 	mov	dx,'60'			; For overflow check
 	call	INCASCII
-;
+
 	call	INCASCII		; Increment minutes
-;
+
 	mov	dx,'24'			; 24 hours
 	call	INCASCII
-;
+
 	call	LEAP			; Next day, check year
 	mov	cx,'01'			; Overflow reset value
 	mov	ax,word ptr AMONTH
@@ -2243,20 +2239,20 @@ TIMINT2:
 	mov	dx,MONTHLENGTH[bx]
 	mov	bx,offset ADAY
 	call	INCASCII		; Next day
-;
+
 	mov	dx,'13'			; Month too high
 	call	INCASCII		; Next month
-;
+
 	mov	cx,'00'			; Overflow reset value
 	mov	dx,':0'			; Ascii 100
 	mov	bx,offset AYEAR
 	call	INCASCII
-;
+
 	mov	bx,offset BCENT
 	call	INCASCII		; Into the next century
-;
+
 ; Now set up bottom line display
-;
+
 TIMINT3:
 	mov	ax,word ptr ASECOND	; Simple ones first
 	mov	word ptr BSECOND,ax
@@ -2264,36 +2260,36 @@ TIMINT3:
 	mov	word ptr BMINUTE,ax
 	mov	ax,word ptr AYEAR
 	mov	word ptr BYEAR,ax
-;
+
 	mov	ax,word ptr AMONTH
 	cmp	ax,word ptr CMONTH	; If new month
-	jnz	TIMINT4			;   then fix it
-;
+	jnz	TIMINT4			; then fix it
+
 	mov	ax,word ptr ADAY
 	cmp	ax,word ptr CDAY	; If day and month same
-	jz	TIMINT5			;   then skip it
-;
+	jz	TIMINT5			; then skip it
+
 TIMINT4:
 	mov	ax,word ptr ADAY
 	mov	word ptr CDAY,ax	; Update check copy
 	call	LZBLANK			; Blank leading zero
 	mov	word ptr BDAY,ax	; Ascii day
-;
+
 	mov	di,offset BMONTH
 	adc	di,0000
 	mov	ax,word ptr AMONTH
 	mov	word ptr CMONTH,ax
-;
+
 	rcr	al,1			; Check msb
 	sbb	al,al			; All ones if carry
 	and	ax,0F0Ah		; Mask AH, AL = 0 or 10
 	add	al,ah			; AL = month number
-;
+
 	mov	dl,'.'			; Assume abbreviated month
 	cmp	al,5			; May ?
 	jnz	TIMINT4A
 	mov	dl,' '			; Yes, remove dot
-;
+
 TIMINT4A:
 	mov	ah,al
 	add	al,al
@@ -2313,34 +2309,34 @@ TIMINT5:
 	mov	ax,word ptr AHOUR
 	cmp	ax,word ptr CHOUR	; If same skip
 	jz	TIMINT8
-;
+
 	mov	word ptr CHOUR,ax	; Update check copy
 	mov	dx,'00'
 	mov	cx,'12'
 	xchg	ah,al			; Switch AH = msb
 	cmp	ax,cx			; Check am/pm
 	jb	TIMINT6			; Skip if am
-;
+
 	mov	word ptr BAMPM,'mp'	; 'pm'
 	jz	TIMINT7			; If 12, skip minus
 	sub	ax,cx			; American time
 	aas
 	or	ax,dx			; Back to ascii
 	jmps	TIMINT7			; Done
-;
+
 TIMINT6:
 	mov	word ptr BAMPM,'ma'	; 'am'
 	cmp	ax,dx
 	jnz	TIMINT7			; Skip if not zero
 	mov	ax,cx			; If zero, make 12
-;
+
 TIMINT7:
 	xchg	al,ah			; Back to backwards
 	call	LZBLANK			; Blank leading zero
 	mov	word ptr BHOUR,ax
-;
+
 ; Get user number
-;
+
 TIMINT8:
 	mov	al,byte ptr BDOSUSER
 	cmp	al,byte ptr CUSER
@@ -2356,33 +2352,33 @@ TIMINT8:
 	xchg	al,ah			; Else switch back
 TIMINT9:
 	mov	word ptr BUSER,ax	; Status line
-;
+
 ; Copy system block message up
-;
+
 TIMINT10:
 	mov	si,offset SYSMESSAGE
 	mov	di,offset BSYSMES
 	mov	cx,14			; Message length
 	rep	movsb
-;
+
 ; Finally update the bottom line
-;
+
 	cmp	word ptr BOSMSGPTR,offset TIMEMSG	; Using standard text ?
 	jnz	TIMINT11		; No, skip
 	test	byte ptr BOSFLAG,TRUE	; Is the line tied up ?
 	jz	TIMINT11		; Yes, skip
-;
+
 	mov	cx,word ptr CURLOFF	; Cursor off
 	mov	ah,1			; Set cursor type
 	int	10h			; PC ROM BIOS Video Driver Service
-;
+
 	call	PRNBOS			; Display status line
-;
+
 	mov	dx,word ptr CURSOR
 	mov	bh,0
 	mov	ah,02h			; Set cursor position
 	int	10h			; PC ROM BIOS Video Driver Service
-;
+
 	mov	cx,word ptr CURCUR	; Current (in use) cursor type
 	mov	ah,01h			; Set cursor type
 	int	10h			; PC ROM BIOS Video Driver Service
@@ -2400,10 +2396,10 @@ TIMINT11:
 	mov	ss,word ptr SSSAVE
 	iret
 ;----------------------------------------
-;
+
 ; Add one to a decimal number
 ; Overflow and set carry if no overflow
-;
+
 ADDECIMAL:
 	mov	al,[bx]
 	inc	al
@@ -2416,14 +2412,14 @@ ADDEC1:
 	dec	bx			; For next time
 	ret
 ;----------------------------------------
-;
+
 ; Add one to an ascii number
 ; Entry:  BX -> ascii value
 ; CX = overflow reset value
 ; DX = one too many
 ; If no overflow, then routine skips its return
-;     and jumps straight to TIMINT3
-;
+; and jumps straight to TIMINT3
+
 INCASCII:
 	mov	ax,[bx]
 	xchg	al,ah			; So that AH = msh
@@ -2432,7 +2428,7 @@ INCASCII:
 	or	ax,'00'			; Back to ascii
 	cmp	ax,dx			; Check overflow
 	jc	INCA1			; Skip if none
-;
+
 	xchg	cl,ch
 	mov	[bx],cx			; Else reset value
 	xchg	cl,ch			; Restore CX
@@ -2444,37 +2440,37 @@ INCA1:
 	pop	ax			; Clear the return
 	jmp	TIMINT3			; Straight to update
 ;----------------------------------------
-;
+
 ; Adjust month length table for leap year
-;
+
 LEAP:
 	mov	ax,word ptr AYEAR	; Fetch ascii year
 	call	ASCIINUM		; Convert to number
 	test	al,al			; Check for 0
 	jz	LEAP1
-;
+
 	test	al,03h			; Divisable by 4 ?
 	jnz	LEAP1			; If not, skip
-;
+
 	mov	word ptr FEBLENGTH,'30'	; Feb leap year +1
 	ret
 LEAP1:
 	mov	word ptr FEBLENGTH,'29'	; Not leap year +1
 	ret
 ;----------------------------------------
-;
+
 ; Convert an ASCII number to binary
-;
+
 ASCIINUM:
 	and	ax,0F0Fh		; Mask the top nibbles
 	xchg	al,ah			; AL=lsb
 	aad				; Ascii adjust
 	ret
 ;----------------------------------------
-;
+
 ; Blank ASCII leading zero in AL
 ; Exit:  carry and zero set if blanked
-;
+
 LZBLANK:
 	cmp	al,'0'
 	jnz	LZB1
@@ -2483,10 +2479,10 @@ LZBLANK:
 LZB1:
 	ret
 ;----------------------------------------
-;
+
 ; Divide by zero error trap interrupt
 ; Displays error and returns to BDOS
-;
+
 ZEROINT:
 	sti
 	pop	si
@@ -2504,7 +2500,7 @@ ZEROINT:
 
 ; Unexpected interrupt error trap interrupt
 ; Displays error and returns to BDOS
-;
+
 UNEXPINT:
 	sti
 	pop	si
@@ -2523,12 +2519,12 @@ UNEXPINT:
 	call	PRN_STATUS
 	mov	si,offset SNDTBL6
 	call	BEEP
-;
+
 INTKEY:
 	mov	ah,0			; Read char from keyboard
 	int	16h			; PC ROM BIOS Keyboard Service
 	pop	word ptr CURSOR
-;
+
 ABORT:
 	mov	byte ptr WRAPFLAG,TRUE	; Default wrapflag
 	mov	byte ptr ATTRIB,07h	; Default attribute
@@ -2539,39 +2535,39 @@ ABORT:
 	mov	dl,0			; Free mem
 	int	0E0h			; Back to bdos
 ;----------------------------------------
-;
+
 ; Put ascii segment:address into string
-;   Entry  ES - segment
+; Entry  ES - segment
 ; SI - address
 ; DS:DI - string address
-;
+
 ; Put hex long word (ES:SI) at DS:DI
-;
+
 PUTHEXLONG:
 	mov	ax,es			; First ES
 	call	PUTHEXWORD
 	inc	di			; Skip
 	mov	ax,si			; Next SI
-;
+
 ; Put hex word AX at DS:DI
-;
+
 PUTHEXWORD:
 	push	ax
 	mov	al,ah
 	call	PUTHEXBYTE
 	pop	ax
-;
+
 ; Put hex byte AL at DS:DI
-;
+
 PUTHEXBYTE:
 	push	ax
 	mov	cl,4
 	shr	al,cl			; Shift upper to lower nybble
 	call	PUTHEXDIGIT
 	pop	ax
-;
+
 ; Put hex digit AL (lower nybble) at DS:DI
-;
+
 PUTHEXDIGIT:
 	and	al,0Fh			; Mask off upper nybble
 	mov	bx,offset HEXCHARTBL
@@ -2580,25 +2576,25 @@ PUTHEXDIGIT:
 	inc	di			; Bump string pointer
 	ret
 ;----------------------------------------
-;
+
 ; Display status text
 ; If not on the bottom of the screen, on the current line
-;
+
 PRN_STATUS:
 	test	byte ptr BOSFLAG,TRUE	; Status line available for use?
 	jnz	PRN_STATUS3		; Yes, print at bottom of screen
-;
+
 	call	PRN_STATUS1		; CR + LF
 	mov	si,word ptr BOSMSGPTR	; Status line text pointer
 	lodsb				; Get message length
 	cbw
-	xchg	ax,cx			;  into CX
+	xchg	ax,cx			; into CX
 	call	PRN_STATUS2		; Display CX characters
-;
+
 PRN_STATUS1:
 	mov	si,offset CRLF		; CR + LF
 	mov	cx,2			; 2 characters
-;
+
 PRN_STATUS2:
 	lodsb				; Next char
 	push	si
@@ -2609,7 +2605,7 @@ PRN_STATUS2:
 	pop	si
 	loop	PRN_STATUS2		; Loop
 	ret
-;
+
 PRN_STATUS3:
 	call	CLRBOS1			; Clear status line
 	call	PRNBOS			; Display status line
@@ -2619,46 +2615,46 @@ PRN_STATUS3:
 	call	SETCURSOR
 	jmp	VCURON
 ;----------------------------------------
-;
+
 ; Print a message on the status line
-;
-PRNBOS:	
+
+PRNBOS:
 	push	ds
 	pop	es
 	mov	di,offset BOSLINE
 	mov	si,word ptr BOSMSGPTR	; Status line text pointer
 	lodsb				; Get message length
 	cbw
-	xchg	ax,cx			;  into CX
+	xchg	ax,cx			; into CX
 	mov	dx,1800h		; Cursor position [Row:24,Col:00]
-	mov	bx,000Ah		; Display page 0, char attrib 0b
-;
+	mov	bx,000Ah		; Display page 0, attribute 0Ah (bright green)
+
 PRNBOS1:
 	lodsb				; Get character
 	cmp	al,[di]
 	stosb				; Store in copy status line
 	jz	PRNBOS2			; skip display if same
-;
+
 	push	ax
 	mov	ah,2			; Set cursor position
 	int	10h			; PC ROM BIOS Video Driver Service
 	pop	ax
-;
+
 	push	cx
 	mov	cx,1			; only 1 char
 	mov	ah,9			; Write attribute and char at cursor
 	int	10h			; PC ROM BIOS Video Driver Service
 	pop	cx
-;
+
 PRNBOS2:
 	inc	dl			; Bump column position
 	loop	PRNBOS1			; Next character
 	ret
 
 ;----------------------------------------
-;
+
 ; Clear the message line
-;
+
 CLRBOS:
 	mov	word ptr BOSMSGPTR,offset TIMEMSG	; Status line
 
@@ -2682,11 +2678,11 @@ CLRBOS2:
 CLRBOSX:
 	ret
 ;----------------------------------------
-;
+
 ; Set current video details
-;
+
 ; Entry = AL = video mode (8 modes as per table SCRMODTBL)
-;
+
 ; 0 = 40 Column text without status line
 ; 1 = 40 Column text without status line
 ; 2 = 80 Column text with status line
@@ -2695,7 +2691,7 @@ CLRBOSX:
 ; 5 = 40 Column graphics without status line
 ; 6 = 80 Column graphics without status line
 ; 7 = 80 Column text with status line
-;
+
 SETCURCRT:
 	and	al,07h
 	mov	byte ptr CRTMOD,al	; Current mode
@@ -2703,7 +2699,7 @@ SETCURCRT:
 	add	ax,offset SCRMODTBL
 	xchg	ax,si			; Calc offset into SCRMODTBL
 	mov	di,offset CRTCOL	; Offset of current video details
-;
+
 	lodsw				; [table  ] width and mode
 	mov	byte ptr BDOSCONWID,al	; Set cpm screen width
 	stosw				; [current] width and mode
@@ -2716,9 +2712,9 @@ SETCURCRT:
 	stosw				; [current] Status line available flag
 	ret
 ;----------------------------------------
-;
+
 ; Reset disks and I/O ports
-;
+
 RESETIO:
 	mov	dl,0			; Drive 0 (A:)
 	mov	ah,0			; Reset disk system
@@ -2734,7 +2730,7 @@ RSTIO1:
 	int	17h			; PC ROM BIOS - Printer service
 	dec	dx
 	jns	RSTIO1			; Previous one
-;
+
 	inc	dx
 	mov	ah,0			; Init port
 	mov	al,byte ptr SER1	; Initialisation parameter (port 1)
@@ -2743,7 +2739,7 @@ RSTIO1:
 	mov	ah,0			; Init port
 	mov	al,byte ptr SER2	; Initialisation parameter (port 2)
 	int	14h			; PC ROM BIOS - Serial Port Service
-;
+
 	push	ds
 	mov	cx,2			; Only reset 2 serial i/o
 	lds	si,dword ptr SERIOBASE	; -> 1st serial i/o base i/o addr
@@ -2751,7 +2747,7 @@ RSTIO2:
 	lodsw				; Get base i/o address
 	test	ax,ax
 	jz	RSTIOX			; No more serial i/o, exit
-;
+
 	add	ax,4			; point to modem control register
 	xchg	ax,dx
 	mov	al,3
@@ -2770,9 +2766,9 @@ data_offset	equ offset $
 ; Data_offset captures the assembler's current location counter ($) at
 ; The end of the code section, then dseg+org re-opens the load segment
 ; At that same offset so data symbols resolve to the correct addresses.
-;
-		dseg
-		org	data_offset	; contiguous with BIOS code
+
+	dseg
+	org	data_offset		; contiguous with BIOS code
 
 BIOS_DATA_RSV	rs	75		; Reserved padding (aligns data to BIOS_CODE+offset)
 
@@ -2782,47 +2778,47 @@ SYS_AUXI	dw	1		; Aux input
 SYS_AUXO	dw	2		; Aux output
 SYS_LST		dw	2		; List input/output
 DELTAVEC	rw	1		; For changing vectors
-DELTALO		rb	1		; 
+DELTALO		rb	1
 
 IO_VEC_GUARD	db	0DBh		; Sentinel / padding after I/O vectors
-;
+
 ; Character i/o branch tables
-;
+
 INROUTINES	dw	offset KEYIN	; Keyboard
-		dw	offset KEYIN	; Cover screen
-		dw	offset SPIN0	; Serial port #0
-		dw	offset SPIN1	; Serial port #0
-		dw	offset KEYIN	; Printer #0
-		dw	offset KEYIN	; Printer #1
-		dw	offset KEYIN	; Printer #2
-		dw	offset KEYIN	; Cassette
-		dw	offset PENIN	; Light pen
-		dw	offset KEYIN	; Game
-		dw	offset KEYIN	; Dummy
-;
+	dw	offset KEYIN		; Cover screen
+	dw	offset SPIN0		; Serial port #0
+	dw	offset SPIN1		; Serial port #0
+	dw	offset KEYIN		; Printer #0
+	dw	offset KEYIN		; Printer #1
+	dw	offset KEYIN		; Printer #2
+	dw	offset KEYIN		; Cassette
+	dw	offset PENIN		; Light pen
+	dw	offset KEYIN		; Game
+	dw	offset KEYIN		; Dummy
+
 OUTROUTINES	dw	offset VIDOUT	; Normal console output
-		dw	offset VIDOUT	; Screen (video)
-		dw	offset SPOUT0	; Serial port #0 output
-		dw	offset SPOUT1	; Serial port #1 output
-		dw	offset PRNOUT0	; Printer #0 output
-		dw	offset PRNOUT1	; Printer #1 output
-		dw	offset PRNOUT2	; Printer #2 output
-		dw	offset VIDOUT	; Cassette
-		dw	offset VIDOUT	; Light pen
-		dw	offset VIDOUT	; Game
-		dw	offset VIDOUT	; Dummy
+	dw	offset VIDOUT		; Screen (video)
+	dw	offset SPOUT0		; Serial port #0 output
+	dw	offset SPOUT1		; Serial port #1 output
+	dw	offset PRNOUT0		; Printer #0 output
+	dw	offset PRNOUT1		; Printer #1 output
+	dw	offset PRNOUT2		; Printer #2 output
+	dw	offset VIDOUT		; Cassette
+	dw	offset VIDOUT		; Light pen
+	dw	offset VIDOUT		; Game
+	dw	offset VIDOUT		; Dummy
 
 OUTSTATUS	dw	offset KEYSTAT	; Keyboard
-		dw	offset NULLST	; Always ready
-		dw	offset SOSTAT0	; Serial port #0
-		dw	offset SOSTAT1	; Serial port #1
-		dw	offset PRNSTAT0	; Printer #0
-		dw	offset PRNSTAT1	; Printer #1
-		dw	offset PRNSTAT2	; Printer #2
-		dw	offset NULLST	; Cassette
-		dw	offset PENST	; Light pen
-		dw	offset NULLST	; Game
-		dw	offset NULLST	; Dummy
+	dw	offset NULLST		; Always ready
+	dw	offset SOSTAT0		; Serial port #0
+	dw	offset SOSTAT1		; Serial port #1
+	dw	offset PRNSTAT0		; Printer #0
+	dw	offset PRNSTAT1		; Printer #1
+	dw	offset PRNSTAT2		; Printer #2
+	dw	offset NULLST		; Cassette
+	dw	offset PENST		; Light pen
+	dw	offset NULLST		; Game
+	dw	offset NULLST		; Dummy
 
 ;----------------------------------------
 
@@ -2834,27 +2830,26 @@ PFK_GUARD	db	0DBh			; Sentinel / padding after key buffers
 
 PFKSCAN	db	'SRQPOMKIHGDCBA@?>=<;'
 
-
 PFKTABLE	db	'DIR A:',CR,0,'............'	; F1
-		db	'DIR B:',CR,0,'............'	; F2
-		db	'STAT',CR,0,'..............'	; F3
-		db	'STAT ',0,'..............'	; F4
-		db	'STAT A:*.*',CR,0,'........'	; F5
-		db	'STAT B:*.*',CR,0,'........'	; F6
-		db	'ASSIGN',CR,0,'............'	; F7
-		db	'CONFIG',CR,0,'............'	; F8
-		db	'DSKMAINT',CR,0,'..........'	; F9
-		db	'FUNCTION',CR,0,'..........'	; F10
-		db	ESC,'H',0,'.................'	; home
-		db	ESC,'A',0,'.................'	; up arrow
-		db	ESC,'I',0,'.................'	; page up
-		db	ESC,'D',0,'.................'	; cursor left
-		db	ESC,'C',0,'.................'	; cursor right
-		db	1Ah,0,'..................'	; end
-		db	ESC,'B',0,'.................'	; cursor down
-		db	0Ah,0,'..................'	; page down
-		db	ESC,'L',0,'.................'	; insert
-		db	7Fh,0,'..................'	; delete
+	db	'DIR B:',CR,0,'............'	; F2
+	db	'STAT',CR,0,'..............'	; F3
+	db	'STAT ',0,'..............'	; F4
+	db	'STAT A:*.*',CR,0,'........'	; F5
+	db	'STAT B:*.*',CR,0,'........'	; F6
+	db	'ASSIGN',CR,0,'............'	; F7
+	db	'CONFIG',CR,0,'............'	; F8
+	db	'DSKMAINT',CR,0,'..........'	; F9
+	db	'FUNCTION',CR,0,'..........'	; F10
+	db	esc,'H',0,'.................'	; home
+	db	esc,'A',0,'.................'	; up arrow
+	db	esc,'I',0,'.................'	; page up
+	db	esc,'D',0,'.................'	; cursor left
+	db	esc,'C',0,'.................'	; cursor right
+	db	1Ah,0,'..................'	; end
+	db	esc,'B',0,'.................'	; cursor down
+	db	0Ah,0,'..................'	; page down
+	db	esc,'L',0,'.................'	; insert
+	db	7Fh,0,'..................'	; delete
 
 STATE		dw	offset VIDNORM	; Current state
 
@@ -2870,13 +2865,12 @@ EPFKPTR		dw	0
 EPFKCOUNT	db	0
 VSETPALBH	db	0		; Set colour palet - BH value
 
-;
 ; Escape lookup table for IBM CP/M codes subset
-;
+
 ESCTBL	db	'HABCDIjkYEJloKLMNabcdefghmnpqstruvwxy/:10'
-;
+
 ; Escape jump table for IBM CP/M codes subset
-;
+
 	dw	offset VHOME		; ESC H - home cursor
 	dw	offset VUP		; ESC A - cursor up
 	dw	offset VDOWN		; ESC B - cursor down
@@ -2901,7 +2895,7 @@ ESCTBL	db	'HABCDIjkYEJloKLMNabcdefghmnpqstruvwxy/:10'
 	dw	offset VNEWCONO		; ESC e - redirect console output
 	dw	offset VNEWAUXI		; ESC f - redirect auxilary input
 	dw	offset VNEWAUXO		; ESC g - redirect auxilary output
-	dw	offset VNEWLST		; ESC h - redirect list output
+	dw	offset VNEWLST		; ESC h - redirect List outputput
 	dw	offset VCURON		; ESC m - turn cursor on
 	dw	offset VCUROFF		; ESC n - turn cursor off
 	dw	offset VREVON		; ESC p - reverse video on
@@ -2918,43 +2912,42 @@ ESCTBL	db	'HABCDIjkYEJloKLMNabcdefghmnpqstruvwxy/:10'
 	dw	offset VPFK		; ESC : - set programmable function keys
 	dw	offset VBOSON		; ESC 1 - turn status line on
 ESCJMP	dw	offset VBOSOFF		; ESC 0 - turn off/clear status line
-;
+
 ESC_GUARD	db	0DBh			; Sentinel / padding after ESC table
-;
+
 ; Memory region table
-;
+
 MRT		db	1		; One region
 MRTSTART	rw	1
 MRTLEN		rw	1
-;
-		rs	28		; 
 
-BRKFLAG		db	0		;
+	rs	28
+
+BRKFLAG		db	0
 BRK_GUARD	db	0DBh		; Sentinel / padding before break stack
 SPBREAK		dw	0		; stack pointer
 SSBREAK		dw	0		; stack segment
 
 BREAKMES	db	39h		; length of following text
-		db	'    *** User Program Break ***      '
-		db	'Return to CP/M (Y/N)?'
+	db	'    *** User Program Break ***      '
+	db	'Return to CP/M (Y/N)?'
 
 ZEROMES		db	49h		; length of following text
-		db	' *** Divide by Zero Error from '
+	db	' *** Divide by Zero Error from '
 ZEROMESADR	db	'0000:0000'
-		db	 ' ***    Type any key to continue.'
+	db	' ***    Type any key to continue.'
 
 INTERMES	db	4Dh		; length of following text
-		db	' *** Unexpected Interrupt #'
+	db	' *** Unexpected Interrupt #'
 INTERMESNUM	db	'00'
-		db	' from '
+	db	' from '
 INTERMESADR	db	'0000:0000'
-		db	 ' ***    Type any key to continue.'
-;
+	db	' ***    Type any key to continue.'
+
 HEXCHARTBL	db	'0123456789ABCDEF'
 
-;
 ; Screen data
-;
+
 CRTMOD		db	0		; Screen mode
 CRTTEL		db	6h		; Length of entries in SCRMODTBL
 CRTCOL		db	0		; Max column (width)
@@ -2965,33 +2958,33 @@ CURLOFF		dw	0		; Cursor lines off code
 BOSFLAG		db	0		; Bottom of screen line flag
 
 ERASE_ATTR	db	0			; Background attr mask for scroll/erase (int 10h)
-;
+
 ; Screen mode table detail
 ; +0 (byte) = Screen width
 ; +1 (byte) = Video mode for BIOS equipment word
 ; +2 (word) = "Cursor on" shape
 ; +4 (byte) = Status line available (0FFh=Yes, 00h=No)
 ; +5 (byte) = Mode (0FFh=Text, 00h=Graphics)
-;
+
 SCRMODTBL	db	28h,10h,07h,06h,00h,0FFh	; 40 Column text
-		db	28h,10h,07h,06h,00h,0FFh	; 40 Column text
-		db	50h,20h,07h,06h,0FFh,0FFh	; 80 Column text
-		db	50h,20h,07h,06h,0FFh,0FFh	; 80 Column text
-		db	28h,20h,07h,06h,00h,00h		; 40 Column graphics
-		db	28h,20h,07h,06h,00h,00h		; 40 Column graphics
-		db	50h,20h,07h,06h,00h,00h		; 80 Column graphics
-		db	50h,30h,0Ch,0Bh,0FFh,0FFh	; 80 Column text
-;
+	db	28h,10h,07h,06h,00h,0FFh	; 40 Column text
+	db	50h,20h,07h,06h,0FFh,0FFh	; 80 Column text
+	db	50h,20h,07h,06h,0FFh,0FFh	; 80 Column text
+	db	28h,20h,07h,06h,00h,00h	; 40 Column graphics
+	db	28h,20h,07h,06h,00h,00h	; 40 Column graphics
+	db	50h,20h,07h,06h,00h,00h	; 80 Column graphics
+	db	50h,30h,0Ch,0Bh,0FFh,0FFh	; 80 Column text
+
 CRLF		db	CR,LF
-;
+
 BOSMSGPTR	dw	offset TIMEMSG	; pointer to status line text
 					; (defaults to time message)
-;
+
 SPSAVE		rw	1		; Save stack pointer
 SSSAVE		rw	1		; Save stack segment
-;
+
 TICK_GUARD1	db	0DBh		; Sentinel / padding
-;
+
 VIDBSY		db	0		; Video busy flag
 TICK_CTR	db	12h,00h		; Timer tick countdown (high word of 32-bit)
 TICK_FRAC	dw	0		; Timer tick fractional accumulator
@@ -2999,51 +2992,49 @@ CMONTH		dw	'99'		; Initially impossible
 CDAY		dw	'99'
 CHOUR		dw	'00'
 CUSER		db	99
-;
+
 TICK_GUARD2	db	0DBh		; Sentinel / padding
-;
+
 TIMEMSG		db	42h
-		db	' V1.1-03 U'
+	db	' V1.1-03 U'
 BUSER		rw	1
-		db	'     '
+	db	'     '
 BHOUR		db	' 0'
-		db	':'
+	db	':'
 BMINUTE		rw	1
-		db	':'
+	db	':'
 BSECOND		rw	1
-		db	' '
+	db	' '
 BAMPM		dw	'  '
-		db	'     '
+	db	'     '
 BMONTH		db	' Dec. '
 BDAY		rw	1
-		db	', '
+	db	', '
 BCENT		db	'20'
 BYEAR		rw	1
-		db	'     '
-;
+	db	'     '
+
 BSYSMES		rb	14
-;
-		db	0DBh		; ?
-;
+
+	db	0DBh			; ?
+
 BOSLINE		rs	80
-;
+
 MONTHNAMES	db	'JanFebMarAprMayJun'
-		db	'JulAugSepOctNovDec'
-;
+	db	'JulAugSepOctNovDec'
+
 MONTHLENGTH	dw	'32'
 FEBLENGTH	dw	'29','32','31','32','31'
-		dw	'32','32','31','32','31','32'
-;
-;
+	dw	'32','32','31','32','31','32'
+
 ; Error messages
-;
+
 ERRDISKLEN	rb	1
 ERRDISK		db	'Disk Error  Drive '
 EDRIVE		rb	1
-		db	':  Track '
+	db	':  Track '
 ETRACK		rb	4
-		db	0
-
+	db	0
 
 TEN		dw	10
 
@@ -3064,44 +3055,43 @@ DE03		db	0Fh,'Write-Protected'
 DE02		db	11h,'Addr Mark Missing'
 DE01		db	0Fh,'Illegal Command'
 DE00		db	0Dh,'Unknown Error'
-;
-; Table matching the return code with message
-;
-EDSKTBL		db	0FFh
-		dw	offset DEFF	; 'Sense Op Failed'
-		db	0BBh
-		dw	offset DEBB	; 'Undefined Error'
-		db	080h
-		dw	offset DE80	; 'Failed to Respond'
-		db	040h
-		dw	offset DE40	; 'Seek Failed'
-		db	020h
-		dw	offset DE20	; 'Controller Failed'
-		db	011h
-		dw	offset DE11	; 'Data Corrected'
-		db	010h
-		dw	offset DE10	; 'Data Error'
-		db	0Bh
-		dw	offset DE0B		; 'Track Flag Error'
-		db	09h
-		dw	offset DE09		; 'DMA Address Error'
-		db	08h
-		dw	offset DE08		; 'DMA Chip Failure'
-		db	07h
-		dw	offset DE07		; 'Drive Parameters'
-		db	05h
-		dw	offset DE05		; 'Reset Failed'
-		db	04h
-		dw	offset DE04		; 'Sector Not Found'
-		db	03h
-		dw	offset DE03		; 'Write-Protected'
-		db	02h
-		dw	offset DE02		; 'Addr Mark Missing'
-		db	01h
-		dw	offset DE01		; 'Illegal Command'
-EDSK_CNT	equ	(offset $ - offset EDSKTBL)/3
-		dw	offset DE00		; 'Unknown Error'
 
+; Table matching the return code with message
+
+EDSKTBL		db	0FFh
+	dw	offset DEFF		; 'Sense Op Failed'
+	db	0BBh
+	dw	offset DEBB		; 'Undefined Error'
+	db	080h
+	dw	offset DE80		; 'Failed to Respond'
+	db	040h
+	dw	offset DE40		; 'Seek Failed'
+	db	020h
+	dw	offset DE20		; 'Controller Failed'
+	db	011h
+	dw	offset DE11		; 'Data Corrected'
+	db	010h
+	dw	offset DE10		; 'Data Error'
+	db	0Bh
+	dw	offset DE0B		; 'Track Flag Error'
+	db	09h
+	dw	offset DE09		; 'DMA Address Error'
+	db	08h
+	dw	offset DE08		; 'DMA Chip Failure'
+	db	07h
+	dw	offset DE07		; 'Drive Parameters'
+	db	05h
+	dw	offset DE05		; 'Reset Failed'
+	db	04h
+	dw	offset DE04		; 'Sector Not Found'
+	db	03h
+	dw	offset DE03		; 'Write-Protected'
+	db	02h
+	dw	offset DE02		; 'Addr Mark Missing'
+	db	01h
+	dw	offset DE01		; 'Illegal Command'
+EDSK_CNT	equ	(offset $ - offset EDSKTBL)/3
+	dw	offset DE00		; 'Unknown Error'
 
 PERR		db	11h,'    Printer Error'
 PERRTO		db	08h,'Time Out'
@@ -3112,24 +3102,24 @@ PERRSP		db	01h,' '
 ERRQUEST	db	16h,'Retry, Ignore, Accept?'
 
 DSKMSG		db	80		; Message length
-		rs	80		; Disk error message
+	rs	80			; Disk error message
 
 SNDFLG		db	0FFh
 SNDTBL1		db	04h,00h,74h,04h,00h,00h
 SNDTBL2		db	02h,00h,74h,04h,00h,00h
 SNDTBL3		db	04h,00h,12h,07h,05h,00h,0E8h,08h
-		db	04h,00h,4ch,05h,05h,00h,0F2h,05h,00h,00h
+	db	04h,00h,4ch,05h,05h,00h,0F2h,05h,00h,00h
 SNDTBL4		db	04h,00h,12h,07h,05h,00h,0E8h,08h,00h,00h
 SNDTBL5		db	0Ch,00h,0E8h,08h,04h,00h,0ACh,06h
-		db	04h,00h,0E8h,08h,04h,00h,0ACh,06h,0Ah
-		db	00h,4Ch,05h,0Ch,00h,0ACh,06h,00h,00h
+	db	04h,00h,0E8h,08h,04h,00h,0ACh,06h,0Ah
+	db	00h,4Ch,05h,0Ch,00h,0ACh,06h,00h,00h
 SNDTBL6		db	06h,00h,0E8h,08h,06h,00h,12h,07h
-		db	06h,00h,0E8h,08h,06h,00h,0F2h,05h,06h
-		db	00h,0E8h,08h,06h,00h,74h,04h,00h,00h
+	db	06h,00h,0E8h,08h,06h,00h,0F2h,05h,06h
+	db	00h,0E8h,08h,06h,00h,74h,04h,00h,00h
 
 ;----------------------------------------
 ; Serial Port init parm
-;
+
 ; Bits	7,6,5		4,3		2		1,0
 ; Baud rate  parity    stop bits  word length (bits)
 ; 000 = 110  x0 = none  0 = 1    10 = 7
@@ -3139,61 +3129,59 @@ SNDTBL6		db	06h,00h,0E8h,08h,06h,00h,12h,07h
 ; 101 = 2400
 ; 110 = 4800
 ; 111 = 9600
-;
+
 SER1		db	43h		; Serial port 1 init parms
 ; ; 300 baud
-;                                       ; parity none
+; ; parity none
 ; ; 1 stop bit
 ; ; 8 bits
 SER2		db	43h		; Serial port 2 init parms
 ; ; 300 baud
-;                                       ; parity none
+; ; parity none
 ; ; 1 stop bit
 ; ; 8 bits
-;
+
 SERBUFSTS	db	20h		; tx hold reg empty code ?
 SERIOBASE	dw	0000h,0040h	; Segment [40] and offset [0]
 ; ;  of 1st serial i/o port
 ; ;  base i/o address
 ; ;  (filled in by post)
-;
+
 ;----------------------------------------
-;
+
 PENBUF		rs	6
 PENBUFEND	equ	(offset $)
 PENPTR		dw	offset PENBUFEND
 PENERR		db	1Fh,'    Waiting for Light Pen Input'
-;
+
 PEN_GUARD	db	0DBh		; Sentinel / padding after light pen data
-;
+
 ;----------------------------------------
-;
+
 ; Disk parameters
-;
+
 DISK		db	0		; Current/required disk
-;
+
 ; int 0E6 (unknown disk drive) parameter table
-;
+
 DRV_NUM		db	0		; drive number (0=1st, 1=2nd...)
 DBK_FLG		db	0		; deblock flag
-					; 	0=normal write
-					;	1=directory write
-					;	?=write with no preread)
+					; 0=normal write
+					; 1=directory write
+					; ?=write with no preread)
 TRK		dw	0		; Required track
 SECT		dw	0		; Required sector
 DMA_ADR		dw	0		; Required DMA address
 DMA_SEG		dw	0		; Required DMA segment
 DMAADDR		equ	dword ptr DMA_ADR
 VFLAG		db	FALSE		; Verify (non-zero if verify writes)
-;
-;
-;
+
 DSK_DATA_GUARD	db	0DBh		; Sentinel / padding before disk buffer data
-;
+
 DSKBUF_ADR	dw	0		; Disk buffer address
 DSKBUF_SEG	dw	0		; Disk buffer segment
 DSKBUFADDR	equ	dword ptr DSKBUF_ADR
-;
+
 FDDMAX		db	04h		; Number of floppy/total drives
 DSK_LAST	db	0FFh		; Last accessed disk number
 TRK_LAST	dw	0000h		; Last accessed track number
@@ -3201,194 +3189,194 @@ DSK_DIRTY	db	00h		; Write-pending flag (0=clean, FFh=dirty)
 WRT_COUNT	db	00h		; Write deblock sector countdown
 MDSKSEG		dw	0D000h		; Mdisk segment
 MDSKSIZ		dw	0000h		; Mdisk size (Kb)
-;
+
 ; Disk routines - selected by disk
-;
+
 DSKDRVRTN	dw	offset DSKRTNSEL	; Disk	0  - A
-		dw	offset DSKRTNSEL	;	1  - B
-		dw	offset DSKRTNSEL	;	2  - C
-		dw	offset DSKRTNSEL	;	3  - D
-		dw	offset DSKRTNINV	;	4  - E
-		dw	offset DSKRTNINV	;	5  - F
-		dw	offset DSKRTNINV	;	6  - G
-		dw	offset DSKRTNINV	;	7  - H
-		dw	offset DSKRTNINV	;	8  - I
-		dw	offset DSKRTNINV	;	9  - J
-		dw	offset DSKRTNINV	;	10 - K
-		dw	offset DSKRTNINV	;	11 - L
-DSKDRVRTNM	dw	offset DSKRTNINV	;	12 - M
-		dw	offset DSKRTNINV	;	13 - N
-		dw	offset DSKRTNINV	;	14 - O
-		dw	offset DSKRTNINV	;	15 - P
-;
+	dw	offset DSKRTNSEL	; 1  - B
+	dw	offset DSKRTNSEL	; 2  - C
+	dw	offset DSKRTNSEL	; 3  - D
+	dw	offset DSKRTNINV	; 4  - E
+	dw	offset DSKRTNINV	; 5  - F
+	dw	offset DSKRTNINV	; 6  - G
+	dw	offset DSKRTNINV	; 7  - H
+	dw	offset DSKRTNINV	; 8  - I
+	dw	offset DSKRTNINV	; 9  - J
+	dw	offset DSKRTNINV	; 10 - K
+	dw	offset DSKRTNINV	; 11 - L
+DSKDRVRTNM	dw	offset DSKRTNINV	; 12 - M
+	dw	offset DSKRTNINV	; 13 - N
+	dw	offset DSKRTNINV	; 14 - O
+	dw	offset DSKRTNINV	; 15 - P
+
 ; Disk Function Routines
-;
+
 DSKFUNRTN	dw	offset SELECT_PHYDSK	; Select disk
-		dw	offset READ_PHYTRK	; Read track
-		dw	offset WRITE_PHYTRK	; Write track
-		dw	offset HOME_PHYDSK	; Home current disk
-;
+	dw	offset READ_PHYTRK	; Read track
+	dw	offset WRITE_PHYTRK	; Write track
+	dw	offset HOME_PHYDSK	; Home current disk
+
 ; Memory Disk Function Routines
-;
+
 MEMFUNRTN	dw	offset SELECT_MEMDSK	; Select disk
-		dw	offset READ_MEMTRK	; Read track
-		dw	offset WRITE_MEMTRK	; Write track
-		dw	offset HOME_MEMDSK	; Home current disk
+	dw	offset READ_MEMTRK	; Read track
+	dw	offset WRITE_MEMTRK	; Write track
+	dw	offset HOME_MEMDSK	; Home current disk
 
 PHY_TRK		dw	0000h		; Physical track for current operation
 PHY_SEC		dw	0000h		; Physical sector for current operation
 
 DPHTBL		dw	offset DPH0
-		dw	offset DPH1
-		dw	offset DPH2
-		dw	offset DPH3
+	dw	offset DPH1
+	dw	offset DPH2
+	dw	offset DPH3
 
 DRVTYPE		db	0,0,0,0		; Drive type table (bit7=hard disk)
 HDDPARMS	dw	0,0,0,0		; Hard disk parameter table pointers
 NOS2WRT		db	0		; No. sectors to write (ROM BIOS call)
 
 DRV_TBL_GUARD	db	0DBh		; Sentinel / padding after drive tables
-;
+
 FIDDSMEM	dw	0		; FIDDS (kb) memory
 FIDDSSEG	dw	0		; FIDDS (kb) memory segment ?
 CSV_BASE	dw	offset DIRBUF	; Deblocking: CSV base (directory buffer)
-;
+
 ; IBM PC Diskette parameters - used by floppy disk controller
-;
+
 DSKPRM		db	0CFh	; bits 7-4 :step rate - Ch=8ms
 				; Bits 3-0 :head unload time - Fh = 240ms
-		db	02h	; bits 7-1 :head load time - 2h = 8ms
+	db	02h			; bits 7-1 :head load time - 2h = 8ms
 				; Bit  0   :non-DMA mode (always 0)
-		db	25h	; delay until motor turned off (in clock ticks)
-		db	02h	; bytes per sector
+	db	25h			; delay until motor turned off (in clock ticks)
+	db	02h			; bytes per sector
 				; (00h=128, 01h=256, 02h=512, 03h=1024)
-		db	08h	; sectors per track
-		db	2Ah	; length of gap between sectors
+	db	08h			; sectors per track
+	db	2Ah			; length of gap between sectors
 				; (2Ah for 5.25", 1Bh for 3.5")
-		db	0FFh	; data length
+	db	0FFh			; data length
 				; (ignored if bytes-per-sector field non zero)
-		db	50h	; gap length when formatting
+	db	50h			; gap length when formatting
 				; (50h for 5.25", 6Ch for 3.5")
-		db	0E5h	; format filler byte
-		db	00h	; head settle time in milliseconds
-		db	04h	; motor start time in 1/8 second
-;
+	db	0E5h			; format filler byte
+	db	00h			; head settle time in milliseconds
+	db	04h			; motor start time in 1/8 second
+
 DSKPRM_GUARD	db	0DBh		; Sentinel / padding after disk parameters
 
 DPBASE		equ	$
 DPH0		dw	0		; No translation table
-		dw	0,0,0		; reserved
-		dw	offset DIRBUF	; Directory scratch pad
+	dw	0,0,0			; reserved
+	dw	offset DIRBUF		; Directory scratch pad
 DPB0		dw	0
-		dw	0		; Check vector 0
-		dw	0		; Allocation vector 0
-;
+	dw	0			; Check vector 0
+	dw	0			; Allocation vector 0
+
 DPH1		dw	0		; No translation table
-		dw	0,0,0		; reserved
-		dw	offset DIRBUF	; Directory scratch pad
+	dw	0,0,0			; reserved
+	dw	offset DIRBUF		; Directory scratch pad
 DPB1		dw	0
-		dw	0		; Check vector 0
-		dw	0		; Allocation vector 0
-;
+	dw	0			; Check vector 0
+	dw	0			; Allocation vector 0
+
 DPH2		dw	0		; No translation table
-		dw	0,0,0		; reserved
-		dw	offset DIRBUF	; Directory scratch pad
+	dw	0,0,0			; reserved
+	dw	offset DIRBUF		; Directory scratch pad
 DPB2		dw	0
-		dw	0		; Check vector 0
-		dw	0		; Allocation vector 0
-;
+	dw	0			; Check vector 0
+	dw	0			; Allocation vector 0
+
 DPH3		dw	0		; No translation table
-		dw	0,0,0		; reserved
-		dw	offset DIRBUF	; Directory scratch pad
+	dw	0,0,0			; reserved
+	dw	offset DIRBUF		; Directory scratch pad
 DPB3		dw	0
-		dw	0		; Check vector 0
-		dw	0		; Allocation vector 0
-;
+	dw	0			; Check vector 0
+	dw	0			; Allocation vector 0
+
 DPH4		dw	0		; No translation table
-		dw	0,0,0		; reserved
-		dw	offset DIRBUF	; Directory scratch pad
+	dw	0,0,0			; reserved
+	dw	offset DIRBUF		; Directory scratch pad
 DPB4		dw	0
-		dw	0		; Check vector 0
-		dw	CSV14		; Allocation vector 4
-;
+	dw	0			; Check vector 0
+	dw	CSV14			; Allocation vector 4
+
 ; DPBK1 and DPBK2 Physical disks
-;
+
 DPBK1	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	03h	; 03 		; Block shift factor		(bsh)
-	db	07h	; 07 		; Block mask			(blm)
-	db	00h	; 00 		; Null mask			(exm)
-	dw	009Bh	; 0155 		; Disk size - 1			(dsm)
-	dw	003Fh	; 0063 		; Directory max			(drm)
-	db	0C0h	; 11000000b	; Alloc 0			(AL0)
-	db	00h	; 00000000b	; Alloc 1			(AL1)
-	dw	0010h	; 0016		; Check size			(cks)
-	dw	0001h	; 0001		; Track offset			(off)
-;
+	db	03h			; 03 		; Block shift factor		(bsh)
+	db	07h			; 07 		; Block mask			(blm)
+	db	00h			; 00 		; Null mask			(exm)
+	dw	009Bh			; 0155 		; Disk size - 1			(dsm)
+	dw	003Fh			; 0063 		; Directory max			(drm)
+	db	0C0h			; 11000000b	; Alloc 0			(AL0)
+	db	00h			; 00000000b	; Alloc 1			(AL1)
+	dw	0010h			; 0016		; Check size			(cks)
+	dw	0001h			; 0001		; Track offset			(off)
+
 	db	0DBh			; ?
-;
+
 DPBK2	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	04h	; 04 		; Block shift factor		(bsh)
-	db	0Fh	; 15 		; Block mask			(blm)
-	db	01h	; 01 		; Null mask			(exm)
-	dw	009Dh	; 0157 		; Disk size - 1			(dsm)
-	dw	003Fh	; 0063 		; Directory max			(drm)
-	db	080h	; 10000000b	; Alloc 0			(AL0)
-	db	00h	; 00000000b	; Alloc 1			(AL1)
-	dw	0010h	; 0016		; Check size			(cks)
-	dw	0001h	; 0001		; Track offset			(off)
-;
+	db	04h			; 04 		; Block shift factor		(bsh)
+	db	0Fh			; 15 		; Block mask			(blm)
+	db	01h			; 01 		; Null mask			(exm)
+	dw	009Dh			; 0157 		; Disk size - 1			(dsm)
+	dw	003Fh			; 0063 		; Directory max			(drm)
+	db	080h			; 10000000b	; Alloc 0			(AL0)
+	db	00h			; 00000000b	; Alloc 1			(AL1)
+	dw	0010h			; 0016		; Check size			(cks)
+	dw	0001h			; 0001		; Track offset			(off)
+
 	db	0DBh			; ?
-;
+
 ; DPBK3 and DPBK4 Memory disks
 
 DPBK3	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	03h	; 03 		; Block shift factor		(bsh)
-	db	07h	; 07 		; Block mask			(blm)
-	db	00h	; 00 		; Null mask			(exm)
-	dw	0000	; 0000 		; Disk size - 1			(dsm)
-	dw	003Fh	; 0063 		; Directory max			(drm)
-	db	0C0h	; 11000000b	; Alloc 0			(AL0)
-	db	00h	; 00000000b	; Alloc 1			(AL1)
-	dw	0000h	; 0000		; Check size			(cks)
-	dw	0000h	; 0000		; Track offset			(off)
-;
+	db	03h			; 03 		; Block shift factor		(bsh)
+	db	07h			; 07 		; Block mask			(blm)
+	db	00h			; 00 		; Null mask			(exm)
+	dw	0000			; 0000 		; Disk size - 1			(dsm)
+	dw	003Fh			; 0063 		; Directory max			(drm)
+	db	0C0h			; 11000000b	; Alloc 0			(AL0)
+	db	00h			; 00000000b	; Alloc 1			(AL1)
+	dw	0000h			; 0000		; Check size			(cks)
+	dw	0000h			; 0000		; Track offset			(off)
+
 	db	0DBh			; ?
-;
+
 DPBK4	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	04h	; 04 		; Block shift factor		(bsh)
-	db	0Fh	; 15 		; Block mask			(blm)
-	db	01h	; 01 		; Null mask			(exm)
-	dw	0000h	; 0000 		; Disk size - 1			(dsm)
-	dw	003Fh	; 0063 		; Directory max			(drm)
-	db	080h	; 10000000b	; Alloc 0			(AL0)
-	db	00h	; 00000000b	; Alloc 1			(AL1)
-	dw	0000h	; 0000		; Check size			(cks)
-	dw	0000h	; 0000		; Track offset			(off)
-;
+	db	04h			; 04 		; Block shift factor		(bsh)
+	db	0Fh			; 15 		; Block mask			(blm)
+	db	01h			; 01 		; Null mask			(exm)
+	dw	0000h			; 0000 		; Disk size - 1			(dsm)
+	dw	003Fh			; 0063 		; Directory max			(drm)
+	db	080h			; 10000000b	; Alloc 0			(AL0)
+	db	00h			; 00000000b	; Alloc 1			(AL1)
+	dw	0000h			; 0000		; Check size			(cks)
+	dw	0000h			; 0000		; Track offset			(off)
+
 	db	0DBh			; ?
-;
+
 	rs	64			; Break interrupt stack
 BRKSTK	equ	offset $
-;
+
 	rs	64			; Local stack
 LCLSTK	equ	offset $		; (for init and timer routines)
-;
+
 DSKBUF	equ	offset $		; Disk buffer
-;
+
 ; INIT (once-only cold-start code) is placed at DSKBUF — the disk sector
 ; Buffer.  This is the classic CP/M overlay trick: cold-start code shares
 ; The disk buffer, which is overwritten on the first disk read anyway.
 ; After INIT completes, DSKBUF is reclaimed as the sector buffer.
-;
+
 	cseg
 	org	DSKBUF			; overlays disk sector buffer (freed after boot)
-;
+
 ;----------------------------------------
-;
+
 ; Enter from boot ROM or loader
-;
+
 ; Once only INIT code/data occupies the disk buffer.
-;
+
 INIT:
 	mov	ax,cs
 	mov	ss,ax
@@ -3398,10 +3386,10 @@ INIT:
 	mov	ds,ax
 	mov	es,ax
 	mov	byte ptr IPLDSK,dl	; Initial program load disk
-;
+
 	mov	si,offset SIGNON	; 'cpm-86 for the PC..'
 	call	DISP_STR		; Display string
-;
+
 	int	11h			; PC ROM BIOS - Get Equipment List
 	add	ax,0040h
 	and	ax,0FFF3h
@@ -3413,7 +3401,7 @@ INIT:
 	mov	al,dl			; Number of drives
 	pop	dx
 	jc	INIT1			; Error ?
-;
+
 	shl	al,1h
 	shl	al,1h
 	or	dl,al
@@ -3423,12 +3411,12 @@ INIT1:
 	call	DISP_HDWNUM		; Display string and number supported
 	mov	byte ptr FDDMAX,al
 	mov	byte ptr FDDCNT,al
-;
+
 	mov	si,offset SIGNHDD	; 'Hard Disk Drive(s)'
 	mov	cx,0302h		; mask + shift factor
 	call	DISP_HDWNUM		; Display string and number supported
 	mov	byte ptr HDDCNT,al	; Save number hard drives
-;
+
 	push	dx
 	call	INIT_DRIVES
 	call	INIT_DEFDRV
@@ -3436,27 +3424,27 @@ INIT1:
 	mov	si,offset SIGNPRT	; 'Parallel Printer(s)'
 	mov	cx,030Eh		; mask + shift factor
 	call	DISP_HDWNUM		; Display string and number supported
-;
+
 	mov	si,offset SYS_LST
 	mov	cx,0010h
 	call	CFG_STORE_VEC
 	mov	si,offset SIGNSER	; 'Serial Port(s)'
 	mov	cx,0709h		; mask + shift factor
 	call	DISP_HDWNUM		; Display string and number supported
-;
+
 	mov	si,offset SYS_AUXI
 	mov	cx,0004h
 	call	CFG_STORE_VEC
 	mov	si,offset SYS_AUXO
 	call	CFG_STORE_VEC
-;
+
 	call	INITMDISK		; Initialize memory disk
 	call	SETMDSKDP		; Setup memory disk parameters
 	mov	si,offset SIGNMEM	; 'Memory (Kb)'
 	call	DISP_STR8
 	int	12h			; PC ROM BIOS - Get Memory Size
 ; ; Returns AX=Number of kilobytes
-;
+
 	mov	cl,6			; 2^6 * 16 =1024
 	shl	ax,cl			; AX = num paragraphs
 	mov	dx,word ptr MDSKSEG
@@ -3476,15 +3464,15 @@ INIT3:
 	mov	cl,06h
 	shr	ax,cl
 	call	DISP_LRGNUM		; Display large number (AX)
-;
+
 	mov	cx,word ptr MDSKSIZ	; Zero Kb Memory disk ?
 	jcxz	INIT4			; Yes, skip it
-;
+
 	mov	si,offset SIGNMDK	; 'M:Disk (Kb)'
 	call	DISP_STR8
 	mov	ax,word ptr MDSKSIZ
 	call	DISP_LRGNUM		; Display large number (AX)
-;
+
 INIT4:
 	call	SETFIDMEM		; Setup FIDDS memory
 	call	DISP_CRLF
@@ -3511,19 +3499,19 @@ INIT5:
 	cli
 	sub	ax,ax
 	mov	ds,ax			; To address zero page
-;
+
 	mov	ZEROOFF,offset ZEROINT	; Divide by zero interrupt
 	mov	ZEROSEG,cs
-;
+
 	mov	BREAKOFF,offset BREAKINT	; User Break interrupt
 	mov	BREAKSEG,cs
-;
+
 	mov	TIMEROFF,offset TIMERINT	; Timer interrupt
 	mov	TIMERSEG,cs
-;
+
 	mov	UNDSKOFF,offset UNDSKINT	; Unknown disk drive interrupt
 	mov	UNDSKSEG,cs
-;
+
 	push	cs
 	pop	ds
 	mov	cl,byte ptr DEFDRV	; Default drive
@@ -3531,11 +3519,11 @@ FEAT144_BIOS_COLDJMP:
 	mov	byte ptr BDOSCURDRV,cl
 	sti
 	jmp	CCP			; Enter as for warm boot
-;
+
 ;----------------------------------------
-;
+
 ; Setup Interrupt Service Routine vectors
-;
+
 SETISR:
 	sub	ax,ax
 	mov	es,ax
@@ -3549,21 +3537,21 @@ SETISR1:
 	inc	di			; AT patch - Originally stosw instruction
 	xchg	ax,bx
 	loop	SETISR1
-;
+
 	add	di,0008h
 	mov	cx,017Ch
 SETISR2:
 	inc	di			; AT patch - Originally stosw instruction
 	xchg	ax,bx
 	loop	SETISR2
-;
+
 ; Set BDOS offset to proper interrupt
-;
+
 	mov	BDOSOFF,offset BDOS_OFST
 	mov	BDOSSEG,cs
-;
+
 ; Set diskette parameters (pointer at int-1E vector)
-;
+
 	mov	I1EOFF,offset DSKPRM
 	mov	I1ESEG,cs
 	ret
@@ -3636,65 +3624,65 @@ APPLY_CFG_RET:
 	ret
 
 ;----------------------------------------
-;
+
 ; Initialize memory disk (M:)
-;
-;    Validates and initilises memory at
-;    Required segment address
-;
+
+; Validates and initilises memory at
+; Required segment address
+
 INITMDISK:
 	push	ds
 	push	es
 	mov	ax,word ptr MDSKSEG	; Memory disk segment address
 	test	ax,ax			; Specified ?
 	jz	INITMDSK2		; No, exit
-;
+
 	mov	bx,0F5Ah		; Memory test pattern
-;
+
 INITMDSK1:
 	mov	ds,ax
 	mov	es,ax			; Select memory disk segment
 	sub	di,di			; Offset zero
-;
+
 FEAT144_BIOS_RAMDISK:
 	mov	[di],bl
 	cmp	[di],bl			; Byte set correctly ?
 	jnz	INITMDSK2		; No, exit
-;
+
 	mov	[di],bh
 	cmp	[di],bh			; Byte set correctly ?
 	jnz	INITMDSK2		; No, exit
-;
+
 	mov	cx,800h			; 2Kb
 	mov	ax,0E5E5h		; Empty fcb character
 	rep	stosw			; Fill it
-;
+
 	add	cs:word ptr MDSKSIZ,4
-;
+
 	mov	ax,ds
 	add	ax,0100h		; Next segment
 	cmp	ax,0A000h		; Upto video RAM ?
 	jb	INITMDSK1		; No, test and initialise
-;
+
 	cmp	ax,0C000h		; Video RAM ?
 	jb	INITMDSK2		; Yes, exit
-;
+
 	cmp	ax,0F000h		; Upto BIOS ROM ?
 	jb	INITMDSK1		; No, test and initialise
-;
+
 INITMDSK2:
 	pop	es
 	pop	ds
 	ret
-;
+
 ;----------------------------------------
-;
+
 ; Setup memory disk parameters
-;
+
 SETMDSKDP:
 	cmp	word ptr MDSKSIZ,0	; Zero Kb memory disk ?
 	jz	SETMDSKDPX		; Yes, exit
-;
+
 	mov	ax,word ptr MDSKSIZ
 	mov	bx,offset DPBK3
 	cmp	ax,0100h
@@ -3703,29 +3691,29 @@ SETMDSKDP:
 	cmp	ax,0200h
 	jbe	SETMDSKDP1
 	mov	byte ptr 4[bx],0
-;
+
 SETMDSKDP1:
 	shr	ax,1h
-;
+
 SETMDSKDP2:
 	dec	ax
 	mov	05h[bx],ax
 	mov	word ptr DPB4,bx
 	mov	word ptr DSKDRVRTNM,offset MEMRTNSEL
-;
+
 SETMDSKDPX:
 	ret
-;
+
 ;----------------------------------------
-;
+
 ; Setup FIDDS memory segment pointer
-;
+
 SETFIDMEM:
 FEAT144_BIOS_FIDDREQ:
 	mov	ax,word ptr FIDDSMEM
 	test	ax,ax
 	jz	SETFIDMEMX		; Zero FIDDS memory required
-;
+
 	mov	cl,6
 	shl	ax,cl
 	mov	dx,word ptr MRTLEN
@@ -3733,7 +3721,7 @@ FEAT144_BIOS_FIDDREQ:
 	jb	SETFIDMEM4
 	cmp	dx,0400h
 	jb	SETFIDMEM4
-;
+
 	mov	word ptr MRTLEN,dx
 	add	word ptr MRTSTART,ax
 	mov	ax,cs
@@ -3744,24 +3732,23 @@ FEAT144_BIOS_FIDDREQ:
 FEAT144_BIOS_FIDDMSG:
 	mov	ax,word ptr FIDDSMEM
 	call	DISP_LRGNUM		; Display large number (AX)
-;
+
 SETFIDMEMX:
 	ret
-;
+
 SETFIDMEM4:
 	mov	word ptr FIDDSMEM,0
 	mov	si,offset ERRFD2BIG	; 'FIDDS Mem Request too large'
 	; jmp	DISP_CHAR		; Display string
-    ; Todots: (Vanilla was DISP_STR, seems correct)
-	jmp DISP_STR
+    ; Original display-string target is retained.
+	jmp	DISP_STR
 
-;
 ;----------------------------------------
-;
+
 ; Set initial video mode
-;
+
 ; Entry AL = BIOS equipment value
-;
+
 SETINTVID:
 	and	al,30h
 	mov	si,7			; 80 col text with status line
@@ -3770,19 +3757,17 @@ SETINTVID:
 	mov	si,3			; 80 col text with status line
 	cmp	al,20h
 	jz	SETIV2
-    ; Ts: patch start
-    ; Ts: Go to Color 80 col anyway
-	;SUB	SI,SI		; 40 col text without status line
+
+    ; Retain 80-column color text instead of the 40-column fallback.
 	nop
 	nop
-    ; Ts: patch end
 SETIV2:
 	xchg	ax,si
 	jmp	SETCURCRT		; Set current video details
-;
+
 ;----------------------------------------
-;
-INIT_DRIVES:	
+
+INIT_DRIVES:
 	call	INIT_FDD
 	call	CHKHDDPAR		; Check HDD's for cpm partitions
 	mov	ax,word ptr DPH_PTR
@@ -3805,12 +3790,12 @@ INIT_DRIVES:
 	rep	stosw
 INIT_DRIVES_RET:
 	ret
-;
+
 ;----------------------------------------
-;
+
 INIT_FDD:
 	mov	al,byte ptr FDDCNT	; Number of physical
-	cbw				;  diskette drives.
+	cbw				; diskette drives.
 	xchg	ax,cx
 	sub	bx,bx
 	jcxz	INIT_FDD_RET
@@ -3824,13 +3809,13 @@ INIT_FDD_RET:
 	ret
 
 ;----------------------------------------
-;
+
 ; Check each hard drive for a single cpm partition
-;
+
 CHKHDDPAR:
 	test	byte ptr HDDCNT,0FFh	; Hard disk(s) present ?
 	jz	CHKHPX			; No, skip
-;
+
 	mov	byte ptr HDDCHK,80h	; Set hard disk 0 (first)
 CHKHP1:
 	mov	dl,byte ptr HDDCHK	; Drive number
@@ -3839,39 +3824,39 @@ CHKHP1:
 	mov	bx,offset HDDBUF	; ES:BX - data buffer
 	mov	ax,0201h		; Read sector(s) - 1 sector
 	int	13h			; PC ROM BIOS Floppy Disk Services
-;
+
 	cmp	word ptr HDDBUF+510,0AA55h	; VAlid Master-Boot-Record?
 	jnz	CHKHP4			; No, check next drive
-;
+
 	mov	bx,offset HDDBUF+446	; 1st Partition table entry
 	mov	cx,4			; 4 entries
-;
+
 CHKHP2:
 	cmp	byte ptr 4[bx],0DBh	; cpm partition ?
 	jz	CHKHP3			; Yes
 	add	bx,16			; No, point to next entry
-	loop	CHKHP2			;   and test
+	loop	CHKHP2			; and test
 	jmps	CHKHP4			; Check next drive
-;
-CHKHP3:	
+
+CHKHP3:
 	call	CHKCPMPAR		; Check cpm partition
 	cmp	byte ptr FDDMAX,04h
 	jnb	CHKHPX
-;
+
 CHKHP4:
 	inc	byte ptr HDDCHK		; Next drive (to check)
 	dec	byte ptr HDDCNT
 	jnz	CHKHP1			; Test it
-;
+
 CHKHPX:
 	ret
 
 ;----------------------------------------
-;
+
 ; Check valid cpm partition
-;
-;    Entry - BX = Partition table entry
-;
+
+; Entry - BX = Partition table entry
+
 CHKCPMPAR:
 	mov	dl,byte ptr HDDCHK	; Drive number (to check)
 	mov	dh,0			; Head 0
@@ -3881,10 +3866,10 @@ CHKCPMPAR:
 	mov	bx,offset HDDBUF	; ES:BX - sector buffer
 	mov	ax,0201h		; Read sectors - 1 sector
 	int	13h			; PC ROM BIOS Floppy Disk Services
-;
+
 ; Checksum 1st sector of partition
-;   Result should be zero
-;
+; Result should be zero
+
 	cmp	word ptr HDDBUF+46,0
 	jz	CHKCP1
 	mov	cx,256
@@ -3896,15 +3881,14 @@ CHKCP1:
 	loop	CHKCP1
 	test	ax,ax			; Valid checksum ?
 	jz	CHKCP2			; Yes
-;
-	mov	si,offset ERRCHKSUM	; 'Hard disk label checksum error'
-	; jmp	DISP_CHAR		; Display string 
-    ; Todots: (Vanilla was DISP_STR)
-	jmp DISP_STR
 
-;
+	mov	si,offset ERRCHKSUM	; 'Hard disk label checksum error'
+	; jmp	DISP_CHAR		; Display string
+    ; Original display-string target is retained.
+	jmp	DISP_STR
+
 ; Ensure partition not too big for cpm
-;
+
 CHKCP2:
 	mov	al,byte ptr HDDBUF+47
 	mov	ah,0
@@ -3912,13 +3896,12 @@ CHKCP2:
 	shl	ax,cl
 	test	ah,ah			; <= 8192 mb ?
 	jz	CHKCP3			; Yes
-;
+
 	mov	si,offset ERRHP2BIG	; 'Hard disk partition too big'
-	;call	DISP_CHAR		; Display string
-    ; Todots: (Vanilla was DISP_STR)
-	call    DISP_STR
+    ; Original display-string target is retained.
+	call	DISP_STR
 	ret
-;
+
 CHKCP3:
 	and	word ptr HDDBUF+52,7FFFh
 	mov	si,offset HDDBUF+33
@@ -3939,7 +3922,7 @@ CHKCP3:
 	inc	byte ptr FDDMAX
 	mov	si,dx
 	add	si,0008h
-;
+
 CHKCP4:
 	push	bx
 	push	cx
@@ -3973,23 +3956,23 @@ CFG_STORE_VEC_RET:
 	ret
 
 ;----------------------------------------
-;
+
 ; Display null terminated string followd by
 ; Number of hardware units supported
-;
-;    Input: SI:=string offset
-;   DS:=string segment address
-;   DX:=hardware configuration
-;   CL:=shift factor
-;   CH:=mask
-;    Output: none
-;
+
+; Input: SI:=string offset
+; DS:=string segment address
+; DX:=hardware configuration
+; CL:=shift factor
+; CH:=mask
+; Output: none
+
 DISP_HDWNUM:
 	mov	ax,dx
 	shr	ax,cl
 	and	al,ch			; Zero devices ?
 	jz	DISP_HDWNUMX		; Yes, exit
-;
+
 	push	ax
 	call	DISP_STR8		; Display spaces + string SI
 	pop	ax
@@ -4001,34 +3984,34 @@ DISP_HDWNUMX:
 	ret
 
 ;----------------------------------------
-;
+
 ; Display 8 spaces followed by null terminated string
-;
-;    Input: SI:=string offset
-;   DS:=string segment address
-;    Output: none
-;
+
+; Input: SI:=string offset
+; DS:=string segment address
+; Output: none
+
 DISP_STR8:
 	mov	cx,8
-;
+
 DISP_STR8A:
 	mov	al,' '
-	call	DISP_CHAR		; Display char 
+	call	DISP_CHAR		; Display char
 	loop	DISP_STR8A
 ; jmp  DISP_STR    ; Fall through
 
 ;----------------------------------------
-;
+
 ; Display null terminated string
-;
-;    Input: SI:=string offset
-;   DS:=string segment address
-;    Output: none
-;
+
+; Input: SI:=string offset
+; DS:=string segment address
+; Output: none
+
 DISP_STR:
 	cld
 	lodsb				; Get char
-;
+
 DISP_CHAR1:
 	call	DISP_CHAR		; Display it
 	lodsb				; Get next char
@@ -4037,23 +4020,23 @@ DISP_CHAR1:
 	ret				; Yes
 
 ;----------------------------------------
-;
+
 ; Display large number AX as numeric chars
-;
-;    Input: AX:=number (largest number accepted = 999)
-;    Output: none
-;
+
+; Input: AX:=number (largest number accepted = 999)
+; Output: none
+
 DISP_LRGNUM:
 	cmp	ax,10			; Less than 10 ?
 	jb	DISP_LRGNUM2		; Yes, display digit
-;
+
 	mov	cl,100
 	div	cl			; Divide by 100
 	or	al,al			; Any hundreds ?
 	jz	DISP_LRGNUM1		; No
-;
+
 	call	DISP_NUM		; Display hundreds digit
-;
+
 DISP_LRGNUM1:
 	mov	al,ah
 	sub	ah,ah
@@ -4061,18 +4044,18 @@ DISP_LRGNUM1:
 	xchg	al,ah			; First tens
 	call	DISP_NUM		; Display tens digit
 	mov	al,ah			; Now units
-;
+
 DISP_LRGNUM2:
 	call	DISP_NUM		; Display units digit
 	jmps	DISP_CRLF		; Display CR+Lf then return
 
 ;----------------------------------------
-;
+
 ; Display AL as numeric char
-;
-;    Input: AL:=char  (preserved throughout call)
-;    Output: none
-;
+
+; Input: AL:=char  (preserved throughout call)
+; Output: none
+
 DISP_NUM:
 	push	ax
 	or	al,30h			; Make numeric ASCII char
@@ -4080,21 +4063,21 @@ DISP_NUM:
 	pop	ax
 	ret
 ;----------------------------------------
-;
+
 ; Display carriage return and linefeed
-;
+
 DISP_CRLF:
 	mov	al,CR
 	call	DISP_CHAR		; Display char
 	mov	al,LF
 ; ; Fall through
 ;----------------------------------------
-;
+
 ; Display character in teletype mode
-;
-;    Input: AL:=char
-;    Output: none
-;
+
+; Input: AL:=char
+; Output: none
+
 DISP_CHAR:
 	push	si
 	mov	bx,0			; page zero, foreground colour 0
@@ -4102,29 +4085,29 @@ DISP_CHAR:
 	int	10h			; PC ROM BIOS Video Driver Service
 	pop	si
 	ret
-;
+
 ;----------------------------------------
 ; INIT routine Data Areas
 ;----------------------------------------
 
 data_offst2	equ offset $
-;
+
 ; INIT data area — assembled contiguous with the INIT code above.
 ; Same pattern as data_offset / data_offst2 pair: equ captures $,
 ; Then dseg+org re-opens the segment at that offset.
 ; This data is also overlaid on DSKBUF and freed after boot.
-;
-		dseg
-		org	data_offst2	; contiguous with INIT code (overlays DSKBUF)
-;
+
+	dseg
+	org	data_offst2		; contiguous with INIT code (overlays DSKBUF)
+
 SIGNON		db	cr,lf,lf
-		db	'CP/M-86 for the IBM PC and IBM PC XT  Version 1.1'
-		db	cr,lf
-		db	'Copyright (C) 1983, Digital Research'
-		db	cr,lf,lf,lf
-		db	'Hardware Supported :'
-		db	cr,lf,lf,0
-;
+	db	'CP/M-86 for the IBM PC and IBM PC XT  Version 1.1'
+	db	cr,lf
+	db	'Copyright (C) 1983, Digital Research'
+	db	cr,lf,lf,lf
+	db	'Hardware Supported :'
+	db	cr,lf,lf,0
+
 SIGNDSK		db	'  Diskette Drive(s) : ',0
 SIGNHDD		db	' Hard Disk Drive(s) : ',0
 SIGNPRT		db	'Parallel Printer(s) : ',0
@@ -4132,76 +4115,66 @@ SIGNSER		db	'     Serial Port(s) : ',0
 SIGNMEM		db	'        Memory (Kb) : ',0
 SIGNMDK		db	'        M:Disk (Kb) : ',0
 SIGNFID		db	'         FIDDS (Kb) : ',0
-;
+
 DEFTOD		db	'08/01/83,00:00:00'
-;
+
 ERRCHKSUM	db	cr,lf
-		db	'Hard Disk Label Checksum Error'
-		db	cr,lf,lf,0
-;
+	db	'Hard Disk Label Checksum Error'
+	db	cr,lf,lf,0
+
 ERRHP2BIG	db	cr,lf
-		db	'Hard Disk Partition is Too Big for CP/M-86'
-		db	cr,lf,lf,0
-;
+	db	'Hard Disk Partition is Too Big for CP/M-86'
+	db	cr,lf,lf,0
+
 ERRFD2BIG	db	cr,lf
-		db	'FIDDS memory request is too large'
-		db	cr,lf,0
-;
+	db	'FIDDS memory request is too large'
+	db	cr,lf,0
+
 HDDCHK		db	0		; Hard disk drive (to check)
 IPLDSK		db	0		; Initial program load disk
 DEFDRV		db	0		; Default drive (for CCP)
 FDDCNT		db	0		; Number of diskette drives
 HDDCNT		db	0		; Number of Hard disk drives
-;
+
 DPH_PTR		db	086h,04Ch	; Current DPH allocation pointer
 DPH_BASE	dw	offset DPBASE	; Base of DPH table
 BIOS_SEGSZ	dw	0		; Segment size offset (MRT base computation)
-;
-		    rs	1390
-		    db	0DBh		; ?
-; Ts: patch start
-; DS  00h
-	rb  1
-; Ts: patch end
-;
+
+	rs	1390
+	db	0DBh			; ?
+
+	rb	1
+
 CFG_BUF		rs	16		; Config sector raw buffer (first 16 bytes)
 CFG_PFK_SCAN	rs	32		; Config: PFK scan code table
 CFG_FIDDSMEM	rs	16		; Config: FIDDS memory size
 CFG_SNDFLG	rs	32		; Config: sound flag
-;
-; Ts: patch start
-; CFG_SERFLG	db	0		; Config: serial init flag
-; CFG_IOFLAG	db	0		; Config: I/O vector redirect flag
-; CFG_PFKFLAG	db	0		; Config: PFK table flag
-; CFG_RESV	db	0		; Config: reserved
-; CFG_SER	dw	0		; Config: serial port parameters
-; CFG_IOVEC	dw	0,0,0,0,0	; Config: I/O vector data
+
 CFG_SERFLG	rb	1		; Config: serial init flag
 CFG_IOFLAG	rb	1		; Config: I/O vector redirect flag
 CFG_PFKFLAG	rb	1		; Config: PFK table flag
 CFG_RESV	rb	1		; Config: reserved
 CFG_SER		rw	1		; Config: serial port parameters
 CFG_IOVEC	rw	5		; Config: I/O vector data (5 words)
-; Ts: patch end
 CFG_PFKTBL	rs	400		; Config: programmable function key table
-;
+
 ; Fixed-address buffers — these three ORGs pin the large runtime buffers
 ; To known absolute offsets within the CP/M load segment.
 ; The gaps between them are intentional padding reserved by the original
 ; Digital Research layout; do not add data inside the gaps.
-;
-;   4980h .. 4B7Fh  HDDBUF   (512 bytes — one hdd sector)
-;   4B80h .. 4BE1h  <62h bytes / 98 bytes padding — reserved>
-;   4BE2h .. 4C61h  DIRBUF   (128 bytes — directory scratch buffer)
-;   4C62h           CSV14    (allocation vector for drive 4, grows upward)
-;
-		org	4980h		; must not overlap CFG_PFKTBL end
+
+; 4980h .. 4B7Fh  HDDBUF   (512 bytes — one hdd sector)
+; 4B80h .. 4BE1h  <62h bytes / 98 bytes padding — reserved>
+; 4BE2h .. 4C61h  DIRBUF   (128 bytes — directory scratch buffer)
+; 4C62h           CSV14    (allocation vector for drive 4, grows upward)
+
+	org	4980h			; must not overlap CFG_PFKTBL end
 HDDBUF		rs	512		; hdd sector buffer (512 bytes)
 
-		org	4BE2h		; 4980h + 200h + 62h padding
+	org	4BE2h			; 4980h + 200h + 62h padding
 DIRBUF		rs	128		; Directory scratch buffer (128 bytes)
 
-		org	4C62h		; 4BE2h + 80h = end of DIRBUF
+	org	4C62h			; 4BE2h + 80h = end of DIRBUF
 CSV14		equ	$		; Allocation vector for drive 4 (grows upward)
 
 ;----------------------------------------
@@ -4209,4 +4182,3 @@ CSV14		equ	$		; Allocation vector for drive 4 (grows upward)
 ; End of pcbios.A86 file
 
 	end
-

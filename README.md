@@ -26,7 +26,21 @@ The kernel was recovered by disassembly. Three parallel PC sets allow diffing an
 | `*.*` | `ccp.a86` `bdos.a86` `pcbios.a86` | `cpm.sys` | Byte-identical to `*org.*`; labelling and commenting in progress |
 | `*exp.*` | `ccpexp.a86` `bdosexp.a86` `pcbioexp.a86` | `cpmexp.sys` | Experimental cleaned-up variant |
 
-`make check` asserts that `cpm.sys` and `cpmorg.sys` are binary-identical, so annotation work cannot silently change behaviour.
+`make check` rebuilds all three PC source sets. It compares each maintained
+standard module with its frozen reference, compares the complete standard
+images, and verifies pinned SHA-256 baselines for both standard and EXP
+kernels. The EXP module bytes are also pinned independently. The BIOS pair
+may differ only in the status-line attribute at 3220h (green/yellow) and
+banner digit at 3707h (03/04). Frozen reference sources are checked using
+normalized line endings; their content must remain unchanged.
+
+Kernel headers, instruction indentation and comment layout use the same
+style in the standard and EXP sources. `pcbios.a86`/`pcbioexp.a86` are the
+BIOS filenames. Comments and formatting can change without updating the
+baseline; intentional executable changes require an explicit review and
+update of `tools/kernel-baseline.json`. The check also runs isolated mutation
+tests proving that image changes, module changes and frozen-reference edits
+are rejected.
 
 A fourth PC kernel with the 8080-model flag set (CP/M-80 binary compatibility on PC XT) is built under `private/` as `cpm86.sys`.
 

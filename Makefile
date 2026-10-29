@@ -356,11 +356,11 @@ disks.zip: $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm8
 	zip -j $@ $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
     
 
-# Verify cpm.sys and cpmorg.sys are binary-identical.
-# Run after any change to pcbios.a86 to confirm parity with pcbioorg.a86.
-check: cpm.sys cpmorg.sys
-	cmp cpm.sys cpmorg.sys && echo "OK: cpm.sys and cpmorg.sys are identical" || \
-	  { echo "FAIL: cpm.sys and cpmorg.sys differ"; exit 1; }
+# Frozen references and pinned hashes guard source cleanup against code drift.
+.PHONY: check
+check: cpm.sys cpmorg.sys cpmexp.sys tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
+	python3 tools/kernel_check.py
+	python3 tools/kernel_check_test.py
 
 test: dist
 	./cpm86
