@@ -1,16 +1,18 @@
+# ASM86 — Intel PL/M compilation, link/locate, then GENCMD packaging.
+# all builds the declared tools; check validates them; clean removes generated files.
+
+CMDINFO=cmdinfo
 INTEL_PLM86=intel_plm86
 INTEL_ASM86=intel_asm86
 INTEL_LOC86=intel_loc86
 INTEL_LINK86=intel_link86
 INTEL_OH86=intel_oh86
-ASM86=cpm86_asm86
 GENCMD=cpm86_gencmd
-RASM86=pcdev_rasm86
-LINK86=pcdev_linkcmd
-LIB86=pcdev_lib86
 
 TOOLS=asm86.cmd
 
+.PHONY: all check clean
+.DELETE_ON_ERROR:
 all: $(TOOLS)
 
 # BBB and MMM for gencmd's data[bBBB,mMMM,xfff], derived from asm86.mp2:
@@ -26,54 +28,54 @@ ASM86_BASE = $(shell awk '/CONST +CONST/{s=$$1; $(PARA)}' asm86.mp2)
 ASM86_MEM  = $(shell awk '/MEMORY +MEMORY/{s=$$1; $(PARA)}' asm86.mp2)
 ASM86_MIN  = $(shell printf '%x' $$((0x$(ASM86_MEM)-0x$(ASM86_BASE)+0x$(ASM86_SYMTAB))))
 
-asm86.cmd: asm86.h86
+asm86.cmd: asm86.h86 Makefile
 	@test -n "$(ASM86_BASE)" -a -n "$(ASM86_MEM)" || \
 	  { echo "asm86: cannot derive CONST/MEMORY from asm86.mp2"; exit 1; }
 	$(GENCMD) $< 'data[b$(ASM86_BASE), m$(ASM86_MIN), xfff]'
-	cmdinfo $@
+	$(CMDINFO) $@
 
-asm86.h86: c86lnk.obj mainp.obj f21.mod f22.mod
+asm86.h86: c86lnk.obj mainp.obj f21.mod f22.mod Makefile
 	$(INTEL_LINK86) c86lnk.obj,mainp.obj,f21.mod,f22.mod to asm86.mod
 	$(INTEL_LOC86) asm86.mod nopublics 'ad(sm(code(0))) od(sm(code,const,stack))' to asm86.loc
 	$(INTEL_OH86) asm86.loc to asm86.hex
 	mv asm86.hex asm86.h86
 
-asm86.mod: c86lnk.obj mainp.obj f21.mod f22.mod
+asm86.mod: c86lnk.obj mainp.obj f21.mod f22.mod Makefile
 	$(INTEL_LINK86) c86lnk.obj,mainp.obj,f21.mod,f22.mod to $@
 
-f21.mod: f11.mod f12.mod f13.mod
+f21.mod: f11.mod f12.mod f13.mod Makefile
 	$(INTEL_LINK86) f11.mod,f12.mod,f13.mod to $@
 
-f22.mod: f14.mod f15.mod f16.mod
+f22.mod: f14.mod f15.mod f16.mod Makefile
 	$(INTEL_LINK86) f14.mod,f15.mod,f16.mod to $@
 
-f11.mod: cmac1.obj cmac2.obj cmac3.obj cmac4.obj cmac5.obj
+f11.mod: cmac1.obj cmac2.obj cmac3.obj cmac4.obj cmac5.obj Makefile
 	$(INTEL_LINK86) cmac1.obj, cmac2.obj, cmac3.obj, cmac4.obj, cmac5.obj to $@
 
-f12.mod: mnem1.obj mnem2.obj mnem3.obj mnem4.obj symb.obj
+f12.mod: mnem1.obj mnem2.obj mnem3.obj mnem4.obj symb.obj Makefile
 	$(INTEL_LINK86) mnem1.obj,mnem2.obj,mnem3.obj,mnem4.obj,symb.obj to $@
 
-f13.mod: io.obj subr1.obj subr2.obj files.obj scan.obj
+f13.mod: io.obj subr1.obj subr2.obj files.obj scan.obj Makefile
 	$(INTEL_LINK86) io.obj,subr1.obj,subr2.obj,files.obj,scan.obj to $@
 
-f14.mod: print.obj predef.obj ermod.obj text.obj outp.obj
+f14.mod: print.obj predef.obj ermod.obj text.obj outp.obj Makefile
 	$(INTEL_LINK86) print.obj,predef.obj,ermod.obj,text.obj,outp.obj to $@
 
-f15.mod: expr.obj brexpr.obj pseud1.obj pseud2.obj cmsubr.obj
+f15.mod: expr.obj brexpr.obj pseud1.obj pseud2.obj cmsubr.obj Makefile
 	$(INTEL_LINK86) expr.obj,brexpr.obj,pseud1.obj,pseud2.obj,cmsubr.obj to $@
 
-f16.mod: instr.obj dline.obj global.obj cm.obj cm2.obj
+f16.mod: instr.obj dline.obj global.obj cm.obj cm2.obj Makefile
 	$(INTEL_LINK86) instr.obj,dline.obj,global.obj,cm.obj,cm2.obj to $@
 
-%.obj: %.a86
-	$(INTEL_ASM86) $^
+%.obj: %.a86 Makefile
+	$(INTEL_ASM86) $<
 
-%.obj: %.plm
-	$(INTEL_PLM86) $^ debug 'optimize(2)' xref
+%.obj: %.plm Makefile $(wildcard *.lit *.def *.equ *.lib *.h *.dcl *.inc)
+	$(INTEL_PLM86) $< debug 'optimize(2)' xref
 
 clean:
 	rm -f *.sys *.cmd *.obj *.sym *.lin *.lst *.mod *.mp1 *.mp2 *.loc *.h86
 
-.PHONY: all clean test
-
-
+# Structural validation; byte comparisons or runtime checks are separate where available.
+check: all
+	@set -e; for file in $(TOOLS); do $(CMDINFO) $$file; done

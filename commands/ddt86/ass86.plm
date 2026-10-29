@@ -1,4 +1,6 @@
 $title('assembler for ddt86')
+
+$compact
 $optimize(2)
 
 ddtasm: do;
