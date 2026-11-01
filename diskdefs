@@ -35,6 +35,18 @@ diskdef cpm86-320
   os 2.2
 end
 
+# Concurrent CP/M-86 and Concurrent DOS 320 KB distribution floppies.
+diskdef ccpm86-320
+  seclen 512
+  tracks 80
+  sectrk 8
+  blocksize 2048
+  maxdir 64
+  skew 1
+  boottrk 1
+  os 2.2
+end
+
 # CP/M-86 on 1.44MB floppies with the "1.44 MB Feature" (Freek Heite).
 # Tracks 0 and 1 are reserved for the boot sector and the DOS/stock-CP/M
 # camouflage, so the directory starts on track 2.
@@ -107,7 +119,7 @@ end
 #
 # OFF is again counted from LBA 0 of the drive, not from the partition:
 # 976 * 17 = 16592 sectors = cylinder 244, which is where the directory
-# actually starts (CCPM.ORG is the first entry). So OFF absorbs both the DOS
+# actually starts. So OFF absorbs both the DOS
 # partition and the CP/M partition's own first cylinder, and no offset keyword
 # is needed -- boottrk covers the lot.
 #
@@ -120,6 +132,21 @@ end
 diskdef ccpm86-xt-hd
   seclen 512
   tracks 2212
+  sectrk 17
+  blocksize 4096
+  maxdir 2048
+  skew 1
+  boottrk 976
+  os 3
+end
+
+# Concurrent DOS 4.1, ref/hd0-cdos41.img. The DR label at LBA 16527
+# gives SPT=68, BSH=5, DSM=3118, DRM=2047 and OFF=976. The directory
+# starts at LBA 16592 and contains a volume label and date stamps.
+# tracks = 976 + ceil(3119 * 4096 / (17 * 512)) = 2444.
+diskdef cdos41-xt-hd
+  seclen 512
+  tracks 2444
   sectrk 17
   blocksize 4096
   maxdir 2048
