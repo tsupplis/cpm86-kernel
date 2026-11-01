@@ -23,6 +23,10 @@ CMDS = 144pat2.cmd 144prep2.cmd 144bldr2.cmd
 
 all: $(CMDS)
 
+# The 384-byte CP/M-86 CMD header: 8 bytes of header data, zero-padded.
+cpmhdr32.bin:
+	(printf '\001\000\010\000\000\000\010\000'; head -c 376 /dev/zero) > $@
+
 # 144PREP carries the boot sector and the secondary loader appended to it.
 144prep2.cmd: 144prep2.tmp 144boot2.bin 144bldr2.cmd
 	cat $^ > $@
@@ -54,6 +58,6 @@ all: $(CMDS)
 	$(LINK) "/tiny" "$*.obj,$@;"
 
 clean:
-	rm -f *.obj *.com *.tmp 144boot2.bin $(CMDS)
+	rm -f *.obj *.com *.tmp 144boot2.bin cpmhdr32.bin $(CMDS)
 
 .PHONY: all clean
