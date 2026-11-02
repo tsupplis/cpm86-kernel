@@ -39,10 +39,12 @@ DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
 BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
 DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 EXTTOOLS   = $(DFORM) $(DCOPY) $(DCOMP)
+CHKCPMFS   = $(CMDDIR)/chkcpmfs/chkcpmfs.cmd
 
 DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
     cpm86-160-4.img \
     cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
+    cpm86-chkcpmfs.img \
     cpm86-1440-at.img \
 	cpm86-exp-160-1.img cpm86-exp-160-1-at.img cpm86-exp-1440-at.img \
 	cpm86-720-at.img cpm86-exp-720-at.img
@@ -62,13 +64,16 @@ EXPASM     = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS) $(EXTTOOLS)
 EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
+FEATURETOOLS = $(STOCKTOOLS) $(CHKCPMFS)
+EXPFEATURETOOLS = $(EXPTOOLS) $(CHKCPMFS)
 
 # Rebuilt files are normal prerequisites, so command/help changes refresh
 # their images. Delegate compilation to the owning command Makefiles.
 .SECONDEXPANSION:
 SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
                $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
-               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(GENDEF) $(EXTTOOLS)
+               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(GENDEF) \
+               $(EXTTOOLS) $(CHKCPMFS)
 $(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/*.plb $$(@D)/*.lit $$(@D)/Makefile)
 	$(MAKE) -C $(@D) $(@F)
 $(HLP): commands/helphlp/help.dat $(HELP)
@@ -158,14 +163,14 @@ base-720-at.img base-1440-at.img: | extra
 cpm86-1440-at.img: FEAT = cpm86-144feat
 cpm86-1440-at.img: BASE = base-1440-at.img
 cpm86-1440-at.img: KRNL = cpm.sys
-cpm86-1440-at.img: FTOOLS = $(STOCKTOOLS)
+cpm86-1440-at.img: FTOOLS = $(FEATURETOOLS)
 cpm86-1440-at.img: cpm.sys base-1440-at.img | commands extra
 	$(feat_image)
 
 cpm86-720-at.img: FEAT = cpm86-720feat
 cpm86-720-at.img: BASE = base-720-at.img
 cpm86-720-at.img: KRNL = cpm.sys
-cpm86-720-at.img: FTOOLS = $(STOCKTOOLS)
+cpm86-720-at.img: FTOOLS = $(FEATURETOOLS)
 cpm86-720-at.img: cpm.sys base-720-at.img | commands extra
 	$(feat_image)
 
@@ -173,14 +178,14 @@ cpm86-720-at.img: cpm.sys base-720-at.img | commands extra
 cpm86-exp-1440-at.img: FEAT = cpm86-144feat
 cpm86-exp-1440-at.img: BASE = base-1440-at.img
 cpm86-exp-1440-at.img: KRNL = cpmexp.sys
-cpm86-exp-1440-at.img: FTOOLS = $(EXPTOOLS)
+cpm86-exp-1440-at.img: FTOOLS = $(EXPFEATURETOOLS)
 cpm86-exp-1440-at.img: cpmexp.sys base-1440-at.img | commands extra
 	$(feat_image)
 
 cpm86-exp-720-at.img: FEAT = cpm86-720feat
 cpm86-exp-720-at.img: BASE = base-720-at.img
 cpm86-exp-720-at.img: KRNL = cpmexp.sys
-cpm86-exp-720-at.img: FTOOLS = $(EXPTOOLS)
+cpm86-exp-720-at.img: FTOOLS = $(EXPFEATURETOOLS)
 cpm86-exp-720-at.img: cpmexp.sys base-720-at.img | commands extra
 	$(feat_image)
 
@@ -204,6 +209,16 @@ cpm86-320-dev.img: BASE = base-320.img
 cpm86-320-dev.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(DEVTOOLS)
 cpm86-320-dev.img: base-320.img
 	$(twist_image)
+
+cpm86-chkcpmfs.img: FEAT = cpm86-320
+cpm86-chkcpmfs.img: BASE = base-320.img
+cpm86-chkcpmfs.img: KRNL = cpm.sys
+cpm86-chkcpmfs.img: FTOOLS = $(PIP) $(STAT) $(CHKCPMFS)
+cpm86-chkcpmfs.img: cpm.sys base-320.img | commands
+	$(twist_image)
+
+.PHONY: chkcpmfs-live-images
+chkcpmfs-live-images: cpm86-chkcpmfs.img
 
 # Experimental kernel with source-built core tools.
 cpm86-exp-160-1-at.img: FEAT = ibmpc-514ss
@@ -337,7 +352,7 @@ clean:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img 
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img
 	rm -rf *.img.wrk
 	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
@@ -348,7 +363,7 @@ clean-images:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img 
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img
 
 dist: disks.zip
 
@@ -358,9 +373,10 @@ disks.zip: $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm8
 
 # Frozen references and pinned hashes guard source cleanup against code drift.
 .PHONY: check
-check: cpm.sys cpmorg.sys cpmexp.sys tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
+check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
 	python3 tools/kernel_check.py
 	python3 tools/kernel_check_test.py
+	$(MAKE) -C commands/chkcpmfs check-bdos
 
 test: dist
 	./cpm86

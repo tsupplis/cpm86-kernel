@@ -17,6 +17,7 @@ tools/**/__pycache__/**
 **/.vscode
 private/**
 **/work.img
+**/*.img.wrk
 disks.tar.gz
 cpm*.img
 base*-at.img

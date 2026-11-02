@@ -1,0 +1,423 @@
+$TITLE('CHKCPMFS 1.0 - Read-only CP/M filesystem check')
+$COMPACT
+
+chkcpmfs:
+do;
+
+/* BDOS search copies 33 FCB bytes back to the caller. */
+declare
+    media$fcb (36) byte,
+    search$fcb (36) byte,
+    dirbuf (128) byte,
+    alloc$map (8192) byte,
+    extent$table (28672) byte,
+    dpb$pointer pointer,
+    DPB based dpb$pointer structure
+        (spt address, bls byte, bms byte, exm byte, mxa address,
+         dmx address, dbl address, cks address, ofs address),
+    blkshf literally 'dpb.bls',
+    extmsk literally 'dpb.exm',
+    maxall literally 'dpb.mxa',
+    maxdir literally 'dpb.dmx',
+    dirblk literally 'dpb.dbl',
+    extent$table$capacity literally '2048',
+    cpm3 literally '30h',
+    cdos literally '41h',
+    (dir$offset, map$index, block$number,
+     records$per$block, needed$blocks, entry$count, block$count,
+     error$count, original$dma, drive$mask, ro$vector,
+     extent$count, extent$key, table$offset, original$user) address,
+    (disk, dcnt, entry$user, rc, system$version,
+     slots, slot, map$bit, protect$status, changed$ro,
+     restore$failed, user$changed, scan$user,
+     name$match, duplicate) byte;
+
+mon1: procedure (func,info) external;
+    declare func byte, info address;
+end mon1;
+
+mon2: procedure (func,info) byte external;
+    declare func byte, info address;
+end mon2;
+
+mon3: procedure (func,info) address external;
+    declare func byte, info address;
+end mon3;
+
+mon4: procedure (func,info) pointer external;
+    declare func byte, info address;
+end mon4;
+
+put: procedure (char);
+    declare char byte;
+    call mon1(2,char);
+end put;
+
+print$string: procedure (text$address);
+    declare text$address address,
+            character based text$address byte;
+    do while character <> '$';
+        call put(character);
+        text$address = text$address + 1;
+    end;
+end print$string;
+
+newline: procedure;
+    call put(13);
+    call put(10);
+end newline;
+
+decimal: procedure (number);
+    declare number address,
+            digits (5) byte,
+            used byte;
+    used = 0;
+    do while number >= 10;
+        digits(used) = low(number mod 10) + '0';
+        used = used + 1;
+        number = number / 10;
+    end;
+    digits(used) = low(number) + '0';
+    used = used + 1;
+    do while used <> 0;
+        used = used - 1;
+        call put(digits(used));
+    end;
+end decimal;
+
+print$file: procedure;
+    declare i byte;
+    do i = 1 to 8;
+        call put(dirbuf(dir$offset + i) and 7fh);
+    end;
+    call put('.');
+    do i = 9 to 11;
+        call put(dirbuf(dir$offset + i) and 7fh);
+    end;
+end print$file;
+
+entry$prefix: procedure;
+    call print$string(.('ERROR: USER $'));
+    call decimal(entry$user);
+    call print$string(.(' FILE $'));
+    call print$file;
+    call print$string(.(': $'));
+end entry$prefix;
+
+report$block: procedure (reason);
+    declare reason address,
+            character based reason byte;
+    call entry$prefix;
+    call print$string(.('BLOCK $'));
+    call decimal(block$number);
+    call print$string(.(' $'));
+    call print$string(reason);
+    call newline;
+    error$count = error$count + 1;
+end report$block;
+
+report$extent: procedure;
+    call entry$prefix;
+    call print$string(.('DUPLICATE EXTENT GROUP $'));
+    call decimal(extent$key);
+    call newline;
+    error$count = error$count + 1;
+end report$extent;
+
+check$extent: procedure;
+    declare (i, j) address;
+
+    extent$key =
+        ((dirbuf(dir$offset + 14) and 3fh) * 32) +
+        (dirbuf(dir$offset + 12) and (not extmsk) and 1fh);
+    duplicate = 0;
+    if extent$count <> 0 then do;
+        do i = 0 to extent$count - 1;
+            table$offset = i * 14;
+            if extent$table(table$offset) = entry$user and
+               extent$table(table$offset + 12) = low(extent$key) and
+               extent$table(table$offset + 13) = high(extent$key) then do;
+                name$match = 1;
+                do j = 0 to 10;
+                    if extent$table(table$offset + j + 1) <>
+                       (dirbuf(dir$offset + j + 1) and 7fh) then
+                        name$match = 0;
+                end;
+                if name$match <> 0 then duplicate = 1;
+            end;
+        end;
+    end;
+
+    if duplicate <> 0 then call report$extent;
+    else do;
+        table$offset = extent$count * 14;
+        extent$table(table$offset) = entry$user;
+        do j = 0 to 10;
+            extent$table(table$offset + j + 1) =
+                dirbuf(dir$offset + j + 1) and 7fh;
+        end;
+        extent$table(table$offset + 12) = low(extent$key);
+        extent$table(table$offset + 13) = high(extent$key);
+        extent$count = extent$count + 1;
+    end;
+end check$extent;
+
+check$entry: procedure;
+    declare (i, effective$rc) address;
+
+    entry$user = dirbuf(dir$offset);
+    rc = dirbuf(dir$offset + 15);
+    if rc > 128 then do;
+        call entry$prefix;
+        call print$string(.('RECORD COUNT EXCEEDS 128$'));
+        call newline;
+        error$count = error$count + 1;
+        effective$rc = 128;
+    end;
+    else effective$rc = rc;
+    effective$rc = effective$rc +
+                   ((dirbuf(dir$offset + 12) and extmsk) * 128);
+
+    if (dirbuf(dir$offset + 12) and 0e0h) <> 0 or
+       (dirbuf(dir$offset + 14) and 0c0h) <> 0 then do;
+        call entry$prefix;
+        call print$string(.('RESERVED EXTENT BITS ARE SET$'));
+        call newline;
+        error$count = error$count + 1;
+    end;
+
+    call check$extent;
+
+    if maxall > 255 then slots = 8;
+    else slots = 16;
+    records$per$block = shl(1,blkshf);
+    needed$blocks = (effective$rc + records$per$block - 1) /
+                    records$per$block;
+    if needed$blocks > slots then do;
+        call entry$prefix;
+        call print$string(.('RECORD COUNT EXCEEDS EXTENT ALLOCATION CAPACITY$'));
+        call newline;
+        error$count = error$count + 1;
+    end;
+
+    /* BDOS allocates every nonzero slot; zero may be a sparse-file hole. */
+    do slot = 0 to slots - 1;
+        if maxall > 255 then do;
+            i = dir$offset + 16 + (slot * 2);
+            block$number = dirbuf(i) +
+                           shl(double(dirbuf(i + 1)),8);
+        end;
+        else block$number = dirbuf(dir$offset + 16 + slot);
+        if block$number <> 0 then do;
+            block$count = block$count + 1;
+
+            if block$number > maxall then
+                call report$block(.('IS OUTSIDE THE DISK$'));
+            else do;
+                if block$number < 8 then do;
+                    if (low(dirblk) and shl(1,7 - block$number)) <> 0 then
+                        call report$block(.('IS RESERVED FOR THE DIRECTORY$'));
+                end;
+                else if block$number < 16 then do;
+                    if (high(dirblk) and
+                        shl(1,15 - block$number)) <> 0 then
+                        call report$block(.('IS RESERVED FOR THE DIRECTORY$'));
+                end;
+
+                map$index = shr(block$number,3);
+                map$bit = shl(1,block$number and 7);
+                if (alloc$map(map$index) and map$bit) <> 0 then
+                    call report$block(.('IS REFERENCED MORE THAN ONCE$'));
+                else alloc$map(map$index) =
+                     alloc$map(map$index) or map$bit;
+            end;
+        end;
+    end;
+end check$entry;
+
+dos$media: procedure byte;
+    declare (old$dma,junk) address,
+            i byte;
+    old$dma = mon3(52,0);
+    do i = 0 to 127;
+        dirbuf(i) = 0;
+    end;
+    media$fcb(0) = '?';
+    do i = 1 to 11;
+        media$fcb(i) = '?';
+    end;
+    do i = 12 to 35;
+        media$fcb(i) = 0;
+    end;
+    call mon1(26,.dirbuf);
+    junk = mon2(17,.media$fcb);
+    call mon1(26,old$dma);
+    return dirbuf(0) = 20h and dirbuf(15) = 80h;
+end dos$media;
+
+protect$drive: procedure byte;
+    drive$mask = shl(1,disk);
+    ro$vector = mon3(29,0);
+    if (ro$vector and drive$mask) <> 0 then do;
+        call print$string(.('Drive was already read-only; preserving its RO state.$'));
+        call newline;
+        return 0;
+    end;
+
+    protect$status = mon2(28,0);
+    ro$vector = mon3(29,0);
+    if (ro$vector and drive$mask) = 0 then return 0ffh;
+    changed$ro = 1;
+    return 0;
+end protect$drive;
+
+restore$drive: procedure;
+    if changed$ro <> 0 then do;
+        protect$status = mon2(37,drive$mask);
+        ro$vector = mon3(29,0);
+        changed$ro = 0;
+        if (ro$vector and drive$mask) <> 0 then do;
+            restore$failed = 1;
+            if system$version < cpm3 then
+                call print$string(.('ERROR: drive write protection could not be restored; use Ctrl-C.$'));
+            else do;
+                call print$string(.('ERROR: drive write protection could not be restored; use SET $'));
+                call put(disk + 'A');
+                call print$string(.(': [RW].$'));
+            end;
+            call newline;
+        end;
+    end;
+end restore$drive;
+
+restore$user: procedure;
+    if user$changed <> 0 then do;
+        call mon1(32,original$user);
+        user$changed = 0;
+        if mon2(32,0ffh) <> original$user then do;
+            restore$failed = 1;
+            call print$string(.('ERROR: original user area could not be restored.$'));
+            call newline;
+        end;
+    end;
+end restore$user;
+
+terminate: procedure;
+    call restore$drive;
+    call restore$user;
+    call mon1(26,original$dma);
+    call mon1(0,0);
+end terminate;
+
+plmstart: procedure public;
+    declare i address;
+
+    changed$ro, restore$failed, user$changed = 0;
+    system$version = mon2(12,0);
+    original$dma = mon3(52,0);
+    original$user = mon2(32,0ffh);
+    call print$string(.('CHKCPMFS 1.0 - READ-ONLY CP/M FILESYSTEM CHECK$'));
+    call newline;
+    call print$string(.('Scans ordinary file entries through BDOS on the current drive.$'));
+    call newline;
+    call print$string(.('Temporarily write-protects the drive and preserves its prior RO state.$'));
+    call newline;
+    call print$string(.('Keep the drive idle; the scan has no exclusive lock.$'));
+    call newline;
+
+    if system$version >= cdos then do;
+        if dos$media then do;
+            call print$string(.('DOS media detected; no CP/M filesystem scan performed.$'));
+            call newline;
+            call terminate;
+        end;
+    end;
+
+    dpb$pointer = mon4(31,0);
+    disk = mon2(25,0);
+    call print$string(.('Drive $'));
+    call put(disk + 'A');
+    call print$string(.('  DPB block shift $'));
+    call decimal(blkshf);
+    call print$string(.('  max block $'));
+    call decimal(maxall);
+    call newline;
+
+    if blkshf > 7 then do;
+        call print$string(.('ERROR: unsupported DPB block shift; scan stopped.$'));
+        call newline;
+        call terminate;
+    end;
+    if maxdir >= extent$table$capacity then do;
+        call print$string(.('ERROR: directory exceeds duplicate-check capacity; scan stopped.$'));
+        call newline;
+        call terminate;
+    end;
+
+    do i = 0 to 8191;
+        alloc$map(i) = 0;
+    end;
+    entry$count, block$count, error$count, extent$count = 0;
+
+    if protect$drive <> 0 then do;
+        call print$string(.('ERROR: could not establish drive write protection; scan stopped.$'));
+        call newline;
+        if system$version < cpm3 then
+            call print$string(.('Check drive status with STAT; use Ctrl-C if needed.$'));
+        else do;
+            call print$string(.('Check drive status with SHOW; use SET $'));
+            call put(disk + 'A');
+            call print$string(.(': [RW] if needed.$'));
+        end;
+        call newline;
+        call terminate;
+    end;
+
+    call mon1(26,.dirbuf);
+
+    do scan$user = 0 to 15;
+        call mon1(32,scan$user);
+        user$changed = 1;
+        search$fcb(0) = 0;
+        do i = 1 to 11;
+            search$fcb(i) = '?';
+        end;
+        do i = 12 to 35;
+            search$fcb(i) = 0;
+        end;
+        search$fcb(12) = '?';
+        dcnt = mon2(17,.search$fcb);
+        do while dcnt <> 0ffh;
+            dir$offset = shl(double(dcnt),5);
+            entry$user = dirbuf(dir$offset);
+            if entry$user <= 15 then do;
+                entry$count = entry$count + 1;
+                call check$entry;
+            end;
+            dcnt = mon2(18,0);
+        end;
+    end;
+    call restore$drive;
+    call restore$user;
+
+    call print$string(.('Directory entries scanned: $'));
+    call decimal(entry$count);
+    call print$string(.('  block references checked: $'));
+    call decimal(block$count);
+    call newline;
+    call print$string(.('Consistency errors: $'));
+    call decimal(error$count);
+    call newline;
+    if error$count = 0 and restore$failed = 0 then
+        call print$string(.('No inconsistencies found in checked entries.$'));
+    else if restore$failed <> 0 then
+        call print$string(.('Scan completed with a state restoration error.$'));
+    else
+        call print$string(.('Review the reported directory-entry errors.$'));
+    call newline;
+    call print$string(.('Not checked: deleted slots, timestamps, data sectors, or unreferenced blocks.$'));
+    call newline;
+    call terminate;
+end plmstart;
+
+end chkcpmfs;

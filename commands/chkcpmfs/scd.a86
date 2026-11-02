@@ -1,0 +1,85 @@
+;
+; Concurrent CP/M-86 v2.0 with BDOS version 3.1
+; Interface for PLM-86 with separate code and data
+;
+
+name	scd
+
+dgroup	group	dats,stack
+cgroup	group	code
+
+assume	cs:cgroup, ds:dgroup, ss:dgroup
+
+stack		segment	word stack 'STACK'
+stack_base	label byte
+stack		ends
+
+dats     segment para public 'DATA'
+	org	4
+bdisk	db	?
+	org	6
+maxb	dw	?
+	org	5ch
+fcb	db	16 dup (?)
+fcb16	db	16 dup (?)
+cr	db	?
+rr	dw	?
+ro	db	?
+buff	db	128 dup (?)
+	org	100h
+saveax	dw 0
+savebx	dw 0
+savecx	dw 0
+savedx	dw 0
+	public	maxb,fcb,fcb16,cr,rr,ro,buff
+	public	saveax,savebx,savecx,savedx
+dats ends
+
+code	segment	public	'CODE'
+public	xdos,mon1,mon2,mon3,mon4
+extrn	plmstart:near
+
+	org	0h
+	jmp	pastserial
+	jmp	patch
+	db	'COPYRIGHT (C) 1983, DIGITAL RESEARCH '
+	db	' CONCURRENT CP/M-86 2.0, 03/31/83 '
+pastserial:
+	pushf
+	pop	ax
+	cli
+	mov	cx,ds
+	mov	ss,cx
+	lea	sp,stack_base
+	push	ax
+	popf
+	jmp	plmstart
+
+xdos	proc
+	push	bp
+	mov	bp,sp
+	mov	dx,[bp+4]
+	mov	cx,[bp+6]
+	int	224
+	mov	saveax,ax
+	mov	savebx,bx
+	mov	savecx,cx
+	mov	savedx,dx
+	pop	bp
+	ret	4
+xdos	endp
+
+mon1	equ	xdos
+mon2	equ	xdos
+mon3	equ	xdos
+mon4	equ	xdos
+
+patch:
+	nop
+	nop
+	nop
+	nop
+	org	0100h
+
+code	ends
+end

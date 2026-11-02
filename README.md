@@ -102,6 +102,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | --- | --- | --- |
 | `asm86` | Original | Adapted from CCP/M-86 3.1 |
 | `assign` | Original | Reverse engineered from CP/M-86 and adapted|
+| `chkcpmfs` | — | New shared PL/M-86 read-only CP/M filesystem checker |
 | `config` | Original | Reverse engineered from CP/M-86 and adapted |
 | `ddt86` | Original | Adapted from CCP/M-86 3.1 |
 | `dskmaint` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
@@ -189,13 +190,14 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-160-3.img` | Digital Research dev tools |
 | `cpm86-160-4.img` | BASIC development |
 
-**320K double sided: 3 disks**
+**320K double sided: 4 disks**
 
 | Image | Contents |
 | --- | --- |
 | `cpm86-320.img` | Bootable core + assembler tools + DCOPY/DCOMP/DFORM |
 | `cpm86-320-at.img` | Same commands, AT-compatible clock |
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
+| `cpm86-chkcpmfs.img` | Bootable CP/M-86 checker disk with PIP, STAT and CHKCPMFS |
 
 **720K / 1.44M via the "1.44 MB Feature" — 2 disks**
 
@@ -213,7 +215,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The three new floppy commands total about 51K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. The 320K core pair and all stock/experimental 720K and 1.44M images carry all three commands directly. Developer-only disks retain their toolchain contents.
+The three disk-utility commands total about 51K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 38K of memory and a 42K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
 
 All 160K core disks ship reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 
