@@ -12,7 +12,7 @@ ED       = $(CMDDIR)/ed/ed.cmd
 GENCMD   = $(CMDDIR)/gencmd/gencmd.cmd
 GENDEF   = $(CMDDIR)/gendef/gendef.cmd
 HELP     = $(CMDDIR)/help/help.cmd
-HLP      = $(CMDDIR)/help/help.hlp
+HLP      = $(CMDDIR)/helphlp/help.hlp
 PIP      = $(CMDDIR)/pip/pip.cmd
 PRINT    = $(CMDDIR)/print/print.cmd
 STAT     = $(CMDDIR)/stat/stat.cmd
@@ -71,7 +71,7 @@ SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
                $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(GENDEF) $(EXTTOOLS)
 $(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/*.plb $$(@D)/*.lit $$(@D)/Makefile)
 	$(MAKE) -C $(@D) $(@F)
-$(HLP): commands/help/help.dat
+$(HLP): commands/helphlp/help.dat $(HELP)
 
 # Expand each image's target-specific content list at dependency evaluation.
 $(DIST_DISKS): Makefile $$(FTOOLS)

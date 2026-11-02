@@ -1,3 +1,7 @@
+# HDMAINT — local command build.
+# all builds the declared tools; check validates them; clean removes generated files.
+
+CMDINFO=cmdinfo
 ASM86=cpm86_asm86
 GENCMD=cpm86_gencmd
 H862BIN=h862bin
@@ -16,7 +20,7 @@ all: $(TOOLS)
 # Original layout: separate CODE/DATA and an allocation-only 32K EXTRA group.
 %.cmd: %.h86 Makefile
 	$(GENCMD) $< 'extra[m800]'
-	@cmdinfo $@
+	@$(CMDINFO) $@
 
 hdmaint.h86 hdmtorg.h86: %.h86: %.a86 hdboot.inc $(INCS) Makefile
 	$(ASM86) $<
@@ -30,7 +34,7 @@ hdmaint.h86 hdmtorg.h86: %.h86: %.a86 hdboot.inc $(INCS) Makefile
 %.h86: %.a86 Makefile
 	$(ASM86) $<
 
-%.flat.h86: %.h86 bootcheck.py
+%.flat.h86: %.h86 bootcheck.py Makefile
 	python3 bootcheck.py normalize $< $@
 
 %.bin: %.flat.h86

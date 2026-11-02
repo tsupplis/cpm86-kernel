@@ -1,4 +1,4 @@
-SUBDIRS=tod asm86 asm80 ddt86 submit pip ed gencmd help submit stat \
+SUBDIRS=tod asm86 asm80 ddt86 submit pip ed gencmd help helphlp submit stat \
     mform assign function dskmaint hexcom setup disk hdmaint print gendef
 
 all clean:
