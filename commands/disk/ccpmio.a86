@@ -452,8 +452,18 @@ disk_io_continue:
 	jz	disk_io_bios
 	jmp	ccpm_io
 disk_io_bios:
-	int	13h
-	ret
+; BIOS AH=05h takes the ID count from INT 1Eh, not reliably from AL.
+; Keep EOT=9 for geometry probes, selecting the actual count only for format.
+        cmp ah,5
+        jne disk_io_bios_transfer
+        push ax
+        mov al,track_sectors
+        mov disk_table+4,al
+        pop ax
+disk_io_bios_transfer:
+        int 13h
+        mov disk_table+4,9              ; MOV preserves returned AX/CF status.
+        ret
 
 	dseg
 os_mode	db	0

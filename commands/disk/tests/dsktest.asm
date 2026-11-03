@@ -474,6 +474,18 @@ disk_model:
     pop bp
     iret
 .format:
+    ; BIOS format takes its ID count from INT 1Eh, even if AL differs.
+%if !NATIVE
+    push ds
+    push si
+    xor si,si
+    mov ds,si
+    lds si,[78h]
+    cmp byte [si+4],SECTORS
+    jne bad
+    pop si
+    pop ds
+%endif
     ; Validate every CHRN entry supplied to the formatter.
     push si
     push cx
