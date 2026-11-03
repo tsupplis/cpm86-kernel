@@ -1,18 +1,21 @@
 ;*****************************************************************************
 ;
-;	DCOPY - CP/M-86 / CCP/M-86 diskette copier for the IBM PC
+;	DCOPY - CP/M-86 / CCP/M-86 / CDOS diskette copier for the IBM PC
 ;
 ;	Adapted from the PC DOS 1.10 utility by David Litton, IBM (1981-82).
 ;	The original copyright text is retained below.
 ;
 ;	Build:	make dcopy.cmd
-;	Usage:	DCOPY drive1: {drive2:} {[1]}
+;	Usage:	DCOPY drive1: {drive2:} {[1]} {[8]|[9]}
 ;
 ;	drive1:	Source diskette drive, A: or B:.
 ;	drive2:	Target diskette drive, A: or B:.
 ;		drive1: is required; drive2: defaults to the current drive.
 ;		The drives must be installed floppy units.  If both name
 ;		the same drive, the command prompts for diskette swaps.
+;	[8]/[9] Select sectors per track; conflicting selections are rejected.
+;	Without an override, probe sector 9 and validate any FAT12 BPB.
+;	Failure alone never selects eight sectors; unknown media needs [8].
 ;	[1]	Use head zero only; otherwise probe for the second side.
 ;		The closing bracket is optional: [1 is also accepted.
 ;		CCP/M aborts if the probe fails: native XIOS cannot tell
@@ -30,8 +33,8 @@
 ;		DCOPY A:		use A: and the current drive
 ;		DCOPY		display command usage
 ;
-;	CP/M-86 1.1 uses BIOS; CCP/M-86 3.1 uses native IBM PC XIOS.
-;	Both transfer raw tracks: 40 cylinders, eight 512-byte
+;	CP/M-86 1.1 uses BIOS; CCP/M-86 3.1 and CDOS 4.1 use native XIOS.
+;	Transfers are raw tracks: 40 cylinders, eight or nine 512-byte
 ;	sectors per head, one or two heads.  No filesystem is interpreted.
 ;	BDOS INT E0h handles console, current drive, memory and termination.
 ;	All BDOS calls preserve ES and the live disk/comparison registers.
@@ -59,12 +62,12 @@ f_maxmem	equ	53
 f_alloc	equ	55
 stack_size	equ	512
 
-; Floppy geometry and BIOS requests (eight 512-byte sectors per head).
+; Floppy geometry and BIOS requests (eight/nine 512-byte sectors per head).
 cylinder_limit           equ     40
-bios_read_track          equ     0208h
-bios_write_track         equ     0308h
-bios_verify_track        equ     0408h
-bios_format_track        equ     0508h
+bios_read_track          equ     0200h
+bios_write_track         equ     0300h
+bios_verify_track        equ     0400h
+bios_format_track        equ     0500h
 
 ; State bits carried across the buffer and disk-swap loops.
 flag_one_drive           equ     1
@@ -99,6 +102,7 @@ start:
 ; With two drives both disks stay inserted. A one-drive copy prompts before
 ; each swap.
 copy_again:
+	call geometry_reset
 	mov	dx,offset msg_insert_source
 	call	puts
 	test	byte ptr copy_flags,flag_one_drive
@@ -206,8 +210,13 @@ show_insert_and_wait:
 ;-----------------------------------------------------------------------------
 
 ; CH is the starting cylinder; the end cylinder is exclusive. Each head
-; occupies 4 KiB.
+; occupies 8 KiB.
 read_source_tracks:
+	cmp current_cylinder,0
+	jne copy_geometry_ready
+	mov dl,source_drive
+	call geometry_detect
+copy_geometry_ready:
 	and	byte ptr copy_flags,0F7h
 	mov	byte ptr read_retries,0h
 	mov	dl,source_drive
@@ -224,10 +233,12 @@ read_source_tracks:
 	jna	read_track_attempt
 	mov	byte ptr batch_end_cylinder,cylinder_limit
 
-; BIOS reads eight 512-byte sectors at ES:0000, starting at sector one.
+; BIOS reads the selected number of sectors at ES:0000, starting at sector one.
 read_track_attempt:
+	call clear_track_slot
 	xor	bx,bx
 	mov	ax,bios_read_track
+	mov	al,track_sectors
 	call	disk_io
 	jc	read_track_failed
 
@@ -251,10 +262,10 @@ read_track_succeeded:
 	mov	byte ptr copy_side_count_char,32h
 	call	show_sides
 
-; Advance ES by 100h paragraphs per head; advance CH only when the head
+; Advance ES by 200h paragraphs per head; advance CH only when the head
 ; wraps to zero.
 advance_read_buffer:
-	add	bp,100h
+	add	bp,200h
 	mov	es,bp
 	xchg	dh,next_head
 	or	dh,dh
@@ -291,7 +302,7 @@ read_track_failed:
 ; Head one failed the geometry probe; undo its buffer advance before
 ; selecting one side.
 discard_side_probe_buffer:
-	sub	bp,100h                         ; Undo the advance made before probing head one.
+	sub	bp,200h                         ; Undo the advance made before probing head one.
 	mov	es,bp
 
 ; Do not treat a missing second head as data damage. Keep later reads on
@@ -330,6 +341,12 @@ show_sides:
 ;-----------------------------------------------------------------------------
 
 write_target_tracks:
+	test byte ptr copy_flags,flag_format_target
+	jnz copy_format_selected
+	mov dx,offset msg_formatting_copy
+	call puts
+copy_format_selected:
+	or byte ptr copy_flags,flag_format_target
 ; This PSP byte now holds the target drive, not a filename character.
 	mov	dl,target_drive
 	xor	dh,dh
@@ -353,6 +370,7 @@ write_track_attempt:
 	or	byte ptr copy_flags,flag_writing
 	xor	bx,bx
 	mov	ax,bios_write_track
+	mov	al,track_sectors
 	call	disk_io
 	jc	write_track_failed
 	call	verify_target_track
@@ -369,7 +387,7 @@ advance_target_side:
 	inc	ch
 
 advance_write_buffer:
-	add	bp,100h
+	add	bp,200h
 	mov	es,bp
 	cmp	ch,batch_end_cylinder
 	jnz	prepare_target_track
@@ -411,7 +429,7 @@ try_formatting_target:
 ; Formatting starts with head zero, so rewind the buffered head when the
 ; failure was on head one.
 rewind_target_to_side_zero:
-	sub	bp,100h
+	sub	bp,200h
 	mov	es,bp
 	xchg	dh,next_head
 	jmp	prepare_target_track
@@ -450,6 +468,7 @@ verify_target_track:
 	and	byte ptr copy_flags,0F7h
 	xor	bx,bx
 	mov	ax,bios_verify_track
+	mov	al,track_sectors
 	call	disk_io
 	jc	verify_track_failed
 	mov	byte ptr verify_retries,0h
@@ -485,7 +504,7 @@ retry_verify_not_ready:
 ;-----------------------------------------------------------------------------
 
 ; The sector-ID table stores cylinder, head, sector number and size for
-; eight sectors.
+; eight or nine sectors.
 format_target_track:
 	or	byte ptr copy_flags,flag_writing
 	push	es
@@ -508,14 +527,28 @@ set_format_head:
 fill_format_ids:
 	add	bx,4h
 	mov	[bx],ax
-	cmp	byte ptr 2h[bx],8h
+	push ax
+	mov al,track_sectors
+	cmp byte ptr 2h[bx],al
+	pop ax
 	jnz	fill_format_ids
 
 ; ES points to the program segment here, because BIOS consumes the sector-ID
 ; table.
 format_track_attempt:
-	mov	bx,offset format_id_table
+; Use the aligned resident scratch area for CHRN DMA, including retries.
+	push cx ! push si ! push di
+	mov es,verify_segment
+	mov si,offset format_id_table
+	xor di,di
+	xor cx,cx
+	mov cl,track_sectors
+	shl cx,1 ! shl cx,1
+	rep movsb
+	pop di ! pop si ! pop cx
+	xor bx,bx
 	mov	ax,bios_format_track
+	mov	al,track_sectors
 	call	disk_io
 	jc	format_track_failed
 	mov	byte ptr format_retries,0h
@@ -649,7 +682,7 @@ buffer_segment	db	0h,0h,0h,1h
 
 format_id_table	db	0h,0h,1h,2h,0h,0h,2h,2h,0h,0h,3h,2h
 	db	0h,0h,4h,2h,0h,0h,5h,2h,0h,0h,6h,2h
-	db	0h,0h,7h,2h,0h,0h,8h,2h
+	db	0h,0h,7h,2h,0h,0h,8h,2h,0h,0h,9h,2h
 
 msg_formatting_copy	db	0Dh,0Ah
 	db	'Formatting while copying'
@@ -812,6 +845,7 @@ allocate_copy_buffer:
 	jz	buffer_backend_ready
 	call	ccpm_lock
 buffer_backend_ready:
+	call disk_setup
 	jmp	begin_copy
 
 begin_copy:
@@ -834,11 +868,13 @@ msg_invalid_drive	db	0Dh,0Ah
 	db	'$'
 
 	dseg
-msg_banner	db	0dh,0ah,'CP/M-86 / CCP/M-86 FLOPPY COPY VER 1.0N',0dh,0ah,'$'
-msg_usage	db	'USAGE: DCOPY drive1: {drive2:} {[1]}',0dh,0ah,0dh,0ah
+msg_banner	db	0dh,0ah,'CP/M-86 / CCP/M-86 / CDOS FLOPPY COPY VER 1.1N',0dh,0ah,'$'
+msg_usage	db	'USAGE: DCOPY drive1: {drive2:} {[1]} {[8]|[9]}',0dh,0ah,0dh,0ah
 	db	'  drive1:  Source floppy drive, A: or B: (required)',0dh,0ah
 	db	'  drive2:  Target floppy drive (default: current drive)',0dh,0ah
 	db	'  [1]      Head zero only; closing ] is optional',0dh,0ah
+	db '  [8]/[9]  Explicit sectors per track; otherwise detect',13,10
+	db '  DOS/FAT media is copied as physical sectors',13,10
 	db	'  Same drive twice: prompt for diskette swaps',0dh,0ah
 	db	'  Example: DCOPY A: B:[1]',0dh,0ah,'$'
 	cseg
@@ -895,6 +931,11 @@ flush_key:
 	jmp	flush_key
 read_key:
 	mov	dl,0ffh
+	cmp os_mode,0
+	je prompt_raw_ready
+; Sleep for PIN on native systems; priority 150 must not busy-poll PIN 185.
+	mov dl,0fdh
+prompt_raw_ready:
 	mov	cl,f_rawio
 	call	bdos
 	or	al,al
@@ -911,6 +952,7 @@ key_return:
 ; the program and its transfer block.  No return through a DOS PSP is used.
 cleanup:
 doexit:
+	call disk_restore
 	cmp	byte ptr os_mode,0
 	jz	exit_cpm
 	call	ccpm_finish
@@ -940,7 +982,10 @@ parse_args:
 	mov	cl,byte ptr .80h
 	mov	si,81h
 arg_next:
-	jcxz	args_done
+	or cx,cx
+	jnz args_remaining_1
+	jmp args_done
+args_remaining_1:
 	lodsb
 	dec	cx
 	cmp	al,' '
@@ -975,27 +1020,50 @@ arg_switch:
 	lodsb
 	dec	cx
 	cmp	al,'1'
-	jnz	arg_bad
+	jz arg_single_side
+	cmp al,'8'
+	je arg_sectors
+	cmp al,'9'
+	jne arg_bad
+arg_sectors:
+	sub al,'0'
+	cmp sector_override,0
+	je arg_set_sectors
+	cmp al,sector_override
+	jne arg_bad
+arg_set_sectors:
+	mov sector_override,al
+	jmps arg_switch_end
+arg_single_side:
 	or	byte ptr copy_flags,flag_one_side
-	jcxz	args_done
+arg_switch_end:
+	or cx,cx
+	jnz args_remaining_2
+	jmp args_done
+args_remaining_2:
 	cmp	byte ptr [si],']'
 	jnz	arg_delimiter
 	inc	si
 	dec	cx
 	jmp	arg_delimiter
 arg_delimiter:
-	jcxz	args_done
+	or cx,cx
+	jnz args_remaining_3
+	jmp args_done
+args_remaining_3:
 	mov	al,[si]
 	cmp	al,'['
-	jz	arg_next
+	jz	arg_continue
 	cmp	al,' '
-	jz	arg_next
+	jz	arg_continue
 	cmp	al,9
-	jz	arg_next
+	jz	arg_continue
 arg_bad:
 	jmp	parameter_error
 arg_bad_drive:
 	jmp	invalid_drive_exit
+arg_continue:
+	jmp arg_next
 args_done:
 	or	bl,bl
 	jnz	args_have_drive
@@ -1020,8 +1088,8 @@ args_return:
 ; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
-; Round up to a 4 KiB boundary so an eight-sector BIOS transfer cannot cross
-; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+; Round up to a 8 KiB boundary so an eight-sector BIOS transfer cannot cross
+; a 68 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
 alloc_buffer:
 	mov	dx,offset mem_block
@@ -1040,14 +1108,14 @@ alloc_buffer:
 memory_reserved:
 	mov	dx,mem_segment
 	mov	bx,dx
-	add	dx,0ffh
-	and	dx,0ff00h
+	add	dx,1ffh
+	and	dx,0fe00h
 	sub	bx,dx
 	neg	bx		; paragraphs lost to DMA alignment
 	mov	ax,mem_length
 	sub	ax,bx
 	jc	memory_error
-	mov	cl,8
+	mov	cl,9
 	shr	ax,cl
 	cmp	ax,80
 	jbe	buffer_sized
@@ -1077,4 +1145,8 @@ stack_space	rs	stack_size
 stack_top:
 
 	include	ccpmio.a86
+	include	geom.a86
+	dseg
+; Trailing uninitialized DMA storage: CMD MIN reserves it; LEN omits it.
+verify_space	rs	4000h
 	end

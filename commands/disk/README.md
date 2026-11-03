@@ -1,40 +1,74 @@
-# DCOPY and DCOMP for CP/M-86 and CCP/M-86
+# DCOPY and DCOMP
 
-The same sources build one binary per command for CP/M-86 1.1 and the IBM PC
-CCP/M-86 3.1 XIOS (OS version 1431h). Other versions are rejected. These are
-ports of the PC DOS 1.10 utilities from [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
-Command syntax and examples are in the source headers and HELP entries.
+One source set and one binary per command supports CP/M-86 1.1 (BIOS), IBM PC
+CCP/M-86 3.1 (native XIOS), and Concurrent DOS 4.1/4.11 (native XIOS).
+These are maintained ports of the PC DOS 1.10 utilities. Each repository owns
+its complete sources, build and tests; no sibling directory is used at build time.
 
-Both commands transfer raw sectors without interpreting a filesystem. They
-support installed A:/B: drives, 40 cylinders, eight 512-byte sectors per head,
-single/double-sided media, small buffers, one-drive swaps and repeated pairs.
-The programs and private 512-byte stacks remain resident. Buffers are aligned
-to physical 4 KiB boundaries for DMA. BDOS preserves all live registers and ES.
+## Syntax and media
 
-CP/M uses ROM BIOS. CCP/M uses `ccpmio.a86`, adapted from DFORM's backend:
-SYSDAT:28h, process UDA in ES, stack IOPBs, native XIOS 10/11/15 and reversed
-head-one logical track numbers. Verification reads into a separate resident
-scratch buffer, preserving source data for retries. CCP/M function 53 already
-allocates memory; only single-user CP/M needs function 55 afterward.
+```
+DCOPY source: [target:] [1] [8|9]
+DCOMP first:  [second:] [1] [8|9]
+```
 
-The CCP/M path requires a local foreground unbuffered console and no open
-files. It sets P_KEEP/NOSWITCH, raises priority, acquires MXdisk and rechecks
-open files under the lock. XIOS quick-return error mode prevents an Ignore
-response from silently accepting bad data. Native status 1 maps to the common
-sector-error retry/format-fallback path; status 2 maps to write
-protection. XIOS does not return the full ROM BIOS status byte. A native
-head-one probe error therefore stops the command rather than selecting a
-single side silently. Use [1] for known single-sided media; transient probe
-errors are retried before stopping.
+Options use separate brackets: `DCOPY A: B: [9]`, `DCOMP A: A: [1] [8]`.
+The closing bracket is optional. Drives are installed A:/B:; the second
+argument defaults to the current drive. Same-drive operations prompt for swaps.
+[1] restricts operation to head zero. Conflicting [8]/[9] options are rejected.
 
-Ctrl-C follows explicit cleanup during prompts and disk access. Every exit
-restores the UDA error mode, returns MXdisk, invalidates each accessed drive's
-login sequence, resets BDOS state outside the disk lock, and restores console,
-priority and P_KEEP state. CP/M resets both floppy login records on exit.
+Both commands operate on raw physical sectors, independent of CP/M or FAT.
+They support 40 cylinders, 512-byte sectors, one/two heads and eight/nine
+sectors per head: 160/320K and 180/360K geometries. They do not convert filesystems.
 
-`make check` runs linked CMDs under emu2 through `../../tools/dsktest.py` and
-the NASM harness `tests/dsktest.asm`. Tests cover both OS paths, DMA/IOPBs,
-register/ES corruption, memory allocation, swaps, geometry, comparison errors,
-format fallback, verification retries, cancellation and partial-lock cleanup.
-Native cases reject ROM BIOS interrupts. The harness accesses no host disks.
-Real-kernel and floppy-hardware validation remains outstanding.
+Detection reads the boot sector and validates a small-disk FAT12 BPB, then
+probes sector nine where the backend supports it. Successful ninth-sector I/O
+proves nine sectors; a failed probe is retried and never by itself proves eight.
+A valid eight-sector BPB can identify eight-sector media; unknown media needs
+an explicit [8]. [9] still requires sector nine to be readable. A known BPB
+contradicting the selection is rejected. DCOMP checks both media and rejects
+conflicting geometries. Each new pair is detected afresh.
+
+DCOPY formats the target to the selected source geometry before writing its
+tracks, then verifies them. This also removes a leftover ninth sector when
+copying an eight-sector disk over a nine-sector target. All target contents
+are overwritten. DCOMP is read-only. Neither command installs a new system;
+copying a bootable disk copies its existing bootstrap unchanged.
+
+Native head-one failures remain ambiguous and stop the operation; use [1]
+for known single-sided media. A failed read is not evidence that a head is absent.
+
+## Backends and memory
+
+CP/M-86 uses BIOS and a private INT 1Eh parameter table. Concurrent versions
+use SYSDAT:28h, the caller UDA and stack IOPBs under MXdisk, P_KEEP and console
+NOSWITCH. CDOS uses physical raw read/write 35/36 and variable format 29.
+Its INT 1Eh table supplies sector size/end-of-track to the raw services.
+
+Original CCP/M kernels support the legacy eight-sector XIOS path. Nine-sector
+access requires this project's XIOS extension: function 14, CX=0, DX=444Bh,
+SI=534Bh returns AX=4B44h, DX=0101h. Old kernels safely ignore those extra
+registers; no unknown entry is called without a successful handshake. Updated
+kernels provide physical read/write 35/36 and variable format 29. This extends
+maintenance access; it does not add FAT filesystem mounting to CCP/M.
+
+Each head uses a physical 8 KiB-aligned slot. Nine sectors fit without crossing
+a 64 KiB DMA boundary. Padding is cleared, and DCOMP compares two slots while
+excluding stale padding bytes. Format CHRN DMA and verification use separate
+aligned resident scratch, preserving buffered source data across retries.
+The private stack remains resident. Trailing DMA buffers are uninitialized
+storage: CMD MIN reserves them, while LEN omits their zero bytes from disk.
+
+Native prompt input blocks through raw function 6/FDh so the priority-150 tool
+does not starve the lower-priority PIN keyboard process. Ctrl-C polling during
+transfers remains explicit. Cleanup restores the exact INT 1Eh vector, UDA
+error mode, queue, console, priority and P_KEEP state, invalidates accessed
+floppy login records and resets BDOS outside the disk lock.
+
+## Checks
+
+`make check` executes the linked CMDs with synthetic BDOS/BIOS/XIOS under emu2.
+The local harness validates DMA/IOPBs, data including sector nine, small buffers,
+one-drive swaps, geometry, mismatch reporting, formatting, retries, cancellation,
+register preservation and partial-lock cleanup. BIOS calls are forbidden on
+native paths. Real-kernel tests use only disposable PCE images.

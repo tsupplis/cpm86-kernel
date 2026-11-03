@@ -1,0 +1,218 @@
+; Shared 8/9-sector detection and DMA-safe transfer slots.
+; A credible 40-cylinder FAT12 BPB may identify eight-sector media. Otherwise
+; successful sector-nine I/O proves nine; a failed probe alone proves nothing.
+; [8]/[9] are explicit geometry selections, never permission to ignore I/O.
+        cseg
+geometry_reset:
+        mov geometry_known,0
+        ret
+geometry_detect:
+        push ax ! push bx ! push cx ! push dx
+        push si ! push di ! push bp ! push es
+        mov geometry_hint,0
+        mov es,verify_segment
+        mov cl,1
+        call geometry_sector
+        jnc geometry_boot_read
+        mov dx,offset msg_geometry_read
+        jmp geometry_stop
+geometry_boot_read:
+        cmp es:word ptr .11,512
+        jne geometry_try_nine
+        cmp es:word ptr .14,1
+        jne geometry_try_nine
+        cmp es:byte ptr .16,2
+        jne geometry_try_nine
+        mov ax,es:word ptr .24
+        cmp ax,8
+        je geometry_bpb_spt
+        cmp ax,9
+        jne geometry_try_nine
+geometry_bpb_spt:
+        mov bx,es:word ptr .26
+        cmp bx,1
+        jb geometry_try_nine
+        cmp bx,2
+        ja geometry_try_nine
+        mul bx
+        mov bx,40
+        mul bx
+        cmp ax,es:word ptr .19
+        jne geometry_try_nine
+        cmp es:word ptr .22,1
+        jb geometry_try_nine
+        cmp es:word ptr .22,2
+        ja geometry_try_nine
+        cmp es:byte ptr .21,0fch
+        jb geometry_try_nine
+        cmp es:word ptr .17,16
+        jb geometry_try_nine
+        cmp es:word ptr .17,224
+        ja geometry_try_nine
+        cmp es:byte ptr .13,1
+        je geometry_cluster_valid
+        cmp es:byte ptr .13,2
+        jne geometry_try_nine
+geometry_cluster_valid:
+        mov al,es:byte ptr .24
+        mov geometry_hint,al
+geometry_try_nine:
+        cmp sector_override,8
+        jne geometry_native_capability
+        cmp geometry_hint,9
+        je geometry_conflict
+        mov al,8
+        jmp geometry_selected
+geometry_native_capability:
+        cmp os_mode,1
+        jne geometry_nine_probe
+        cmp geometry_hint,8
+        je geometry_eight
+        mov dx,offset msg_need_raw_xios
+        jmp geometry_stop
+geometry_nine_probe:
+        mov cl,9
+        call geometry_sector
+        jnc geometry_nine
+        cmp geometry_hint,8
+        jne geometry_ambiguous
+        cmp sector_override,9
+        je geometry_ambiguous
+geometry_eight:
+        mov al,8
+        jmps geometry_selected
+geometry_nine:
+        cmp geometry_hint,8
+        je geometry_conflict
+        mov al,9
+geometry_selected:
+        cmp sector_override,0
+        je geometry_compare
+        cmp al,sector_override
+        jne geometry_conflict
+geometry_compare:
+        cmp geometry_known,0
+        je geometry_first
+        cmp al,track_sectors
+        jne geometry_conflict
+        jmps geometry_return
+geometry_first:
+        mov track_sectors,al
+        mov geometry_known,1
+        mov dx,offset msg_eight
+        cmp al,8
+        je geometry_show
+        mov dx,offset msg_nine
+geometry_show:
+        call puts
+geometry_return:
+        pop es ! pop bp ! pop di ! pop si
+        pop dx ! pop cx ! pop bx ! pop ax
+        ret
+geometry_ambiguous:
+        mov dx,offset msg_geometry_unknown
+        jmps geometry_stop
+geometry_conflict:
+        mov dx,offset msg_geometry_mismatch
+geometry_stop:
+        call puts
+        jmp cleanup
+
+; Preserve the drive and sector for all retries. Separate scratch sectors
+; keep the BPB intact. Raw native access uses caller-owned, aligned storage.
+geometry_sector:
+        mov geometry_retry,4
+geometry_sector_again:
+        xor ch,ch
+        xor dh,dh
+        xor bx,bx
+        cmp cl,1
+        je geometry_sector_buffer
+        mov bx,512
+geometry_sector_buffer:
+        mov ax,0201h
+        call disk_io
+        jnc geometry_sector_done
+        push ax
+        xor ax,ax
+        call disk_io
+        pop ax
+        dec geometry_retry
+        jnz geometry_sector_again
+        stc
+geometry_sector_done:
+        ret
+
+; Every head occupies an 8 KiB slot, aligned on a physical 8 KiB boundary.
+; Nine sectors fit inside it and never cross a 64 KiB DMA page. Zero padding
+; allows DCOMP to compare two slots without treating unused bytes as data.
+clear_track_slot:
+        push ax ! push cx ! push di
+        xor ax,ax
+        xor di,di
+        mov cx,1000h
+        rep stosw
+        pop di ! pop cx ! pop ax
+        ret
+
+; Install a private 512-byte, nine-sector BIOS parameter table under the
+; already-acquired disk lock (or single-user CP/M). Restore the exact vector
+; on every exit. CDOS direct XIOS services also consult this INT 1Eh table.
+disk_setup:
+        push ax ! push bx ! push es
+        mov ax,offset verify_space
+        add ax,15
+        mov cl,4
+        shr ax,cl
+        mov bx,ds
+        add ax,bx
+        add ax,1ffh
+        and ax,0fe00h
+        mov verify_segment,ax
+        xor ax,ax
+        mov es,ax
+        mov ax,es:word ptr .78h
+        mov old_disk_table,ax
+        mov ax,es:word ptr .7ah
+        mov old_disk_table+2,ax
+        pushf
+        cli
+        mov es:word ptr .78h,offset disk_table
+        mov es:word ptr .7ah,ds
+        popf
+        mov disk_table_held,1
+        pop es ! pop bx ! pop ax
+        ret
+disk_restore:
+        cmp disk_table_held,0
+        je disk_restore_done
+        push ax ! push es
+        xor ax,ax
+        mov es,ax
+        pushf
+        cli
+        mov ax,old_disk_table
+        mov es:word ptr .78h,ax
+        mov ax,old_disk_table+2
+        mov es:word ptr .7ah,ax
+        popf
+        mov disk_table_held,0
+        pop es ! pop ax
+disk_restore_done:
+        ret
+        dseg
+track_sectors db 8
+sector_override db 0
+geometry_known db 0
+geometry_hint db 0
+geometry_retry db 0
+disk_table_held db 0
+old_disk_table dw 0,0
+disk_table db 0cfh,2,25h,2,9,2ah,0ffh,50h,0f6h,19h,4
+msg_eight db '8 sectors per track.',13,10,'$'
+msg_nine db '9 sectors per track.',13,10,'$'
+msg_geometry_unknown db 'Cannot determine 8/9-sector geometry; use [8] for known eight-sector media or [9] for nine.',13,10,'$'
+msg_geometry_mismatch db 'Incompatible or conflicting 8/9-sector geometry.',13,10,'$'
+msg_geometry_read db 'Cannot read the disk boot sector; no copy or comparison performed.',13,10,'$'
+msg_need_raw_xios db 'Nine-sector/probe support needs the updated CCP/M XIOS; use [8] only for known eight-sector media.',13,10,'$'
+        cseg

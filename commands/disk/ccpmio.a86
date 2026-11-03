@@ -37,6 +37,22 @@ ccpm_local:
 	mov	dx,offset msg_background
 	jmp	ccpm_stop
 ccpm_equipment:
+; Ask through a historical entry; never call an unknown function on an old XIOS.
+        cmp os_mode,1
+        jne ccpm_equipment_pointer
+        xor cx,cx
+        mov dx,444bh
+        mov si,534bh
+        mov al,14
+        call ccpm_call
+        cmp ax,4b44h
+        jne ccpm_equipment_pointer
+        cmp native_result_dx,0101h
+        jne ccpm_equipment_pointer
+        mov os_mode,3
+ccpm_equipment_pointer:
+        xor dx,dx
+        xor si,si
 	xor	cx,cx
 	mov	al,14
 	call	ccpm_call
@@ -55,8 +71,8 @@ ccpm_init_done:
 	shr	ax,cl
 	mov	bx,ds
 	add	ax,bx
-	add	ax,0ffh
-	and	ax,0ff00h
+	add	ax,1ffh
+	and	ax,0fe00h
 	mov	verify_segment,ax
 	ret
 
@@ -137,6 +153,7 @@ ccpm_call:
 	mov	es,word ptr uda_segment
 	mov	ds,word ptr system_segment
 	callf	dword ptr .28h
+	mov cs:native_result_dx,dx
 	pop	es
 	pop	ds
 	pop	bp
@@ -159,6 +176,9 @@ ccpm_io:
 	clc
 	ret
 ccpm_transfer:
+	mov native_count,al
+	mov native_sector,cl
+	mov native_head,dh
 	push	bx
 	push	cx
 	push	dx
@@ -167,16 +187,21 @@ ccpm_transfer:
 	push	bp
 	push	ds
 	push	es
+	mov native_write,0
 	mov	native_function,10
 	mov	native_dma_offset,bx
 	mov	native_dma_segment,es
 	cmp	ah,3
 	jnz	ccpm_not_write
 	mov	native_function,11
+	mov native_write,1
 ccpm_not_write:
 	cmp	ah,5
 	jnz	ccpm_not_format
 	mov	native_function,15
+	cmp os_mode,1
+	je ccpm_not_format
+	mov native_function,29
 ccpm_not_format:
 	cmp	ah,4
 	jnz	ccpm_dma_ready
@@ -197,11 +222,28 @@ ccpm_dma_ready:
 	mov	al,79
 	sub	al,ch
 ccpm_track_ready:
-	mov	ch,8
+        cmp os_mode,1
+        je ccpm_legacy_operation
+        cmp native_function,29
+        je ccpm_variable_format
+        mov al,ch
+        mov ah,native_head
+        mov native_function,35
+        cmp byte ptr native_write,0
+        je ccpm_modern_ready
+        mov native_function,36
+        jmps ccpm_modern_ready
+ccpm_variable_format:
+        push word ptr native_gap_fill
+ccpm_modern_ready:
+ccpm_legacy_operation:
+	mov	ch,native_count
 	mov	cl,dl
 	push	cx                        ; unit/count
 	push	ax                        ; logical track
 	xor	cx,cx
+	mov cl,native_sector
+	dec cl
 	push	cx                        ; zero-based sector
 	push	word ptr native_dma_segment
 	push	word ptr native_dma_offset
@@ -210,6 +252,10 @@ ccpm_track_ready:
 	mov	ds,word ptr system_segment
 	callf	dword ptr .28h
 	add	sp,10
+	cmp cs:native_function,29
+	jne ccpm_stack_ready
+	add sp,2
+ccpm_stack_ready:
 	pop	es
 	pop	ds
 	pop	bp
@@ -240,8 +286,8 @@ ccpm_io_failed:
 ; failure cannot prove that the medium is single-sided. Stop before copying
 ; buffered data or reporting equality; explicit [1] never probes this head.
 check_native_probe:
-	cmp	byte ptr os_mode,1
-	jnz	native_probe_return
+	cmp	byte ptr os_mode,0
+	jz	native_probe_return
 	or	ch,ch
 	jnz	native_probe_return
 	cmp	dh,1
@@ -351,8 +397,14 @@ select_concurrent:
 	mov	cl,163
 	call	bdos
 	cmp	ax,1431h
-	jnz	wrong_os
+	je select_ccpm
+	cmp ax,1441h
+	jne wrong_os
+	mov os_mode,2
+	jmps select_native_init
+select_ccpm:
 	mov	byte ptr os_mode,1
+select_native_init:
 	call	ccpm_init
 	ret
 select_bios:
@@ -415,6 +467,11 @@ io_mode_held	db	0
 msg_native_probe	db	'Cannot read head 1; unable to determine media sides.',13,10
 	db	'Use [1] only for known single-sided media.',13,10,'$'
 msg_cancelled	db	'Cancelled.',13,10,'$'
-msg_wrong_os	db	'Requires CP/M-86 1.1 or Concurrent CP/M-86 3.1.',13,10,'$'
-verify_space	rs	2000h
+msg_wrong_os	db	'Requires CP/M-86 1.1, CCP/M-86 3.1 or Concurrent DOS 4.1.',13,10,'$'
+native_result_dx dw 0
+native_count db 0
+native_sector db 0
+native_head db 0
+native_write db 0
+native_gap_fill dw 0f650h
 	cseg

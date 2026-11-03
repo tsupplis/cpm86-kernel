@@ -64,6 +64,21 @@ cpu 8086
 %ifndef IS_COPY
 %define IS_COPY 0
 %endif
+%ifndef SECTORS
+%define SECTORS 8
+%endif
+%ifndef SECOND_SECTORS
+%define SECOND_SECTORS SECTORS
+%endif
+%ifndef BPB
+%define BPB 1
+%endif
+%ifndef EXTENDED
+%define EXTENDED 0
+%endif
+%ifndef BAD_NINTH
+%define BAD_NINTH 0
+%endif
 org 100h
 start:
     mov ax,cs
@@ -349,7 +364,7 @@ disk_model:
     ; Each 4 KiB track buffer must fit within a 64 KiB DMA page.
     push ax
     mov ax,es
-    test ax,0ffh
+    test ax,1ffh
     pop ax
     jnz bad_11
 .nonzero:
@@ -366,7 +381,13 @@ disk_model:
 .not_verify:
 %endif
 %endif
-    cmp al,8
+    cmp al,1
+    jne .bulk_count
+    cmp ah,2
+    jne bad_12
+    jmp .geometry_probe
+.bulk_count:
+    cmp al,SECTORS
     jne bad_12
     cmp ah,2
     je .read
@@ -397,13 +418,24 @@ disk_model:
     mov al,ch
     xor al,dh
     mov di,bx
-    mov cx,1000h
+    mov cx,SECTORS*512
     cld
     rep stosb
+%if SECTORS == 9
+    mov di,bx
+    add di,4096
+    xor al,99h
+    mov cx,512
+    rep stosb
+%endif
 %if MISMATCH
     cmp dl,1
     jne .same
+%if MISMATCH == 2
+    mov byte [es:bx+4096],0ffh
+%else
     mov byte [es:bx],0ffh
+%endif
 .same:
 %endif
     pop ax
@@ -424,10 +456,16 @@ disk_model:
     push di
     mov al,ch
     xor al,dh
-    mov cx,1000h
+    mov cx,4096
     mov di,bx
     cld
     repe scasb
+    jne bad_14
+%if SECTORS == 9
+    xor al,99h
+    mov cx,512
+    repe scasb
+%endif
     jne bad_14
     pop di
     pop cx
@@ -436,11 +474,7 @@ disk_model:
     pop bp
     iret
 .format:
-%if NATIVE
-    mov byte [cs:formatted],1
-    jmp .reset
-%endif
-    ; Validate all eight CHRN entries supplied to the BIOS.
+    ; Validate every CHRN entry supplied to the formatter.
     push si
     push cx
     mov si,bx
@@ -456,11 +490,62 @@ disk_model:
     jne bad
     add si,4
     inc cl
-    cmp cl,9
+    cmp cl,SECTORS+1
     jne .format_id
     mov byte [cs:formatted],1
     pop cx
     pop si
+    jmp .reset
+.geometry_probe:
+    cmp cl,9
+    jne .boot_probe
+%if BAD_NINTH
+    mov ah,10h
+    jmp .error
+%endif
+    cmp dl,1
+    je .second_probe
+%if SECTORS == 8
+    jmp .absent
+%else
+    jmp .probe_ok
+%endif
+.second_probe:
+%if SECOND_SECTORS == 8
+    jmp .absent
+%endif
+.probe_ok:
+    jmp .reset
+.boot_probe:
+    cmp cl,1
+    jne bad_12
+    push cx
+    push di
+    push ax
+    mov di,bx
+    mov cx,512
+    xor al,al
+    rep stosb
+%if BPB
+    mov word [es:bx+11],512
+    mov byte [es:bx+13],2
+    mov word [es:bx+17],112
+    mov byte [es:bx+21],0fdh
+    mov word [es:bx+14],1
+    mov byte [es:bx+16],2
+    mov word [es:bx+22],2
+    mov word [es:bx+26],SIDES
+    mov word [es:bx+24],SECTORS
+    mov word [es:bx+19],40*SIDES*SECTORS
+    cmp dl,1
+    jne .boot_fields_ready
+    mov word [es:bx+24],SECOND_SECTORS
+    mov word [es:bx+19],40*SIDES*SECOND_SECTORS
+.boot_fields_ready:
+%endif
+    pop ax
+    pop di
+    pop cx
     jmp .reset
 .absent:
     mov ah,4
@@ -617,13 +702,23 @@ xios:
     jne bad
     cmp byte [es:10h],0feh
     jne bad
-    cmp byte [ss:bp+15],8
+    cmp byte [ss:bp+15],1
+    je .count_ready
+    cmp byte [ss:bp+15],SECTORS
     jne bad
+.count_ready:
     cmp byte [ss:bp+14],1
     ja bad
     cmp word [ss:bp+10],0
+    je .sector_ready
+    cmp word [ss:bp+10],8
     jne bad
+.sector_ready:
     mov dx,[ss:bp+12]
+    cmp al,35
+    je .physical_track
+    cmp al,36
+    je .physical_track
     cmp dx,80
     jae bad
     mov ch,dl
@@ -633,20 +728,28 @@ xios:
     mov ch,79
     sub ch,dl
     inc dh
+    jmp .track_ready
+.physical_track:
+    mov ch,dl
 .track_ready:
     mov dl,[ss:bp+14]
-    mov cl,1
+    mov cl,[ss:bp+10]
+    inc cl
     mov bx,[ss:bp+6]
     mov es,[ss:bp+8]
+    cmp al,29
+    je .dma_ok
     cmp al,15
     je .dma_ok
     push ax
     mov ax,es
-    test ax,0ffh
+    test ax,1ffh
     pop ax
     jnz bad
 .dma_ok:
 %if FAIL_NATIVE
+    cmp byte [ss:bp+15],1
+    je .failure_done
     cmp byte [cs:native_failures],FAIL_TIMES
     jae .failure_done
 %if FAIL_PROBE
@@ -661,21 +764,30 @@ xios:
 %endif
 %if FAIL_NATIVE == 2
     cmp al,10
+%if EXTENDED || FULL_VERSION == 1441h
+    cmp al,35
+%endif
 %elif FAIL_NATIVE == 3
     cmp al,11
+%if EXTENDED || FULL_VERSION == 1441h
+    cmp al,36
+%endif
 %elif FAIL_NATIVE == 4
     cmp al,10
     jne .failure_done
     cmp byte [cs:last_write],1
 %else
     cmp al,15
+%if EXTENDED || FULL_VERSION == 1441h
+    cmp al,29
+%endif
 %endif
     jne .failure_done
     inc byte [cs:native_failures]
 %if FAIL_NATIVE == 4
     ; Destroy scratch on a failed read; retries must still have source data.
     xor di,di
-    mov cx,1000h
+    mov cx,SECTORS*512
     mov al,0ffh
     cld
     rep stosb
@@ -685,18 +797,29 @@ xios:
 .failure_done:
 %endif
     cmp al,10
-    jne .not_read
-    mov ax,0208h
-    jmp .issue
-.not_read:
+    je .read_request
+    cmp al,35
+    je .read_request
     cmp al,11
-    jne .not_write
-    mov ax,0308h
-    jmp .issue
-.not_write:
+    je .write_request
+    cmp al,36
+    je .write_request
     cmp al,15
+    je .format_request
+    cmp al,29
     jne bad
-    mov ax,0508h
+    cmp word [ss:bp+16],0f650h
+    jne bad
+.format_request:
+    mov ah,5
+    jmp .set_count
+.read_request:
+    mov ah,2
+    jmp .set_count
+.write_request:
+    mov ah,3
+.set_count:
+    mov al,[ss:bp+15]
 .issue:
     pushf
     push cs
@@ -708,6 +831,19 @@ xios:
     mov ax,1
     jmp .return
 .equipment:
+%if EXTENDED
+    cmp cx,0
+    jne .normal_equipment
+    cmp dx,444bh
+    jne .normal_equipment
+    cmp si,534bh
+    jne .normal_equipment
+    mov ax,4b44h
+    mov dx,0101h
+    pop bp
+    retf
+.normal_equipment:
+%endif
     mov ax,300h
     jmp .return
 .select:

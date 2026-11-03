@@ -11,17 +11,22 @@ TOOLS=dcopy.cmd dcomp.cmd
 .DELETE_ON_ERROR:
 all: $(TOOLS)
 
-dcopy.obj: dcopy.a86 ccpmio.a86 Makefile
+dcopy.obj: dcopy.a86 ccpmio.a86 geom.a86 Makefile
 
-dcomp.obj: dcomp.a86 ccpmio.a86 Makefile
+dcomp.obj: dcomp.a86 ccpmio.a86 geom.a86 Makefile
 
 # Both utilities use an 8080-model CMD: one CODE group holding code, data and stack,
 # with the base page at 0-0FFh.  Collapsing the data group keeps it that way.
-# LINK86 pads the output past the end of the group, so cut it back to the
-# length the header declares (128-byte header + LEN paragraphs).
+# Keep uninitialized DMA storage resident via CMD MIN, without storing its
+# zero-filled bytes on disk. Both buffers are last in DATA; assert that the
+# omitted tail contains only zeros. Trim LINK86 padding too. The real native
+# loaders reserve MIN; the tests also exercise this shorter stored image.
+dcopy.cmd: BSSPARAS=1024
+dcomp.cmd: BSSPARAS=2560
+
 %.cmd: %.obj Makefile
 	$(LINK86) $* '[$$sz, cod[ori[0]], dat[ori[0],max[0]]]'
-	@python3 -c "f='$@';d=open(f,'rb').read();open(f,'wb').write(d[:128+int.from_bytes(d[1:3],'little')*16])"
+	@python3 -c "from pathlib import Path; p=Path('$@'); b=bytearray(p.read_bytes()); resident=int.from_bytes(b[1:3],'little'); stored=resident-$(BSSPARAS); assert stored>0 and not any(b[128+stored*16:128+resident*16]), 'Nonzero trailing BSS'; b[1:3]=stored.to_bytes(2,'little'); p.write_bytes(b[:128+stored*16])"
 	$(CMDINFO) $@
 
 # RASM-86 exits 0 and still writes an .obj when it reports errors, so neither

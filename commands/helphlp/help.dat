@@ -158,70 +158,76 @@
 ///1dcomp
   Syntax:
 
-  DCOMP drive1: {drive2:} {[1]}
+  DCOMP drive1: {drive2:} {[1]} {[8]|[9]}
 
   Purpose:
 
-      DCOMP compares every sector of two floppy diskettes and reports
-  differences by track and side. It compares raw disk contents, including
-  the boot area and unused sectors; it does not interpret a filesystem.
+      Compare raw floppy sectors, including boot and unused areas.
+  CP/M and DOS/FAT media are supported; no filesystem conversion occurs.
+  Geometry is 40 cylinders, 512-byte sectors, one/two heads, eight/nine
+  sectors per head: 160/320K or 180/360K.
 
-  Arguments and options:
+  drive1:   First installed floppy, A: or B: (required).
+  drive2:   Second floppy; defaults to the current drive.
+  [1]       Head zero only. Use for known single-sided media on native XIOS.
+  [8]/[9]   Select sectors per track. Conflicting options are rejected.
 
-  drive1:   First installed floppy drive, A: or B: (required).
-  drive2:   Second floppy drive; defaults to the current CP/M drive.
-  [1]       Compare head zero only. The closing ] may be omitted.
+      Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
+  proves nine; failed probing alone never proves eight. Unknown eight-sector
+  media needs [8]. A known BPB contradicting the selection is rejected.
+  [9] does not ignore unreadable sectors. DCOMP checks both geometries.
 
-      Specify the same drive twice to compare diskettes by swapping them
-  at the prompts. The option may follow a drive directly, as in B:[1].
-  Answer Y to compare another pair, or N to exit. An empty or invalid
-  command line displays usage without starting disk operations.
+      DCOMP is read-only and reports differences by track and side.
+  A geometry conflict stops comparison without reporting equality.
+  Same drive twice prompts for swaps. Y processes another pair; N exits.
+  Closing ] is optional; for example B:[1] [8] or A: B:[9.
 
-      This build supports CP/M-86 1.1 using ROM BIOS and CCP/M-86 3.1
-  using native IBM PC XIOS. Both support 40 cylinders with eight 512-byte
-  sectors per head: 160K single-sided or 320K double-sided media. Close
-  all open files first on CCP/M. Ctrl-C cancels and releases disk locks.
+      CP/M-86 1.1 uses BIOS; CCP/M-86 3.1 and CDOS 4.1 use native XIOS.
+  CCP/M nine-sector operation requires the updated XIOS raw services.
+  Older CCP/M retains the eight-sector path; unknown versions are rejected.
+  Use a local foreground console and close files first on native systems.
+  Ctrl-C releases locks and restores the original disk parameter vector.
 
   Examples:
-
-      A>DCOMP A: B:
-      A>DCOMP A: A:[1]
-      A>DCOMP A: B:[1
+      A>DCOMP A: B: [9]
+      A>DCOMP A: A: [1] [8]
 
 ///1dcopy
   Syntax:
 
-  DCOPY drive1: {drive2:} {[1]}
+  DCOPY drive1: {drive2:} {[1]} {[8]|[9]}
 
   Purpose:
 
-      DCOPY copies an entire floppy diskette from drive1: onto drive2:,
-  replacing the target contents. It copies raw sectors, including the
-  boot area and unused sectors, and verifies the writes. It can format
-  target tracks while copying when the original utility's retry logic
-  detects that formatting is needed. No filesystem is interpreted.
+      Copy and verify raw floppy sectors, including boot and unused areas.
+  CP/M and DOS/FAT media are supported; no filesystem conversion occurs.
+  Geometry is 40 cylinders, 512-byte sectors, one/two heads, eight/nine
+  sectors per head: 160/320K or 180/360K.
 
-  Arguments and options:
+  drive1:   Source installed floppy, A: or B: (required).
+  drive2:   Target floppy; defaults to the current drive.
+  [1]       Head zero only. Use for known single-sided media on native XIOS.
+  [8]/[9]   Select sectors per track. Conflicting options are rejected.
 
-  drive1:   Source installed floppy drive, A: or B: (required).
-  drive2:   Target floppy drive; defaults to the current CP/M drive.
-  [1]       Copy head zero only. The closing ] may be omitted.
+      Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
+  proves nine; failed probing alone never proves eight. Unknown eight-sector
+  media needs [8]. A known BPB contradicting the selection is rejected.
+  [9] does not ignore unreadable sectors. DCOMP checks both geometries.
 
-      Specify the same drive twice for a one-drive copy; insert source
-  and target diskettes as prompted. The option may follow a drive
-  directly, as in B:[1]. Answer Y to copy another pair, or N to exit.
-  An empty or invalid command line displays usage without copying.
+      DCOPY formats all target tracks to source geometry before writing and
+  verifying. Every previous target file is overwritten.
+  Same drive twice prompts for swaps. Y processes another pair; N exits.
+  Closing ] is optional; for example B:[1] [8] or A: B:[9.
 
-      This build supports CP/M-86 1.1 using ROM BIOS and CCP/M-86 3.1
-  using native IBM PC XIOS. Both support 40 cylinders with eight 512-byte
-  sectors per head: 160K single-sided or 320K double-sided media. Close
-  all open files first on CCP/M. Ctrl-C cancels and releases disk locks.
+      CP/M-86 1.1 uses BIOS; CCP/M-86 3.1 and CDOS 4.1 use native XIOS.
+  CCP/M nine-sector operation requires the updated XIOS raw services.
+  Older CCP/M retains the eight-sector path; unknown versions are rejected.
+  Use a local foreground console and close files first on native systems.
+  Ctrl-C releases locks and restores the original disk parameter vector.
 
   Examples:
-
-      A>DCOPY A: B:
-      A>DCOPY A: A:[1]
-      A>DCOPY A: B:[1
+      A>DCOPY A: B: [9]
+      A>DCOPY A: A: [1] [8]
 
 ///1ddt86
   Syntax:

@@ -131,11 +131,14 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `dcomp` | — | CP/M-86 / CCP/M-86 port of DOS DISKCOMP |
-| `dcopy` | — | CP/M-86 / CCP/M-86 port of DOS DISKCOPY |
+| `dcomp` | — | 8/9-sector CP/M/FAT port of DOS DISKCOMP |
+| `dcopy` | — | 8/9-sector CP/M/FAT port of DOS DISKCOPY |
 | `dform` | — | New, CP/M-86 / CCP/M-86 DSKMAINT formatter |
 
 `dcopy` and `dcomp` are CP/M-86 / CCP/M-86 ports of the PC DOS 1.10 DISKCOPY and DISKCOMP utilities, respectively. They derive from the byte-exact disassemblies in [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
+
+DCOPY/DCOMP now support 160/180/320/360K raw media with geometry detection
+and explicit [8]/[9] overrides; see [disk tools](commands/disk/README.md).
 
 `dform` is a new command-line derivative of DSKMAINT's formatter, sharing its boot sector and loader sources.
 
@@ -215,7 +218,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The three disk-utility commands total about 51K of allocated space and do not fit on the 160K core disks. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 38K of memory and a 42K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
+The disk-utility commands remain on the dedicated 160K tools disk. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 38K of memory and a 42K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
 
 All 160K core disks ship reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 

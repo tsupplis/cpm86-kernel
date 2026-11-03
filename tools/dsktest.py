@@ -12,7 +12,7 @@ count = 0
 def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
          repeat=0, retry=0, formatting=0, memfail=0, error=None, native=False, version=None, full_version=0x1431,
          console_state=0, console_number=0, open_files=0, open_after_lock=0,
-         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1):
+         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0):
     global count
     probe_error = native and '[1' not in tail and (
         sides == 1 or (fail_probe and fail_times >= 4))
@@ -24,25 +24,26 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
     if abort >= 0:
         reads, writes = abort, 0
     if abort_write >= 0:
-        reads, writes = 40 * heads, abort_write
+        reads, writes = min(40*heads,((memory-0x1ff)//0x200)//heads*heads), abort_write
     if fail_native == 4:
         reads = 40 * heads
         writes = 40 * heads + min(fail_times, 3)
     if tool == 'dcomp' and fail_native == 2 and fail_times == 4 and not fail_probe:
         reads = 40 * heads * 2 - 1
     if probe_error:
-        reads = 81 if probe_drive == 1 and tool == 'dcomp' else 1
+        reads = (min((memory-0x1ff)//0x200,80)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
         writes = 0
+    geometry_error = error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')
     touched = 0
-    if native and (reads or writes):
+    if native and (reads or writes or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')):
         drives = re.findall(r'([AB]):', tail.upper())
         first = ord(drives[0]) - ord('A')
         second = ord(drives[1]) - ord('A') if len(drives) > 1 else 0
         touched = 1 << first
-        if writes or (abort < 0 and not probe_error) or (probe_error and probe_drive == 1):
+        if writes or (abort < 0 and not probe_error and not geometry_error) or (probe_error and probe_drive == 1):
             touched |= 1 << second
-    reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes)))
-    options = dict(NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
+    reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes or geometry_error)))
+    options = dict(SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
                    NATIVE_STATUS=native_status, EXPECT_TOUCHED=touched,
                    FAIL_PROBE=int(fail_probe), PROBE_DRIVE=probe_drive,
                    FULL_VERSION=full_version, CONSOLE_STATE=console_state,
@@ -91,7 +92,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
 for tool in ('dcopy', 'dcomp'):
     for sides in (1, 2):
         for tail in ('A: B:', 'A: A:', 'A: B: [1]'):
-            for memory in (0x5100, 0x501):
+            for memory in (0x5100, 0xA01):
                 case(tool, sides, tail, memory)
     for tail in ('A:', 'B:', 'a:\tb: [1]', '[1] A: B:', 'A: [1] B:',
                  'A: B:[1]', 'A: B:[1', 'A: A: [1', '[1 A: B:'):
@@ -115,7 +116,7 @@ for sides in (1, 2):
 for tool in ('dcopy', 'dcomp'):
     for sides in (1, 2):
         for tail in ('A: B:', 'A: A:', 'A: B: [1]'):
-            for memory in (0x5100, 0x501):
+            for memory in (0x5100, 0xA01):
                 case(tool, sides=sides, tail=tail, memory=memory, native=True)
     for tail in ('', '[1]', 'A:', 'B:', 'a: b:[1', '[1] A: B:'):
         case(tool, tail=tail, native=True, error='USAGE:' if tail in ('', '[1]') else None)
@@ -163,4 +164,18 @@ for tool in ('dcopy', 'dcomp'):
     case(tool, native=True, sides=1, tail='A: B:[1]')
 case('dcomp', native=True, fail_native=2, fail_times=4, fail_probe=True,
      probe_drive=1)
+for tool in ('dcopy','dcomp'):
+    for native,full_version,extended in [(False,0x1431,0),(True,0x1441,0),(True,0x1431,1)]:
+        for sectors in (8,9):
+            for memory in (0x5100,0xA01):
+                case(tool,native=native,full_version=full_version,extended=extended,sectors=sectors,memory=memory)
+            case(tool,native=native,full_version=full_version,extended=extended,sectors=sectors,tail=f'A: A: [{sectors}]',repeat=1)
+        case(tool,native=native,full_version=full_version,extended=extended,sectors=8,bpb=0,tail='A: B: [8]')
+        case(tool,native=native,full_version=full_version,extended=extended,sectors=9,bpb=0)
+    case(tool,native=True,sectors=9,error='Nine-sector/probe support')
+    for tail in ['A: B: [8] [9]','A: B: [9x]']:
+        case(tool,tail=tail,error='Invalid parameter')
+    case(tool,bpb=0,error='Cannot determine')
+    case(tool,sectors=9,bad_ninth=1,error='Cannot determine')
+    case('dcomp',sectors=9,mismatch=2)
 print(f'PASS: {count} dual-OS simulated-disk cases (BDOS clobbers ES and working registers)')
