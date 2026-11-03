@@ -34,9 +34,11 @@ geometry_bpb_spt:
         jb geometry_try_nine
         cmp bx,2
         ja geometry_try_nine
+        push dx                    ; MUL must not replace the selected drive.
         mul bx
         mov bx,40
         mul bx
+        pop dx
         cmp ax,es:word ptr .19
         jne geometry_try_nine
         cmp es:word ptr .22,1

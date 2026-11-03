@@ -440,7 +440,7 @@ compare_next_span:
 	call	report_mismatch
 	jmp	compare_next_span
 
-; The caller consumed one 8 KiB span regardless of how many mismatches it
+; The caller consumed one 16 KiB span regardless of how many mismatches it
 ; contained.
 advance_compare_buffer:
 	mov	ax,word ptr bulk_compare_segment
@@ -909,8 +909,8 @@ args_return:
 ; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
-; Round up to a 8 KiB boundary so an eight-sector BIOS transfer cannot cross
-; a 68 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+; Round up to an 8 KiB boundary so a nine-sector BIOS transfer cannot cross
+; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
 alloc_buffer:
 	mov	dx,offset mem_block
@@ -977,7 +977,7 @@ mem_ext	db	0
 ; Private downward-growing stack, separate from the base page and buffers.
 stack_space	rs	stack_size
 stack_top:
-; Up to 8 KiB padding aligns the 8 KiB read buffer for BIOS DMA.
+; Up to 8 KiB padding aligns the 16 KiB read buffer for BIOS DMA.
 	include	ccpmio.a86
 	include	geom.a86
 	dseg

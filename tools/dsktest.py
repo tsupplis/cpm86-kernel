@@ -34,13 +34,16 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
         reads = (min((memory-0x1ff)//0x200,80)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
         writes = 0
     geometry_error = error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')
+    second_geometry_error = tool == "dcomp" and second_sectors is not None and second_sectors != sectors and geometry_error
+    if second_geometry_error:
+        reads = min((memory-0x1ff)//0x200,40*heads) & ~1
     touched = 0
     if native and (reads or writes or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')):
         drives = re.findall(r'([AB]):', tail.upper())
         first = ord(drives[0]) - ord('A')
         second = ord(drives[1]) - ord('A') if len(drives) > 1 else 0
         touched = 1 << first
-        if writes or (abort < 0 and not probe_error and not geometry_error) or (probe_error and probe_drive == 1):
+        if writes or (abort < 0 and not probe_error and not geometry_error) or (probe_error and probe_drive == 1) or second_geometry_error:
             touched |= 1 << second
     reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes or geometry_error)))
     options = dict(SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
@@ -178,4 +181,9 @@ for tool in ('dcopy','dcomp'):
     case(tool,bpb=0,error='Cannot determine')
     case(tool,sectors=9,bad_ninth=1,error='Cannot determine')
     case('dcomp',sectors=9,mismatch=2)
+for native,version,extended in [(False,0x1431,0),(True,0x1441,0),(True,0x1431,1)]:
+    for sectors,second in [(8,9),(9,8)]:
+        case('dcomp',native=native,full_version=version,extended=extended,sectors=sectors,second_sectors=second,error='Incompatible or conflicting')
+    for tool in ('dcopy','dcomp'):
+        case(tool,native=native,full_version=version,extended=extended,sectors=9,tail='A: B: [8]',error='Incompatible or conflicting')
 print(f'PASS: {count} dual-OS simulated-disk cases (BDOS clobbers ES and working registers)')

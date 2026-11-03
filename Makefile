@@ -374,6 +374,7 @@ disks.zip: $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm8
 # Frozen references and pinned hashes guard source cleanup against code drift.
 .PHONY: check
 check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
+	$(MAKE) -C commands/disk check
 	python3 tools/kernel_check.py
 	python3 tools/kernel_check_test.py
 	$(MAKE) -C commands/chkcpmfs check-bdos
@@ -386,3 +387,11 @@ test-exp: dist
 
 test-320: dist
 	./cpm86-320
+
+# Raw floppy maintenance checks; live tests use disposable images only.
+.PHONY: check-disk check-disk-live
+check-disk:
+	$(MAKE) -C commands/disk check
+
+check-disk-live: all
+	python3 tools/disk_live_check.py

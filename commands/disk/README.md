@@ -72,3 +72,7 @@ The local harness validates DMA/IOPBs, data including sector nine, small buffers
 one-drive swaps, geometry, mismatch reporting, formatting, retries, cancellation,
 register preservation and partial-lock cleanup. BIOS calls are forbidden on
 native paths. Real-kernel tests use only disposable PCE images.
+
+From the project root, `make check-disk` runs these regression cases;
+`make check-disk-live` builds the project and copies/compares disposable disks
+under PCE using the actual local kernel.

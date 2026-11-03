@@ -1088,8 +1088,8 @@ args_return:
 ; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
-; Round up to a 8 KiB boundary so an eight-sector BIOS transfer cannot cross
-; a 68 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+; Round up to an 8 KiB boundary so a nine-sector BIOS transfer cannot cross
+; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
 alloc_buffer:
 	mov	dx,offset mem_block

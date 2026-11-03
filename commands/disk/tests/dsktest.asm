@@ -361,7 +361,7 @@ disk_model:
 %endif
     cmp bx,0
     jne .nonzero
-    ; Each 4 KiB track buffer must fit within a 64 KiB DMA page.
+    ; Each aligned head buffer must fit within a 64 KiB DMA page.
     push ax
     mov ax,es
     test ax,1ffh
