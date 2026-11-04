@@ -178,7 +178,7 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
             type_command(f"a:stat {drive.lower()}:=ro")
         else:
             type_command(f"a:set {drive.lower()}: [ro]")
-    type_command("a:chkcpmfs")
+    type_command(f"a:chkcpmfs {drive.lower()}:")
     commands.append('save "scan-screen.bin" bin b800:0000 fa0')
     if system == "cpm86":
         type_command(f"a:stat {drive.lower()}:dsk:")

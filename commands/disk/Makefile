@@ -21,8 +21,8 @@ dcomp.obj: dcomp.a86 ccpmio.a86 geom.a86 Makefile
 # zero-filled bytes on disk. Both buffers are last in DATA; assert that the
 # omitted tail contains only zeros. Trim LINK86 padding too. The real native
 # loaders reserve MIN; the tests also exercise this shorter stored image.
-dcopy.cmd: BSSPARAS=1024
-dcomp.cmd: BSSPARAS=2560
+dcopy.cmd: BSSPARAS=2048
+dcomp.cmd: BSSPARAS=3072
 
 %.cmd: %.obj Makefile
 	$(LINK86) $* '[$$sz, cod[ori[0]], dat[ori[0],max[0]]]'

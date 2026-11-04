@@ -63,7 +63,7 @@ f_alloc	equ	55
 stack_size	equ	512
 
 ; Floppy geometry and BIOS requests (eight/nine 512-byte sectors per head).
-cylinder_limit           equ     40
+
 bios_read_track          equ     0200h
 bios_write_track         equ     0300h
 bios_verify_track        equ     0400h
@@ -138,12 +138,12 @@ compare_second_diskette:
 ; Two single-sided cylinders or one double-sided cylinder fit the small
 ; buffer.
 	mov	dh,small_buffer_cylinders
-	call	read_tracks                     ; Read the next pair of 8 KiB slots from the second diskette.
+	call	read_tracks                     ; Read the next pair of 16 KiB slots from the second diskette.
 	call	compare_buffers                 ; Compare that span with its corresponding part of disk one.
 ; Continue at the first cylinder not yet read into the small buffer.
 	mov	ch,batch_end_cylinder
 ; Forty cylinders exhaust the disk; no further swap is needed.
-	cmp	ch,cylinder_limit
+	cmp ch,cylinder_limit
 	jz	comparison_complete
 	mov	current_cylinder,ch
 	cmp	ch,bulk_end_cylinder
@@ -169,7 +169,7 @@ compare_first_diskette:
 	call	read_tracks
 	call	compare_buffers
 	mov	ch,batch_end_cylinder
-	cmp	ch,cylinder_limit
+	cmp ch,cylinder_limit
 	jz	comparison_complete
 	mov	current_cylinder,ch
 	cmp	ch,bulk_end_cylinder
@@ -264,9 +264,10 @@ compare_geometry_ready:
 	mov	batch_end_cylinder,ch
 	sub	ch,dh
 	xor	dh,dh
-	cmp	byte ptr batch_end_cylinder,cylinder_limit
+	mov al,cylinder_limit
+	cmp	byte ptr batch_end_cylinder,al
 	jna	read_track_attempt
-	mov	byte ptr batch_end_cylinder,cylinder_limit
+	mov	byte ptr batch_end_cylinder,al
 
 read_track_attempt:
 	call clear_track_slot
@@ -293,7 +294,7 @@ probe_second_side:
 	jnz	advance_read_buffer
 	or	byte ptr compare_flags,flag_geometry_known + flag_two_heads
 	mov	ah,cylinders_per_buffer
-	shr	ah,1                            ; Double-sided cylinders occupy two 8 KiB head buffers.
+	shr	ah,1                            ; Double-sided cylinders occupy two 16 KiB head buffers.
 	mov	cylinders_per_buffer,ah
 	mov	batch_end_cylinder,ah
 ; The small buffer now contains one cylinder instead of two.
@@ -301,10 +302,10 @@ probe_second_side:
 	mov	byte ptr compare_side_count_char,32h
 	call	show_sides
 
-; One DMA-safe head slot consumes 200h paragraphs; increment the cylinder
+; One DMA-safe head slot consumes 400h paragraphs; increment the cylinder
 ; when heads wrap.
 advance_read_buffer:
-	add	bp,200h
+	add	bp,400h
 	mov	es,bp
 	xchg	dh,next_head
 	or	dh,dh
@@ -349,7 +350,7 @@ retry_disk_not_ready:
 	jmp	read_track_attempt
 
 discard_side_probe_buffer:
-	sub	bp,200h
+	sub	bp,400h
 	mov	es,bp
 
 ; Skip head-one reads and keep the small buffer covering two single-sided
@@ -431,7 +432,7 @@ compare_buffers:
 	mov	si,word ptr small_buffer_offset
 	mov	es,word ptr bulk_compare_segment
 	xor	di,di
-	mov	cx,4000h                        ; Two 8 KiB slots; unused sector bytes are zero.
+	mov	cx,8000h                        ; Two 16 KiB slots; unused sector bytes are zero.
 
 compare_next_span:
 	jcxz	advance_compare_buffer
@@ -444,7 +445,7 @@ compare_next_span:
 ; contained.
 advance_compare_buffer:
 	mov	ax,word ptr bulk_compare_segment
-	add	ax,400h                         ; Advance the large-buffer cursor by two 8 KiB slots.
+	add	ax,800h                         ; Advance the large-buffer cursor by two 16 KiB slots.
 	mov	word ptr bulk_compare_segment,ax
 	ret
 
@@ -456,7 +457,7 @@ report_mismatch:
 	or	byte ptr compare_flags,flag_mismatch_seen
 	mov	dl,current_cylinder
 	mov	dh,30h
-	cmp	cx,1FFFh
+	cmp	cx,3FFFh
 	ja	mismatch_first_span
 ; A mismatch in the second span completes this small-buffer comparison.
 	xor	cx,cx
@@ -465,21 +466,21 @@ report_mismatch:
 	inc	dh                              ; For double-sided media this span belongs to head one.
 	jmp	format_mismatch_location
 
-; The second 8 KiB is head one on a double-sided disk, or the next cylinder
+; The second 16 KiB is head one on a double-sided disk, or the next cylinder
 ; on a single-sided disk.
 mismatch_next_cylinder:
 	inc	dl
 	jmp	format_mismatch_location
 
-; After reporting a mismatch in the first 8 KiB, skip to the second span to
+; After reporting a mismatch in the first 16 KiB, skip to the second span to
 ; avoid duplicate reports.
 mismatch_first_span:
 	mov	bp,word ptr bulk_compare_segment
-	add	bp,200h
+	add	bp,400h
 	mov	es,bp
 	add	si,cx
 ; Skip the remainder of the first span after reporting its first mismatch.
-	mov	cx,2000h
+	mov	cx,4000h
 	sub	si,cx
 	xor	di,di
 
@@ -909,7 +910,7 @@ args_return:
 ; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
-; Round up to an 8 KiB boundary so a nine-sector BIOS transfer cannot cross
+; Round up to an 16 KiB boundary so a nine-sector BIOS transfer cannot cross
 ; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
 alloc_buffer:
@@ -929,14 +930,14 @@ alloc_buffer:
 memory_reserved:
 	mov	dx,mem_segment
 	mov	bx,dx
-	add	dx,1ffh
-	and	dx,0fe00h
+	add	dx,3ffh
+	and	dx,0fc00h
 	sub	bx,dx
 	neg	bx		; paragraphs lost to DMA alignment
 	mov	ax,mem_length
 	sub	ax,bx
 	jc	memory_error
-	mov	cl,9
+	mov	cl,10
 	shr	ax,cl
 	cmp	ax,80
 	jbe	buffer_sized
@@ -952,8 +953,8 @@ buffer_sized:
 	mov	cl,4
 	shr	bx,cl
 	add	ax,bx
-	add	ax,1ffh
-	and	ax,0fe00h
+	add	ax,3ffh
+	and	ax,0fc00h
 	mov	small_buffer_segment,ax
 	mov	bx,ds
 	sub	ax,bx
@@ -977,11 +978,11 @@ mem_ext	db	0
 ; Private downward-growing stack, separate from the base page and buffers.
 stack_space	rs	stack_size
 stack_top:
-; Up to 8 KiB padding aligns the 16 KiB read buffer for BIOS DMA.
+; Up to 16 KiB padding aligns the 16 KiB read buffer for BIOS DMA.
 	include	ccpmio.a86
 	include	geom.a86
 	dseg
 ; Trailing uninitialized DMA storage: CMD MIN reserves it; LEN omits it.
-verify_space	rs	4000h
-small_buffer	rs	6000h
+verify_space:
+small_buffer	rs	0c000h
 	end

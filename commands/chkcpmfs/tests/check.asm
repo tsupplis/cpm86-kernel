@@ -32,6 +32,17 @@ start:
     mov ax,3000h
     mov ds,ax
     mov es,ax
+    mov byte [80h],tail_end-tail
+    push ds
+    pop es
+    push ds
+    push cs
+    pop ds
+    mov si,tail
+    mov di,81h
+    mov cx,tail_end-tail
+    rep movsb
+    pop ds
     jmp 2000h:0
 
 bdos:
@@ -331,3 +342,9 @@ code_image: incbin "code.bin"
 code_end:
 data_image: incbin "data.bin"
 data_end:
+
+%ifndef TAIL
+%define TAIL "A:"
+%endif
+tail: db TAIL
+tail_end:

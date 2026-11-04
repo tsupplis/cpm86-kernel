@@ -63,7 +63,7 @@ f_alloc	equ	55
 stack_size	equ	512
 
 ; Floppy geometry and BIOS requests (eight/nine 512-byte sectors per head).
-cylinder_limit           equ     40
+
 bios_read_track          equ     0200h
 bios_write_track         equ     0300h
 bios_verify_track        equ     0400h
@@ -127,7 +127,8 @@ copy_buffer_batch:
 ; verified.
 write_buffer_batch:
 	call	write_target_tracks
-	cmp	byte ptr current_cylinder,cylinder_limit
+	mov al,cylinder_limit
+	cmp	byte ptr current_cylinder,al
 	jnz	prompt_source_if_needed
 	mov	dx,offset msg_target_maybe_unusable
 	test	byte ptr copy_flags,flag_errors_seen
@@ -210,7 +211,7 @@ show_insert_and_wait:
 ;-----------------------------------------------------------------------------
 
 ; CH is the starting cylinder; the end cylinder is exclusive. Each head
-; occupies 8 KiB.
+; occupies 16 KiB.
 read_source_tracks:
 	cmp current_cylinder,0
 	jne copy_geometry_ready
@@ -229,9 +230,10 @@ copy_geometry_ready:
 	sub	ch,cylinders_per_buffer
 	mov	es,word ptr buffer_segment
 	mov	bp,es
-	cmp	byte ptr batch_end_cylinder,cylinder_limit
+	mov al,cylinder_limit
+	cmp	byte ptr batch_end_cylinder,al
 	jna	read_track_attempt
-	mov	byte ptr batch_end_cylinder,cylinder_limit
+	mov	byte ptr batch_end_cylinder,al
 
 ; BIOS reads the selected number of sectors at ES:0000, starting at sector one.
 read_track_attempt:
@@ -262,10 +264,10 @@ read_track_succeeded:
 	mov	byte ptr copy_side_count_char,32h
 	call	show_sides
 
-; Advance ES by 200h paragraphs per head; advance CH only when the head
+; Advance ES by 400h paragraphs per head; advance CH only when the head
 ; wraps to zero.
 advance_read_buffer:
-	add	bp,200h
+	add	bp,400h
 	mov	es,bp
 	xchg	dh,next_head
 	or	dh,dh
@@ -302,7 +304,7 @@ read_track_failed:
 ; Head one failed the geometry probe; undo its buffer advance before
 ; selecting one side.
 discard_side_probe_buffer:
-	sub	bp,200h                         ; Undo the advance made before probing head one.
+	sub	bp,400h                         ; Undo the advance made before probing head one.
 	mov	es,bp
 
 ; Do not treat a missing second head as data damage. Keep later reads on
@@ -387,7 +389,7 @@ advance_target_side:
 	inc	ch
 
 advance_write_buffer:
-	add	bp,200h
+	add	bp,400h
 	mov	es,bp
 	cmp	ch,batch_end_cylinder
 	jnz	prepare_target_track
@@ -429,7 +431,7 @@ try_formatting_target:
 ; Formatting starts with head zero, so rewind the buffered head when the
 ; failure was on head one.
 rewind_target_to_side_zero:
-	sub	bp,200h
+	sub	bp,400h
 	mov	es,bp
 	xchg	dh,next_head
 	jmp	prepare_target_track
@@ -683,6 +685,16 @@ buffer_segment	db	0h,0h,0h,1h
 format_id_table	db	0h,0h,1h,2h,0h,0h,2h,2h,0h,0h,3h,2h
 	db	0h,0h,4h,2h,0h,0h,5h,2h,0h,0h,6h,2h
 	db	0h,0h,7h,2h,0h,0h,8h,2h,0h,0h,9h,2h
+
+        db 0,0,10,2
+        db 0,0,11,2
+        db 0,0,12,2
+        db 0,0,13,2
+        db 0,0,14,2
+        db 0,0,15,2
+        db 0,0,16,2
+        db 0,0,17,2
+        db 0,0,18,2
 
 msg_formatting_copy	db	0Dh,0Ah
 	db	'Formatting while copying'
@@ -1088,7 +1100,7 @@ args_return:
 ; CP/M function 53 queries a maximum block and 55 reserves it. CCP/M
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
-; Round up to an 8 KiB boundary so a nine-sector BIOS transfer cannot cross
+; Round up to an 16 KiB boundary so a nine-sector BIOS transfer cannot cross
 ; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
 ;-----------------------------------------------------------------------------
 alloc_buffer:
@@ -1108,14 +1120,14 @@ alloc_buffer:
 memory_reserved:
 	mov	dx,mem_segment
 	mov	bx,dx
-	add	dx,1ffh
-	and	dx,0fe00h
+	add	dx,3ffh
+	and	dx,0fc00h
 	sub	bx,dx
 	neg	bx		; paragraphs lost to DMA alignment
 	mov	ax,mem_length
 	sub	ax,bx
 	jc	memory_error
-	mov	cl,9
+	mov	cl,10
 	shr	ax,cl
 	cmp	ax,80
 	jbe	buffer_sized
@@ -1148,5 +1160,5 @@ stack_top:
 	include	geom.a86
 	dseg
 ; Trailing uninitialized DMA storage: CMD MIN reserves it; LEN omits it.
-verify_space	rs	4000h
+verify_space	rs	8000h
 	end

@@ -246,13 +246,11 @@ check_date:
                 mov     bl, byte ptr tmz_date+7   
                 sub     bl, '0'
                 add     ax, bx
-                or      ax, ax
-                jz      no_leap
+                mov     byte ptr month_siz+2, 28
                 and     ax, 3
                 jnz     no_leap
                 mov     bx, offset month_siz+2
-                mov     ax, 29
-                mov     [bx], ax
+                mov     byte ptr [bx], 29
 no_leap:
                 mov     al, byte ptr tmz_date   ;check month
                 sub     al, '0'

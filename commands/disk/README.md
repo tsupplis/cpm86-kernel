@@ -29,6 +29,13 @@ an explicit [8]. [9] still requires sector nine to be readable. A known BPB
 contradicting the selection is rejected. DCOMP checks both media and rejects
 conflicting geometries. Each new pair is detected afresh.
 
+On the extended CDOS kernel, valid BPBs also select 80-cylinder DOS FAT12
+720K (9 sectors/head), 1.2M (15) and 1.44M (18). The FAT/root/cluster fields
+must agree with the selected profile. These capacities are detected without
+new command-line options; `[8]`/`[9]` remain legacy sector-count overrides.
+Both cylinder and sector counts must match for comparison. These larger
+profiles are rejected on the CP/M/CCP/M backends.
+
 DCOPY formats the target to the selected source geometry before writing its
 tracks, then verifies them. This also removes a leftover ninth sector when
 copying an eight-sector disk over a nine-sector target. All target contents
@@ -41,7 +48,7 @@ for known single-sided media. A failed read is not evidence that a head is absen
 ## Backends and memory
 
 CP/M-86 uses BIOS and a private INT 1Eh parameter table. The table supplies
-the actual eight/nine ID count for BIOS formatting, then returns to nine
+the actual eight/nine ID count for BIOS formatting, then returns to eighteen
 for geometry probes. Concurrent versions
 use SYSDAT:28h, the caller UDA and stack IOPBs under MXdisk, P_KEEP and console
 NOSWITCH. CDOS uses physical raw read/write 35/36 and variable format 29.
@@ -54,7 +61,7 @@ registers; no unknown entry is called without a successful handshake. Updated
 kernels provide physical read/write 35/36 and variable format 29. This extends
 maintenance access; it does not add FAT filesystem mounting to CCP/M.
 
-Each head uses a physical 8 KiB-aligned slot. Nine sectors fit without crossing
+Each head uses a physical 16 KiB-aligned slot. Eighteen sectors fit without crossing
 a 64 KiB DMA boundary. Padding is cleared, and DCOMP compares two slots while
 excluding stale padding bytes. Format CHRN DMA and verification use separate
 aligned resident scratch, preserving buffered source data across retries.

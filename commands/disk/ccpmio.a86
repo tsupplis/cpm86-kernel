@@ -71,8 +71,8 @@ ccpm_init_done:
 	shr	ax,cl
 	mov	bx,ds
 	add	ax,bx
-	add	ax,1ffh
-	and	ax,0fe00h
+	add	ax,3ffh
+	and	ax,0fc00h
 	mov	verify_segment,ax
 	ret
 
@@ -219,7 +219,9 @@ ccpm_dma_ready:
 	mov	al,ch
 	or	dh,dh
 	jz	ccpm_track_ready
-	mov	al,79
+	mov al,cylinder_limit
+        add al,al
+        dec al
 	sub	al,ch
 ccpm_track_ready:
         cmp os_mode,1
@@ -462,7 +464,7 @@ disk_io_bios:
         pop ax
 disk_io_bios_transfer:
         int 13h
-        mov disk_table+4,9              ; MOV preserves returned AX/CF status.
+        mov disk_table+4,18              ; MOV preserves returned AX/CF status.
         ret
 
 	dseg

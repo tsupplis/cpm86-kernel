@@ -282,6 +282,12 @@ def main():
             for name, entries, overrides, expected in cases(version):
                 run_case(folder, image, version, name, entries, overrides, expected)
                 total += 1
+            name, entries, overrides, expected = next(cases(version))
+            for tail in ('A: [V]', 'a: /v'):
+                run_case(folder, image, version, 'verbose', entries,
+                         dict(overrides, TAIL='"'+tail+'"'),
+                         expected + ['USER 1 FILE USER1   .TXT', 'USER 15 FILE USER15  .TXT'])
+                total += 1
     print(f"PASS: {total} CHKCPMFS synthetic BDOS and DMA cases across three OS versions")
 
 

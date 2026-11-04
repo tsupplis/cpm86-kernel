@@ -12,31 +12,31 @@ count = 0
 def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
          repeat=0, retry=0, formatting=0, memfail=0, error=None, native=False, version=None, full_version=0x1431,
          console_state=0, console_number=0, open_files=0, open_after_lock=0,
-         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0):
+         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0):
     global count
     probe_error = native and '[1' not in tail and (
         sides == 1 or (fail_probe and fail_times >= 4))
     if probe_error:
         error = 'Cannot read head 1'
     heads = 1 if sides == 1 or '[1' in tail else 2
-    reads = 0 if error else 40 * heads * (2 if tool == 'dcomp' else 1)
-    writes = 0 if error or tool == 'dcomp' else 40 * heads
+    reads = 0 if error else cylinders * heads * (2 if tool == 'dcomp' else 1)
+    writes = 0 if error or tool == 'dcomp' else cylinders * heads
     if abort >= 0:
         reads, writes = abort, 0
     if abort_write >= 0:
-        reads, writes = min(40*heads,((memory-0x1ff)//0x200)//heads*heads), abort_write
+        reads, writes = min(cylinders*heads,((memory-0x3ff)//0x400)//heads*heads), abort_write
     if fail_native == 4:
-        reads = 40 * heads
-        writes = 40 * heads + min(fail_times, 3)
+        reads = cylinders * heads
+        writes = cylinders * heads + min(fail_times, 3)
     if tool == 'dcomp' and fail_native == 2 and fail_times == 4 and not fail_probe:
-        reads = 40 * heads * 2 - 1
+        reads = cylinders * heads * 2 - 1
     if probe_error:
-        reads = (min((memory-0x1ff)//0x200,80)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
+        reads = (min((memory-0x3ff)//0x400,80)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
         writes = 0
     geometry_error = error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')
     second_geometry_error = tool == "dcomp" and second_sectors is not None and second_sectors != sectors and geometry_error
     if second_geometry_error:
-        reads = min((memory-0x1ff)//0x200,40*heads) & ~1
+        reads = min((memory-0x3ff)//0x400,cylinders*heads) & ~1
     touched = 0
     if native and (reads or writes or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')):
         drives = re.findall(r'([AB]):', tail.upper())
@@ -46,7 +46,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
         if writes or (abort < 0 and not probe_error and not geometry_error) or (probe_error and probe_drive == 1) or second_geometry_error:
             touched |= 1 << second
     reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes or geometry_error)))
-    options = dict(SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
+    options = dict(BAD_BPB=bad_bpb, CYLINDERS=cylinders, SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
                    NATIVE_STATUS=native_status, EXPECT_TOUCHED=touched,
                    FAIL_PROBE=int(fail_probe), PROBE_DRIVE=probe_drive,
                    FULL_VERSION=full_version, CONSOLE_STATE=console_state,
@@ -95,7 +95,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
 for tool in ('dcopy', 'dcomp'):
     for sides in (1, 2):
         for tail in ('A: B:', 'A: A:', 'A: B: [1]'):
-            for memory in (0x5100, 0xA01):
+            for memory in (0x5100, 0x1401):
                 case(tool, sides, tail, memory)
     for tail in ('A:', 'B:', 'a:\tb: [1]', '[1] A: B:', 'A: [1] B:',
                  'A: B:[1]', 'A: B:[1', 'A: A: [1', '[1 A: B:'):
@@ -109,7 +109,7 @@ for tool in ('dcopy', 'dcomp'):
     for tail in ('A: B: A:', 'A', '[2]', 'A:[', 'A: [1x]',
                  'A: [1]]', 'A: B: a.bin'):
         case(tool, tail=tail, error='Invalid parameter')
-    for memory in (0x80, 0x100, 0x1ff):
+    for memory in (0x80, 0x100, 0x3ff):
         case(tool, memory=memory, error='Insufficient memory')
     for function in (53, 55):
         case(tool, memfail=function, error='Insufficient memory')
@@ -119,7 +119,7 @@ for sides in (1, 2):
 for tool in ('dcopy', 'dcomp'):
     for sides in (1, 2):
         for tail in ('A: B:', 'A: A:', 'A: B: [1]'):
-            for memory in (0x5100, 0xA01):
+            for memory in (0x5100, 0x1401):
                 case(tool, sides=sides, tail=tail, memory=memory, native=True)
     for tail in ('', '[1]', 'A:', 'B:', 'a: b:[1', '[1] A: B:'):
         case(tool, tail=tail, native=True, error='USAGE:' if tail in ('', '[1]') else None)
@@ -170,7 +170,7 @@ case('dcomp', native=True, fail_native=2, fail_times=4, fail_probe=True,
 for tool in ('dcopy','dcomp'):
     for native,full_version,extended in [(False,0x1431,0),(True,0x1441,0),(True,0x1431,1)]:
         for sectors in (8,9):
-            for memory in (0x5100,0xA01):
+            for memory in (0x5100,0x1401):
                 case(tool,native=native,full_version=full_version,extended=extended,sectors=sectors,memory=memory)
             case(tool,native=native,full_version=full_version,extended=extended,sectors=sectors,tail=f'A: A: [{sectors}]',repeat=1)
         case(tool,native=native,full_version=full_version,extended=extended,sectors=8,bpb=0,tail='A: B: [8]')
@@ -186,4 +186,19 @@ for native,version,extended in [(False,0x1431,0),(True,0x1441,0),(True,0x1431,1)
         case('dcomp',native=native,full_version=version,extended=extended,sectors=sectors,second_sectors=second,error='Incompatible or conflicting')
     for tool in ('dcopy','dcomp'):
         case(tool,native=native,full_version=version,extended=extended,sectors=9,tail='A: B: [8]',error='Incompatible or conflicting')
+for tool in ('dcopy','dcomp'):
+    for sectors in (9,15,18):
+        for memory in (0x5100,0x1401):
+            case(tool,native=True,full_version=0x1441,sectors=sectors,
+                 cylinders=80,memory=memory)
+        case(tool,native=True,full_version=0x1441,sectors=sectors,
+             cylinders=80,tail='A: A:',repeat=1)
+        case('dcopy',native=True,full_version=0x1441,sectors=sectors,
+             cylinders=80,formatting=1)
+        case('dcomp',native=True,full_version=0x1441,sectors=sectors,
+             cylinders=80,mismatch=2)
+for tool in ('dcopy','dcomp'):
+    for sectors in (9,15,18):
+        case(tool,native=True,full_version=0x1441,sectors=sectors,
+             cylinders=80,bad_bpb=1,error='Incompatible or conflicting')
 print(f'PASS: {count} dual-OS simulated-disk cases (BDOS clobbers ES and working registers)')

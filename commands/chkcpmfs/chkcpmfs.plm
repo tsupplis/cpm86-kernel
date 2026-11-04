@@ -4,6 +4,9 @@ $COMPACT
 chkcpmfs:
 do;
 
+/* The loader command tail resides in the SCD base-page BUFF symbol. */
+declare buff(128) byte external;
+
 /* BDOS search copies 33 FCB bytes back to the caller. */
 declare
     media$fcb (36) byte,
@@ -27,7 +30,7 @@ declare
      records$per$block, needed$blocks, entry$count, block$count,
      error$count, original$dma, drive$mask, ro$vector,
      extent$count, extent$key, table$offset, original$user) address,
-    (disk, dcnt, entry$user, rc, system$version,
+    (verbose, original$disk, disk, dcnt, entry$user, rc, system$version,
      slots, slot, map$bit, protect$status, changed$ro,
      restore$failed, user$changed, scan$user,
      name$match, duplicate) byte;
@@ -305,20 +308,105 @@ end restore$user;
 terminate: procedure;
     call restore$drive;
     call restore$user;
+    if disk <> original$disk then call mon1(14,original$disk);
     call mon1(26,original$dma);
     call mon1(0,0);
 end terminate;
 
+/* Validate the complete tail before selecting the requested drive. */
+show$usage: procedure;
+    call print$string(.('USAGE: CHKCPMFS drive: [FV]$'));
+    call newline;
+    call print$string(.('  drive: A:..P:$'));
+    call newline;
+    call print$string(.('  F      repair (not implemented)$'));
+    call newline;
+    call print$string(.('  V      verbose$'));
+    call newline;
+end show$usage;
+
+options$requested: procedure byte;
+    declare (first,last,i) address;
+    declare (c,valid,repair) byte;
+    first = 1;
+    last = buff(0);
+    if last > 127 then last = 127;
+    do while first <= last and (buff(first) = ' ' or buff(first) = 9);
+        first = first + 1;
+    end;
+    do while last >= first and (buff(last) = ' ' or buff(last) = 9);
+        last = last - 1;
+    end;
+    if first > last then do;
+        call show$usage;
+        return 1;
+    end;
+    c = buff(first);
+    if c >= 'a' and c <= 'z' then c = c - 20h;
+    if first + 1 > last or c < 'A' or c > 'P' or
+       buff(first+1) <> ':' then do;
+        call print$string(.('ERROR: Invalid command line.$'));
+        call newline;
+        call show$usage;
+        return 1;
+    end;
+    disk = c - 'A';
+    first = first + 2;
+    if first <= last then do;
+        if buff(first) <> ' ' and buff(first) <> 9 then do;
+            call show$usage;
+            return 1;
+        end;
+    end;
+    do while first <= last and (buff(first) = ' ' or buff(first) = 9);
+        first = first + 1;
+    end;
+    if first > last then return 0;
+    valid, repair = 0;
+    if buff(first) = '[' or buff(first) = '/' then do;
+        if buff(first) = '[' and buff(last) = ']' then last = last - 1;
+        first = first + 1;
+        if first <= last then valid = 1;
+        do i = first to last;
+            c = buff(i);
+            if c >= 'a' and c <= 'z' then c = c - 20h;
+            if c = 'F' then repair = 1;
+            if c = 'V' then verbose = 1;
+            if c <> 'F' and c <> 'V' then valid = 0;
+        end;
+    end;
+    if valid and repair = 0 then return 0;
+    if valid then
+        call print$string(.('ERROR: Requested option is not implemented yet.$'));
+    else
+        call print$string(.('ERROR: Invalid command option.$'));
+    call newline;
+    call show$usage;
+    return 1;
+end options$requested;
+
 plmstart: procedure public;
     declare i address;
 
-    changed$ro, restore$failed, user$changed = 0;
+    verbose, changed$ro, restore$failed, user$changed = 0;
     system$version = mon2(12,0);
     original$dma = mon3(52,0);
     original$user = mon2(32,0ffh);
+    original$disk = mon2(25,0);
     call print$string(.('CHKCPMFS 1.0 - READ-ONLY CP/M FILESYSTEM CHECK$'));
     call newline;
-    call print$string(.('Scans ordinary file entries through BDOS on the current drive.$'));
+    if options$requested then do;
+        call mon1(0,0);
+        return;
+    end;
+    if disk <> original$disk then call mon1(14,disk);
+    if mon2(25,0) <> disk then do;
+        call print$string(.('ERROR: Cannot select drive.$'));
+        call newline;
+        call terminate;
+        return;
+    end;
+    call print$string(.('Scans ordinary file entries through BDOS on the selected drive.$'));
     call newline;
     call print$string(.('Temporarily write-protects the drive and preserves its prior RO state.$'));
     call newline;
@@ -392,6 +480,13 @@ plmstart: procedure public;
             entry$user = dirbuf(dir$offset);
             if entry$user <= 15 then do;
                 entry$count = entry$count + 1;
+                if verbose then do;
+                    call print$string(.('USER $'));
+                    call decimal(entry$user);
+                    call print$string(.(' FILE $'));
+                    call print$file;
+                    call newline;
+                end;
                 call check$entry;
             end;
             dcnt = mon2(18,0);

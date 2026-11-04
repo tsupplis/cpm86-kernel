@@ -79,6 +79,12 @@ cpu 8086
 %ifndef BAD_NINTH
 %define BAD_NINTH 0
 %endif
+%ifndef BAD_BPB
+%define BAD_BPB 0
+%endif
+%ifndef CYLINDERS
+%define CYLINDERS 40
+%endif
 org 100h
 start:
     mov ax,cs
@@ -349,7 +355,7 @@ disk_model:
     je .reset
     cmp byte [cs:allocated],1
     jne bad_7
-    cmp ch,40
+    cmp ch,CYLINDERS
     jae bad_8
     cmp dh,1
     ja bad_9
@@ -364,7 +370,7 @@ disk_model:
     ; Each aligned head buffer must fit within a 64 KiB DMA page.
     push ax
     mov ax,es
-    test ax,1ffh
+    test ax,3ffh
     pop ax
     jnz bad_11
 .nonzero:
@@ -421,9 +427,9 @@ disk_model:
     mov cx,SECTORS*512
     cld
     rep stosb
-%if SECTORS == 9
+%if SECTORS >= 9
     mov di,bx
-    add di,4096
+    add di,(SECTORS-1)*512
     xor al,99h
     mov cx,512
     rep stosb
@@ -432,7 +438,7 @@ disk_model:
     cmp dl,1
     jne .same
 %if MISMATCH == 2
-    mov byte [es:bx+4096],0ffh
+    mov byte [es:bx+(SECTORS-1)*512],0ffh
 %else
     mov byte [es:bx],0ffh
 %endif
@@ -456,12 +462,15 @@ disk_model:
     push di
     mov al,ch
     xor al,dh
-    mov cx,4096
+    mov cx,(SECTORS-1)*512
+%if SECTORS == 8
+    mov cx,SECTORS*512
+%endif
     mov di,bx
     cld
     repe scasb
     jne bad_14
-%if SECTORS == 9
+%if SECTORS >= 9
     xor al,99h
     mov cx,512
     repe scasb
@@ -540,20 +549,49 @@ disk_model:
     rep stosb
 %if BPB
     mov word [es:bx+11],512
+%if SECTORS > 9
+    mov byte [es:bx+13],1
+%else
     mov byte [es:bx+13],2
+%endif
+%if SECTORS > 9
+    mov word [es:bx+17],224
+%else
     mov word [es:bx+17],112
+%endif
+%if CYLINDERS == 80
+%if SECTORS == 18
+    mov byte [es:bx+21],0f0h
+%else
+    mov byte [es:bx+21],0f9h
+%endif
+%else
     mov byte [es:bx+21],0fdh
+%endif
     mov word [es:bx+14],1
     mov byte [es:bx+16],2
+%if CYLINDERS == 80
+%if SECTORS == 9
+    mov word [es:bx+22],3
+%elif SECTORS == 15
+    mov word [es:bx+22],7
+%else
+    mov word [es:bx+22],9
+%endif
+%else
     mov word [es:bx+22],2
+%endif
     mov word [es:bx+26],SIDES
     mov word [es:bx+24],SECTORS
-    mov word [es:bx+19],40*SIDES*SECTORS
+    mov word [es:bx+19],CYLINDERS*SIDES*SECTORS
     cmp dl,1
     jne .boot_fields_ready
     mov word [es:bx+24],SECOND_SECTORS
-    mov word [es:bx+19],40*SIDES*SECOND_SECTORS
+    mov word [es:bx+19],CYLINDERS*SIDES*SECOND_SECTORS
 .boot_fields_ready:
+%if BAD_BPB
+    mov word [es:bx+22],0
+%endif
 %endif
     pop ax
     pop di
@@ -731,13 +769,13 @@ xios:
     je .physical_track
     cmp al,36
     je .physical_track
-    cmp dx,80
+    cmp dx,CYLINDERS*2
     jae bad
     mov ch,dl
     xor dh,dh
-    cmp ch,40
+    cmp ch,CYLINDERS
     jb .track_ready
-    mov ch,79
+    mov ch,CYLINDERS*2-1
     sub ch,dl
     inc dh
     jmp .track_ready
@@ -755,7 +793,7 @@ xios:
     je .dma_ok
     push ax
     mov ax,es
-    test ax,1ffh
+    test ax,3ffh
     pop ax
     jnz bad
 .dma_ok:
@@ -820,7 +858,13 @@ xios:
     je .format_request
     cmp al,29
     jne bad
+%if SECTORS == 15
+    cmp word [ss:bp+16],0f654h
+%elif SECTORS == 18
+    cmp word [ss:bp+16],0f66ch
+%else
     cmp word [ss:bp+16],0f650h
+%endif
     jne bad
 .format_request:
     mov ah,5

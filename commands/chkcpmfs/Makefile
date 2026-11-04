@@ -46,6 +46,7 @@ clean:
 	rm -f *.mp? *.lnk
 
 check: all check-bdos
+	python3 tests/parameters.py
 	@set -e; for file in $(TOOLS); do $(CMDINFO) $$file; done
 
 check-bdos: all
