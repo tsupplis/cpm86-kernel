@@ -49,35 +49,36 @@ def filename(record):
 
 
 def prepare_system(folder, system, disk_format, cwd):
-    if system == "cpm86":
-        return ROOT / "cpm86-chkcpmfs.img", None
-
-    image_name = "cdos86.img" if system == "cdos" else "ccpm86.img"
-    logical = folder / "system-logical.img"
-    convert(MEDIA / image_name, logical, "untwist", cwd)
-    removed = set()
-    for _, record in directory_entries(logical):
-        if record[0] != 0:
-            continue
-        name = filename(record)
-        if name not in KEEP and name not in removed:
-            run("cpmrm", "-f", disk_format, str(logical), f"0:{name}", cwd=cwd)
-            removed.add(name)
-    run("cpmcp", "-f", disk_format, str(logical),
-        str(COMMAND / "chkcpmfs.cmd"), "0:CHKCPMFS.CMD", cwd=cwd)
-    entries = directory_entries(logical)
-    system_entries = [record for _, record in entries if filename(record) == "CCPM.SYS"]
-    assert system_entries and any(any(record[16:32]) for record in system_entries)
-    references = sum(sum(block != 0 for block in record[16:32])
-                     for _, record in entries)
-    image = folder / "system-source.img"
-    convert(logical, image, "twist", cwd)
-    return image, (len(entries), references)
+    # Assemble a disposable test disk from this project's own built outputs.
+    # No dependency on an already packaged distribution or another project.
+    logical=folder/'system-logical.img'
+    base=ROOT/'base-320.img' if system=='cpm86' else MEDIA/'base.img'
+    convert(base,logical,'untwist',cwd)
+    if system=='cpm86':
+        sources=[ROOT/'cpm.sys',COMMAND/'chkcpmfs.cmd',ROOT/'commands/stat/stat.cmd']
+    else:
+        image=bytearray(logical.read_bytes())
+        image[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
+        logical.write_bytes(image)
+        sources=[ROOT/'kernel/sysgen/ccpm.sys',COMMAND/'chkcpmfs.cmd',
+                 ROOT/'commands/set/set.cmd',ROOT/'commands/show/show.cmd']
+    run('cpmcp','-f',disk_format,str(logical),*[str(p) for p in sources],'0:',cwd=cwd)
+    entries=directory_entries(logical)
+    if system!='cpm86':
+        system_entries=[record for _,record in entries if filename(record)=='CCPM.SYS']
+        assert system_entries and any(any(record[16:32]) for record in system_entries)
+    references=sum(sum(block!=0 for block in record[16:32]) for _,record in entries)
+    image=folder/'system-source.img';convert(logical,image,'twist',cwd)
+    return image,(len(entries),references)
 
 
 def prepare_data(folder, empty, disk_format, cwd):
     logical = folder / "data-logical.img"
     convert(empty, logical, "untwist", cwd)
+    if local_system() != 'cpm86':
+        image=bytearray(logical.read_bytes())
+        image[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
+        logical.write_bytes(image)
     for user, name in ((0, "FIRST.DAT"), (1, "SECOND.DAT"), (15, "THIRD.DAT")):
         source = folder / name
         source.write_bytes((name + "\r\n").encode("ascii") * 12)
@@ -137,7 +138,7 @@ def read_screen(path):
                      for at in range(0, 4000, 160))
 
 
-def boot(folder, system, system_image, target, drive="B", *, initially_read_only=False):
+def boot(folder, system, system_image, target, drive="B", *, initially_read_only=False, repair=False, answer="y", expected_target=None):
     shutil.copyfile(system_image, folder / "system.img")
     shutil.copyfile(target, folder / "second.img")
     before_system = (folder / "system.img").read_bytes()
@@ -150,10 +151,12 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
     else:
         config_name = "cdos86.cfg" if system == "cdos" else "ccpm86.cfg"
         config = (MEDIA / config_name).read_text()
+        config = replace_required(config, 'path = "rom"', f'path = "{MEDIA / "rom"}"')
         system_name = "cdos86.img" if system == "cdos" else "ccpm86.img"
         target_name = "cdostools.img" if system == "cdos" else "ccpmtools.img"
     config = replace_required(config, f'"{system_name}"', '"system.img"')
     config = replace_required(config, f'"{target_name}"', '"second.img"')
+    config = re.sub(r'speed\s*=\s*\d+', 'speed = 64', config)
     config = config.replace('driver = "sdl"', 'driver = "null"')
     config = config.replace('driver      = "sdl:lowpass=5000"', 'driver      = "null"')
     (folder / "test.cfg").write_text(config)
@@ -167,7 +170,7 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
     def type_command(text):
         for character in text:
             commands.extend(["key " + keys.get(character, character), "c 200000"])
-        commands.extend(["key Return", "c 4000000"])
+        commands.extend(["key Return", "c 20000000"])
 
     if drive == "B":
         type_command("b:")
@@ -178,7 +181,12 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
             type_command(f"a:stat {drive.lower()}:=ro")
         else:
             type_command(f"a:set {drive.lower()}: [ro]")
-    type_command(f"a:chkcpmfs {drive.lower()}:")
+    type_command(f"a:chkcpmfs {drive.lower()}:" + (" [f]" if repair else ""))
+    if repair:
+        commands.append('save "repair-prompt.bin" bin b800:0000 fa0')
+        commands.extend(["key "+answer,"c 10000000"])
+        commands.append('save "repair-result.bin" bin b800:0000 fa0')
+        type_command(f"a:chkcpmfs {drive.lower()}:")
     commands.append('save "scan-screen.bin" bin b800:0000 fa0')
     if system == "cpm86":
         type_command(f"a:stat {drive.lower()}:dsk:")
@@ -186,19 +194,18 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
     else:
         type_command(f"a:show {drive.lower()}:")
     commands.extend(['save "status-screen.bin" bin b800:0000 fa0', "q"])
-    result = subprocess.run(
-        ["pce-ibmpc", "-c", "test.cfg", "-t", "null", "-g", "vga"],
-        cwd=folder, input=("\n".join(commands) + "\n").encode(),
-        capture_output=True, timeout=180,
-    )
+    with (folder/'pce.log').open('wb') as log:
+        result = subprocess.run(
+            ["pce-ibmpc", "-c", "test.cfg", "-t", "null", "-g", "vga"],
+            cwd=folder, input=("\n".join(commands) + "\n").encode(),
+            stdout=log,stderr=log,timeout=90,
+        )
     if result.returncode != 0:
-        raise AssertionError((result.returncode,
-                              result.stdout.decode(errors="replace")[-4000:],
-                              result.stderr.decode(errors="replace")[-4000:]))
+        raise AssertionError((result.returncode,(folder/'pce.log').read_text(errors='replace')[-4000:]))
     screen = read_screen(folder / "scan-screen.bin")
     status = read_screen(folder / "status-screen.bin")
     assert (folder / "system.img").read_bytes() == before_system, screen
-    assert (folder / "second.img").read_bytes() == before_target, screen
+    assert (folder / "second.img").read_bytes() == (before_target if expected_target is None else expected_target), screen
     return screen, status
 
 
@@ -207,9 +214,17 @@ def main():
     cwd = ROOT if system == "cpm86" else MEDIA
     disk_format = "cpm86-320" if system == "cpm86" else "ccpm86-320"
     empty = (ROOT / "base-320.img" if system == "cpm86" else
-             MEDIA / ("cdos86base.img" if system == "cdos" else "ccpm86base.img"))
+             MEDIA / "base.img")
     with tempfile.TemporaryDirectory(prefix=f"chkcpmfs-{system}-") as directory:
         folder = Path(directory)
+        if system != 'cpm86':
+            blank=folder/'empty-logical.img'
+            convert(empty,blank,'untwist',cwd)
+            data=bytearray(blank.read_bytes())
+            data[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
+            blank.write_bytes(data)
+            empty=folder/'empty-source.img'
+            convert(blank,empty,'twist',cwd)
         system_image, system_counts = prepare_system(folder, system, disk_format, cwd)
         clean, bad, shared, entries, references = prepare_data(folder, empty, disk_format, cwd)
 

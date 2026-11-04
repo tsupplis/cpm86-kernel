@@ -1,55 +1,123 @@
 # CHKCPMFS
 
-`CHKCPMFS.CMD` is the same read-only CP/M filesystem checker for CP/M-86,
-CCP/M-86 and Concurrent DOS 4.1. It scans ordinary file entries in user areas
-0–15 on the specified drive through BDOS. It does not modify the disk.
+`CHKCPMFS.CMD` is the same PL/M-86 checker for CP/M-86, CCP/M-86 and
+Concurrent DOS 4.1. It checks CP/M directory allocation in user areas 0–15.
+The default is read-only; F enables only the two confirmed metadata repairs
+listed below. It does not repair file contents or choose between conflicting
+allocation references. CHKDOSFS is a separate, CDOS-only FAT checker.
 
 ## Usage
 
 ```
 CHKCPMFS drive: [FV]
+  drive: A:..P:
+  F      confirmed metadata repair
+  V      verbose
 ```
 
-Exactly one drive (A:..P:) is required, followed by an optional F/V option
-group. V lists checked entries. F (repair) remains a reserved placeholder and stops
-before scanning. Options are case-insensitive. Invalid
-arguments display usage and stop. All user areas 0–15 are always checked;
-there is no user-area parameter. The original drive and user area are restored.
+Exactly one drive is required, followed by an optional F/V option group.
+Options are case-insensitive; invalid arguments stop before drive access.
+All user areas 0–15 are checked; there is no user-area parameter. The original
+drive, user area and command DMA offset are restored on normal exits.
 
-Before scanning, it checks the drive's BDOS read-only state. If the drive is
-writable, CHKCPMFS temporarily sets it read-only and resets the drive afterward
-to restore write access. A drive that was already read-only remains so. If
-write protection cannot be established, the scan stops. CCP/M and CDOS may
-refuse protection when another process has files open on the drive.
+## Detection
 
-If write access cannot be restored, or if the command is interrupted, check
-the drive's status. On CP/M-86, use `STAT` and enter Ctrl-C at the command
-prompt to restore write access. On CCP/M and CDOS, use `SHOW` and, if needed,
-`SET d: [RW]`. The normal cleanup resets a drive that the checker protected;
-its next access may require a re-login.
+The checker validates the DPB before interpreting directory allocation:
+block shift/mask, extent mask and entry capacity must agree; directory blocks
+must be reserved and fit within the disk. Directories exceeding 2048 slots
+are refused. The error count saturates at 65535 rather than wrapping to zero.
 
-The checker uses the selected drive's DPB and scans every directory extent.
-It reports record counts beyond 128, extent reserved bits, allocation
-references beyond the DPB's maximum block, references to directory-reserved
-blocks, duplicate block references, and duplicate extent groups. Extent
-groups are compared using the DPB's EXM mask. Every nonzero allocation slot is
-checked, including slots beyond the record count; zero slots are allowed for
-sparse files. System files are checked like any other file. The checker
-refuses directories with more than 2048 slots. On CDOS it also refuses
-DOS/FAT media identified by the CDOS pseudo-label.
+It reports invalid record counts, reserved extent bits, references beyond the
+DPB maximum, references to directory-reserved blocks, duplicate block
+references and duplicate extent groups. Extent groups use the DPB EXM mask;
+filename attribute bits do not change the file identity. System files are
+checked like other files. Every nonzero allocation slot is checked, including
+slots beyond the record count. Zero slots may be sparse holes and are not
+errors by themselves.
 
-Run it only when the drive is idle. BDOS read-only protection is software-level,
-not an exclusive lock against raw disk I/O or another process resetting the
-drive, so concurrent activity can make results inconsistent. This version
-does not inspect deleted directory slots, validate timestamp/XFCB metadata,
-read data sectors, identify lost blocks, or repair anything. Its results are
-limited to the directory entries BDOS exposes. CP/M rebuilds its allocation
-vector from the directory when a disk is logged in; there is no on-disk list
-of allocated-but-unreferenced data blocks. The checker does not compare the
-directory with the live in-memory vector.
+Without F, ordinary entries are enumerated through BDOS. The checker
+preserves an already read-only drive; otherwise it temporarily write-protects
+and later resets it. Failure to establish protection stops the scan. Software
+write protection is not an exclusive lock against raw I/O or another process
+resetting the drive: always run on an idle drive.
 
-Run `make check` for synthetic BDOS and DMA tests covering all three system
-versions. `make check-live` builds the local test images and checks disposable
-disks under PCE, including multi-user and multi-extent files, read-only
-preservation, and cross-links. CDOS also tests FAT refusal. The live tests
-verify that the disk images remain unchanged.
+## Confirmed metadata repairs
+
+F takes a complete raw directory scan and presents one repair plan. Only an
+explicit Y/y commits it; cancellation leaves the entire disk unchanged.
+
+| Repair | Required evidence | Exact change |
+|---|---|---|
+| Reserved extent bits | Valid layout/name and no unresolved allocation or extent conflict | Clear EX bits 5–7 and S2 bits 6–7; preserve the effective extent number |
+| Identical duplicate extent | Same user/name/extent group, all 32 entry bytes identical, matching associated timestamp tuples where present | Keep the first record; change only the duplicate's user byte to E5h |
+
+Known volume labels and correctly positioned timestamp SFCBs are preserved.
+Duplicate removal requires matching complete ten-byte timestamp tuples when
+SFCBs are present. Different/missing tuples, password/XFCB or unrecognized
+associated metadata prevent duplicate removal. F also refuses uncertain names,
+conflicting duplicate extents, unrelated cross-links, invalid allocation
+references and record-count problems. Any such blocker prevents the whole
+repair plan, including otherwise repairable reserved bits.
+
+Duplicates are removed before survivor normalization, so an interrupted
+operation does not create two formerly identical entries with different
+reserved bits. File data, allocation slots, record counts, names, attributes,
+S1, labels and timestamp records are never rewritten by these repairs.
+
+Each directory record is reread and compared immediately before writing.
+The native adapter preserves and verifies the complete 512-byte physical
+sector; CP/M BIOS uses checked 128-byte directory writes with deblocking.
+A final full directory scan verifies the result. An I/O error stops further
+writes and reports possible partial changes; no crash-atomic transaction or
+rollback is claimed. Successfully completed prefixes are tested for safe retry.
+
+## System interfaces and limits
+
+| System | Repair I/O | Protection |
+|---|---|---|
+| CP/M-86 1.1 / BDOS 2.2 | Local IBM PC BIOS through BDOS 50, including sector translation/deblocking | Single-user execution; refuse an already read-only drive |
+| CCP/M-86 3.1 | Native XIOS, 512-byte physical sectors | MXdisk held throughout planning, confirmation, writes and verification; refuse open files |
+| CDOS 4.1 | Native XIOS, 512-byte physical sectors | Same locking/state restoration; DOS/FAT media refused |
+
+CP/M BIOS DPB SPT counts 128-byte records; native XIOS DPB SPT counts physical
+sectors. The adapter handles this distinction and treats XIOS status as AL,
+not the whole AX register. No kernel extensions or kernel source changes are
+required. Unknown OS interfaces and unsupported physical sector sizes are
+refused for repair. MXdisk cannot protect against an independent raw-disk
+writer that ignores that lock.
+
+On concurrent systems, the prior P_KEEP bit and disk error mode are restored.
+After any write attempt, the drive is reset to discard cached allocation and
+directory state; its next access may require a re-login. If interrupted or
+cleanup fails, check drive state with STAT on CP/M, or SHOW/SET on concurrent
+systems. A previously read-only drive is never made writable for repair.
+
+The default BDOS scan does not inspect deleted slots, validate all timestamp or
+XFCB contents, read file data, or compare with the live allocation vector.
+F reads raw directory slots to establish repair evidence; this does not add
+undelete or general metadata repair. CP/M reconstructs its allocation vector
+from directory references at login: there is no persistent FAT-style list of
+allocated-but-unreferenced blocks to recover.
+
+## Build and verification
+
+`make` uses the existing Intel PL/M/ASM/LINK/LOC and GENCMD build pattern.
+`make check` runs the compiled command against synthetic BDOS/DPB/DMA cases,
+parameter tests, a compiled counter-overflow test, and exact-byte repair tests
+across all three OS versions. Repair tests cover cancellation, ambiguous
+metadata, timestamp matching, every selected read/write failure position,
+committed prefixes and retry after interruption.
+
+`make check-live` uses disposable images and the local source-built kernel.
+It checks ordinary multi-user/multi-extent scans, write-protection restoration,
+FAT refusal on CDOS, and actual metadata repairs/cancellation/refusal with
+whole-image comparisons. No user disks are used. Native repair fixtures put
+the duplicate in a later physical sector and preserve labels, timestamp
+records, unrelated directory entries, reserved tracks and all file data.
+
+| File | Purpose |
+|---|---|
+| `chkcpmfs.plm` | Shared detection, conservative repair planning and confirmations |
+| `rawio.a86` | Guarded local BIOS/XIOS directory I/O and lock/state lifecycle |
+| `scd.a86` | Existing PL/M startup and BDOS interface |
+| `tests/` | Compiled command tests and disposable native verification |

@@ -1,4 +1,4 @@
-$TITLE('CHKCPMFS 1.0 - Read-only CP/M filesystem check')
+$TITLE('CHKCPMFS 1.1 - CP/M filesystem check')
 $COMPACT
 
 chkcpmfs:
@@ -13,7 +13,11 @@ declare
     search$fcb (36) byte,
     dirbuf (128) byte,
     alloc$map (8192) byte,
-    extent$table (28672) byte,
+    extent$table (32768) byte,
+    repair$plan (2048) byte,
+    before$record (128) byte,
+    after$record (128) byte,
+    compare$record (128) byte,
     dpb$pointer pointer,
     DPB based dpb$pointer structure
         (spt address, bls byte, bms byte, exm byte, mxa address,
@@ -29,11 +33,13 @@ declare
     (dir$offset, map$index, block$number,
      records$per$block, needed$blocks, entry$count, block$count,
      error$count, original$dma, drive$mask, ro$vector,
-     extent$count, extent$key, table$offset, original$user) address,
+     extent$count, extent$key, table$offset, original$user,
+     physical$entry, first$entry, raw$record, norm$count, dup$count) address,
     (verbose, original$disk, disk, dcnt, entry$user, rc, system$version,
      slots, slot, map$bit, protect$status, changed$ro,
      restore$failed, user$changed, scan$user,
-     name$match, duplicate) byte;
+     name$match, duplicate, repair$requested, raw$active, raw$scan,
+     safe$finding, repair$blockers, special$metadata, changes$written) byte;
 
 mon1: procedure (func,info) external;
     declare func byte, info address;
@@ -50,6 +56,20 @@ end mon3;
 mon4: procedure (func,info) pointer external;
     declare func byte, info address;
 end mon4;
+
+rawopen: procedure (drive,spt,ofs) byte external;
+    declare (drive,spt,ofs) address;
+end rawopen;
+rawclose: procedure external;
+end rawclose;
+rawread: procedure (record,buffer) byte external;
+    declare (record,buffer) address;
+end rawread;
+rawwrite: procedure (record,before,after) byte external;
+    declare (record,before,after) address;
+end rawwrite;
+rawarm: procedure byte external;
+end rawarm;
 
 put: procedure (char);
     declare char byte;
@@ -107,6 +127,12 @@ entry$prefix: procedure;
     call print$string(.(': $'));
 end entry$prefix;
 
+/* Keep severe damage from wrapping the error count back to zero. */
+count$error: procedure;
+    if error$count <> 0ffffh then error$count = error$count + 1;
+    if safe$finding = 0 then repair$blockers = 1;
+end count$error;
+
 report$block: procedure (reason);
     declare reason address,
             character based reason byte;
@@ -116,7 +142,7 @@ report$block: procedure (reason);
     call print$string(.(' $'));
     call print$string(reason);
     call newline;
-    error$count = error$count + 1;
+    call count$error;
 end report$block;
 
 report$extent: procedure;
@@ -124,7 +150,7 @@ report$extent: procedure;
     call print$string(.('DUPLICATE EXTENT GROUP $'));
     call decimal(extent$key);
     call newline;
-    error$count = error$count + 1;
+    call count$error;
 end report$extent;
 
 check$extent: procedure;
@@ -136,7 +162,7 @@ check$extent: procedure;
     duplicate = 0;
     if extent$count <> 0 then do;
         do i = 0 to extent$count - 1;
-            table$offset = i * 14;
+            table$offset = i * 16;
             if extent$table(table$offset) = entry$user and
                extent$table(table$offset + 12) = low(extent$key) and
                extent$table(table$offset + 13) = high(extent$key) then do;
@@ -146,14 +172,49 @@ check$extent: procedure;
                        (dirbuf(dir$offset + j + 1) and 7fh) then
                         name$match = 0;
                 end;
-                if name$match <> 0 then duplicate = 1;
+                if name$match <> 0 then do;
+                    duplicate = 1;
+                    first$entry = extent$table(table$offset+14) +
+                        shl(double(extent$table(table$offset+15)),8);
+                end;
             end;
         end;
     end;
 
-    if duplicate <> 0 then call report$extent;
+    if duplicate <> 0 then do;
+        if raw$scan <> 0 then do;
+            if rawread(first$entry/4,.compare$record) <> 0 then do;
+                repair$blockers = 1;
+                return;
+            end;
+            name$match = 1;
+            do j = 0 to 31;
+                if compare$record((first$entry mod 4)*32+j) <>
+                   dirbuf(dir$offset+j) then name$match = 0;
+            end;
+            /* A timestamp SFCB describes the first three slots of its
+             * 128-byte record. Keep the survivor's timestamps untouched and
+             * require the duplicate's complete timestamp tuple to match. */
+            if compare$record(96) = 21h or dirbuf(96) = 21h then do;
+                if compare$record(96) <> 21h or dirbuf(96) <> 21h or
+                   (first$entry mod 4) = 3 or (physical$entry mod 4) = 3 then
+                    name$match = 0;
+                else do j = 0 to 9;
+                    if compare$record(97+(first$entry mod 4)*10+j) <>
+                       dirbuf(97+(physical$entry mod 4)*10+j) then name$match = 0;
+                end;
+            end;
+            if name$match <> 0 then do;
+                repair$plan(physical$entry) = repair$plan(physical$entry) or 2;
+                dup$count = dup$count + 1;
+                safe$finding = 1;
+            end;
+        end;
+        call report$extent;
+        safe$finding = 0;
+    end;
     else do;
-        table$offset = extent$count * 14;
+        table$offset = extent$count * 16;
         extent$table(table$offset) = entry$user;
         do j = 0 to 10;
             extent$table(table$offset + j + 1) =
@@ -161,20 +222,51 @@ check$extent: procedure;
         end;
         extent$table(table$offset + 12) = low(extent$key);
         extent$table(table$offset + 13) = high(extent$key);
+        extent$table(table$offset+14) = low(physical$entry);
+        extent$table(table$offset+15) = high(physical$entry);
         extent$count = extent$count + 1;
     end;
 end check$extent;
+
+/* Repair may normalize only records with an unambiguous 8.3 identity.
+ * Refusing an unusual name is a safety limit, not a declaration of data loss. */
+safe$filename: procedure byte;
+    declare (i,j,c,padding) byte;
+    declare forbidden(*) byte data('<>.,;:=?*[]/');
+    if (dirbuf(dir$offset+1) and 7fh) <= ' ' then return 0;
+    padding = 0;
+    do i = 1 to 11;
+        if i = 9 then padding = 0;
+        c = dirbuf(dir$offset+i) and 7fh;
+        if c = ' ' then padding = 1;
+        else do;
+            if padding <> 0 or c < 21h or c = 7fh then return 0;
+            do j = 0 to 11;
+                if c = forbidden(j) then return 0;
+            end;
+        end;
+    end;
+    return 1;
+end safe$filename;
 
 check$entry: procedure;
     declare (i, effective$rc) address;
 
     entry$user = dirbuf(dir$offset);
+    if raw$scan <> 0 then do;
+        if safe$filename = 0 then do;
+            call entry$prefix;
+            call print$string(.('UNCERTAIN FILENAME; REPAIR REFUSED$'));
+            call newline;
+            call count$error;
+        end;
+    end;
     rc = dirbuf(dir$offset + 15);
     if rc > 128 then do;
         call entry$prefix;
         call print$string(.('RECORD COUNT EXCEEDS 128$'));
         call newline;
-        error$count = error$count + 1;
+        call count$error;
         effective$rc = 128;
     end;
     else effective$rc = rc;
@@ -186,10 +278,18 @@ check$entry: procedure;
         call entry$prefix;
         call print$string(.('RESERVED EXTENT BITS ARE SET$'));
         call newline;
-        error$count = error$count + 1;
+        if raw$scan <> 0 then do;
+            repair$plan(physical$entry) = repair$plan(physical$entry) or 1;
+            norm$count = norm$count + 1;
+            safe$finding = 1;
+        end;
+        call count$error;
+        safe$finding = 0;
     end;
 
     call check$extent;
+    /* Exact duplicates contribute no new ownership after their removal. */
+    if raw$scan <> 0 and (repair$plan(physical$entry) and 2) <> 0 then return;
 
     if maxall > 255 then slots = 8;
     else slots = 16;
@@ -200,7 +300,7 @@ check$entry: procedure;
         call entry$prefix;
         call print$string(.('RECORD COUNT EXCEEDS EXTENT ALLOCATION CAPACITY$'));
         call newline;
-        error$count = error$count + 1;
+        call count$error;
     end;
 
     /* BDOS allocates every nonzero slot; zero may be a sparse-file hole. */
@@ -258,6 +358,34 @@ dos$media: procedure byte;
     return dirbuf(0) = 20h and dirbuf(15) = 80h;
 end dos$media;
 
+/* Validate the layout before interpreting any allocation slot. EXM must
+ * describe exactly the directory entry capacity implied by BSH and DSM.
+ * Extra reserved blocks are legal, but every directory block must be reserved. */
+valid$dpb: procedure byte;
+    declare (capacity, expected, blocks, i, reserved, mask) address;
+    if dpb.spt = 0 or blkshf < 3 or blkshf > 7 then return 0;
+    if dpb.bms <> shl(1,blkshf)-1 then return 0;
+    capacity = shl(1,blkshf);
+    if maxall > 255 then capacity = capacity * 8;
+    else capacity = capacity * 16;
+    if capacity < 128 then return 0;
+    expected = capacity / 128 - 1;
+    if extmsk <> expected then return 0;
+    blocks = (maxdir / 4 + 1 + shl(1,blkshf)-1) / shl(1,blkshf);
+    if blocks = 0 or blocks > 16 then return 0;
+    reserved = 0;
+    do i = 0 to 15;
+        if i < 8 then mask = low(dirblk) and shl(1,7-i);
+        else mask = high(dirblk) and shl(1,15-i);
+        if mask <> 0 then do;
+            if i > maxall then return 0;
+            reserved = reserved + 1;
+        end;
+        if i < blocks and mask = 0 then return 0;
+    end;
+    return reserved >= blocks;
+end valid$dpb;
+
 protect$drive: procedure byte;
     drive$mask = shl(1,disk);
     ro$vector = mon3(29,0);
@@ -306,6 +434,17 @@ restore$user: procedure;
 end restore$user;
 
 terminate: procedure;
+    if raw$active <> 0 then do;
+        call rawclose; raw$active = 0;
+        if changes$written <> 0 then do;
+            protect$status = mon2(37,shl(1,disk));
+            if protect$status <> 0 then do;
+                restore$failed = 1;
+                call print$string(.('ERROR: post-repair drive reset failed; re-login before further access.$'));
+                call newline;
+            end;
+        end;
+    end;
     call restore$drive;
     call restore$user;
     if disk <> original$disk then call mon1(14,original$disk);
@@ -319,7 +458,7 @@ show$usage: procedure;
     call newline;
     call print$string(.('  drive: A:..P:$'));
     call newline;
-    call print$string(.('  F      repair (not implemented)$'));
+    call print$string(.('  F      confirmed metadata repair$'));
     call newline;
     call print$string(.('  V      verbose$'));
     call newline;
@@ -375,25 +514,164 @@ options$requested: procedure byte;
             if c <> 'F' and c <> 'V' then valid = 0;
         end;
     end;
-    if valid and repair = 0 then return 0;
-    if valid then
-        call print$string(.('ERROR: Requested option is not implemented yet.$'));
-    else
-        call print$string(.('ERROR: Invalid command option.$'));
+    if valid <> 0 then do;
+        repair$requested = repair;
+        return 0;
+    end;
+    call print$string(.('ERROR: Invalid command option.$'));
     call newline;
     call show$usage;
     return 1;
 end options$requested;
 
+/* Complete raw directory pass while the native disk lock is held. */
+scan$raw: procedure byte;
+    declare (i,j) address;
+    entry$count, block$count, error$count, extent$count = 0;
+    norm$count, dup$count = 0;
+    repair$blockers, special$metadata, safe$finding = 0;
+    do i = 0 to 8191; alloc$map(i) = 0; end;
+    do i = 0 to 2047; repair$plan(i) = 0; end;
+    raw$scan = 1;
+    do raw$record = 0 to maxdir/4;
+        if rawread(raw$record,.dirbuf) <> 0 then do;
+            call print$string(.('ERROR: directory read failed; repair stopped.$'));
+            call newline;
+            raw$scan = 0;
+            return 0;
+        end;
+        do j = 0 to 3;
+            physical$entry = raw$record*4+j;
+            if physical$entry <= maxdir then do;
+                dir$offset = j*32;
+                entry$user = dirbuf(dir$offset);
+                if entry$user <= 15 then do;
+                    entry$count = entry$count + 1;
+                    call check$entry;
+                end;
+                else if entry$user <> 0e5h and entry$user <> 20h then do;
+                    if entry$user <> 21h or j <> 3 then special$metadata = 1;
+                end;
+            end;
+        end;
+    end;
+    raw$scan = 0;
+    if special$metadata <> 0 and dup$count <> 0 then do;
+        call print$string(.('ERROR: associated metadata prevents duplicate removal.$'));
+        call newline;
+        repair$blockers = 1;
+    end;
+    return 1;
+end scan$raw;
+
+/* Poll without Ctrl-C's immediate abort so lock/process cleanup always runs. */
+confirm$repair: procedure byte;
+    declare c byte;
+    c = 0;
+    do while c = 0;
+        c = mon2(6,0ffh);
+        if c = 0 and system$version >= cpm3 then call mon1(142,0);
+    end;
+    call put(c);
+    call newline;
+    return c = 'Y' or c = 'y';
+end confirm$repair;
+
+repair$directory: procedure;
+    declare (i,j,k,planned,phase) address;
+    if (ro$vector and drive$mask) <> 0 then do;
+        call print$string(.('ERROR: drive is read-only; repair refused.$'));
+        call newline;
+        return;
+    end;
+    if rawopen(double(disk),dpb.spt,dpb.ofs) <> 0 then do;
+        call print$string(.('ERROR: cannot acquire supported directory I/O; repair refused.$'));
+        call newline;
+        return;
+    end;
+    raw$active = 1;
+    if scan$raw = 0 then return;
+    if repair$blockers <> 0 then do;
+        call print$string(.('ERROR: ambiguous or unsafe findings prevent all repairs.$'));
+        call newline;
+        return;
+    end;
+    planned = norm$count+dup$count;
+    if planned = 0 then do;
+        call print$string(.('No metadata repairs needed.$'));
+        call newline;
+        return;
+    end;
+    call print$string(.('Clear reserved extent bits: $')); call decimal(norm$count);
+    call print$string(.('; remove identical duplicate extents: $')); call decimal(dup$count);
+    call newline;
+    call print$string(.('Apply these metadata repairs (Y/N)? $'));
+    if confirm$repair = 0 then do;
+        call print$string(.('Repair cancelled; no changes written.$'));
+        call newline;
+        return;
+    end;
+    if rawarm <> 0 then return;
+    /* Delete redundant records first. An interrupted operation must not
+     * normalize the survivor while leaving an otherwise identical duplicate
+     * with different reserved bits, making a safe retry ambiguous. */
+    do phase = 0 to 1;
+    do i = 0 to maxdir/4;
+        planned = 0;
+        do j = 0 to 3;
+            k = i*4+j;
+            if k <= maxdir then do;
+                if phase = 0 then planned = planned or (repair$plan(k) and 2);
+                else if (repair$plan(k) and 2) = 0 then
+                    planned = planned or (repair$plan(k) and 1);
+            end;
+        end;
+        if planned <> 0 then do;
+            if rawread(i,.before$record) <> 0 then do;
+                call print$string(.('ERROR: repair read failed; disk may contain partial changes.$'));
+                call newline;
+                return;
+            end;
+            do j = 0 to 127; after$record(j) = before$record(j); end;
+            do j = 0 to 3;
+                k = i*4+j;
+                if k <= maxdir then do;
+                    if phase = 0 then do;
+                        if (repair$plan(k) and 2) <> 0 then after$record(j*32) = 0e5h;
+                    end;
+                    else if (repair$plan(k) and 2) = 0 and
+                            (repair$plan(k) and 1) <> 0 then do;
+                        after$record(j*32+12) = after$record(j*32+12) and 1fh;
+                        after$record(j*32+14) = after$record(j*32+14) and 3fh;
+                    end;
+                end;
+            end;
+            changes$written = 1;
+            if rawwrite(i,.before$record,.after$record) <> 0 then do;
+                call print$string(.('ERROR: repair write/verification failed; disk may contain partial changes.$'));
+                call newline;
+                return;
+            end;
+        end;
+    end;
+    end;
+    if scan$raw = 0 then return;
+    if error$count <> 0 then call print$string(.('ERROR: metadata repair verification found errors.$'));
+    else call print$string(.('Metadata repairs written and verified.$'));
+    call newline;
+end repair$directory;
+
 plmstart: procedure public;
     declare i address;
 
     verbose, changed$ro, restore$failed, user$changed = 0;
+    repair$requested, raw$active, raw$scan, safe$finding = 0;
+    repair$blockers, special$metadata, changes$written = 0;
     system$version = mon2(12,0);
     original$dma = mon3(52,0);
     original$user = mon2(32,0ffh);
     original$disk = mon2(25,0);
-    call print$string(.('CHKCPMFS 1.0 - READ-ONLY CP/M FILESYSTEM CHECK$'));
+    call print$string(.('CHKCPMFS 1.1 - CP/M FILESYSTEM CHECK$'));
     call newline;
     if options$requested then do;
         call mon1(0,0);
@@ -408,9 +686,13 @@ plmstart: procedure public;
     end;
     call print$string(.('Scans ordinary file entries through BDOS on the selected drive.$'));
     call newline;
-    call print$string(.('Temporarily write-protects the drive and preserves its prior RO state.$'));
+    if repair$requested = 0 then
+        call print$string(.('Temporarily write-protects the drive and preserves its prior RO state.$'));
+    else call print$string(.('Repairs only reserved extent bits and identical duplicate extents.$'));
     call newline;
-    call print$string(.('Keep the drive idle; the scan has no exclusive lock.$'));
+    if repair$requested = 0 then
+        call print$string(.('Keep the drive idle; the scan has no exclusive lock.$'));
+    else call print$string(.('Keep the drive idle; concurrent repairs hold MXdisk.$'));
     call newline;
 
     if system$version >= cdos then do;
@@ -431,21 +713,29 @@ plmstart: procedure public;
     call decimal(maxall);
     call newline;
 
-    if blkshf > 7 then do;
-        call print$string(.('ERROR: unsupported DPB block shift; scan stopped.$'));
-        call newline;
-        call terminate;
-    end;
     if maxdir >= extent$table$capacity then do;
         call print$string(.('ERROR: directory exceeds duplicate-check capacity; scan stopped.$'));
         call newline;
         call terminate;
     end;
 
+    if valid$dpb = 0 then do;
+        call print$string(.('ERROR: inconsistent or unsupported DPB; scan stopped.$'));
+        call newline;
+        call terminate;
+    end;
     do i = 0 to 8191;
         alloc$map(i) = 0;
     end;
     entry$count, block$count, error$count, extent$count = 0;
+
+    if repair$requested <> 0 then do;
+        drive$mask = shl(1,disk);
+        ro$vector = mon3(29,0);
+        call repair$directory;
+        call terminate;
+        return;
+    end;
 
     if protect$drive <> 0 then do;
         call print$string(.('ERROR: could not establish drive write protection; scan stopped.$'));

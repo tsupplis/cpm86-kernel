@@ -1,6 +1,7 @@
-# CHKCPMFS — read-only CP/M filesystem consistency check.
+# CHKCPMFS — CP/M allocation checks and confirmed metadata repairs.
 
 CMDINFO=cmdinfo
+PYTHON=python3 -B
 INTEL_PLM86=intel_plm86
 INTEL_ASM86=intel_asm86
 INTEL_LOC86=intel_loc86
@@ -26,10 +27,10 @@ chkcpmfs.cmd: chkcpmfs.h86 Makefile
 	$(GENCMD) $< 'data[b$(GENCMD_BASE) m$(GENCMD_MIN) xfff]'
 	$(CMDINFO) $@
 
-chkcpmfs.loc: chkcpmfs.obj scd.obj Makefile
-	$(INTEL_LINK86) scd.obj, chkcpmfs.obj to chkcpmfs.lnk
+chkcpmfs.loc: chkcpmfs.obj scd.obj rawio.obj Makefile
+	$(INTEL_LINK86) scd.obj, rawio.obj, chkcpmfs.obj to chkcpmfs.lnk
 	$(INTEL_LOC86) chkcpmfs.lnk 'od(sm(code,dats,data,stack,const))' \
-		'ad(sm(code(0),dats(10000h)))' 'ss(stack(+128))' to chkcpmfs.loc
+		'ad(sm(code(0),dats(10000h)))' 'ss(stack(+512))' to chkcpmfs.loc
 
 %.h86: %.loc Makefile
 	$(INTEL_OH86) $<
@@ -42,16 +43,20 @@ chkcpmfs.loc: chkcpmfs.obj scd.obj Makefile
 	$(INTEL_PLM86) $< debug 'optimize(3)' xref
 
 clean:
+	rm -rf tests/__pycache__
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
 	rm -f *.mp? *.lnk
 
 check: all check-bdos
-	python3 tests/parameters.py
+	$(PYTHON) tests/parameters.py
 	@set -e; for file in $(TOOLS); do $(CMDINFO) $$file; done
 
 check-bdos: all
-	python3 tests/check.py
+	$(PYTHON) tests/check.py
+	$(PYTHON) tests/repairs.py
+	$(PYTHON) tests/saturation.py
 
 check-live: all
 	$(MAKE) -C ../.. chkcpmfs-live-images
-	python3 tests/live.py
+	$(PYTHON) tests/live.py
+	$(PYTHON) tests/live_repair.py

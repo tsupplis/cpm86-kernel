@@ -102,7 +102,7 @@ Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume B
 | --- | --- | --- |
 | `asm86` | Original | Adapted from CCP/M-86 3.1 |
 | `assign` | Original | Reverse engineered from CP/M-86 and adapted|
-| `chkcpmfs` | — | New shared PL/M-86 read-only CP/M filesystem checker |
+| `chkcpmfs` | — | New shared PL/M-86 CP/M checker with confirmed metadata repair |
 | `config` | Original | Reverse engineered from CP/M-86 and adapted |
 | `ddt86` | Original | Adapted from CCP/M-86 3.1 |
 | `dskmaint` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
@@ -218,7 +218,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The disk-utility commands remain on the dedicated 160K tools disk. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 38K of memory and a 42K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
+The disk-utility commands remain on the dedicated 160K tools disk. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 54K of minimum load memory and a 54K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
 
 All 160K core disks ship reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
 

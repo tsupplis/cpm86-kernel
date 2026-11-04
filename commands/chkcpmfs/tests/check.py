@@ -94,9 +94,11 @@ def cases(version):
     ]
     yield "extent-capacity", [
         entry("TOOBIG.DAT", [1], records=65, wide=True),
-    ], {"BSH": 3, "DSM": 600, "EXM": 0}, [
-        "RECORD COUNT EXCEEDS EXTENT ALLOCATION CAPACITY",
-        "Consistency errors: 1",
+    ], {"BSH": 3, "DSM": 600, "EXM": 0,
+        "EXPECTED_SEARCHES": 0,"EXPECTED_DMA_SETS": 1,"EXPECTED_RO_QUERIES": 0,
+        "EXPECTED_PROTECTS": 0,"EXPECTED_RESETS": 0,"EXPECTED_FINAL_RO": 0,
+        "EXPECTED_USER_SETS": 0,"EXPECTED_USER_MASK": 0}, [
+        "ERROR: inconsistent or unsupported DPB; scan stopped.",
     ]
     yield "special-and-empty", [
         entry("LABEL.DAT", user=0x20),
@@ -222,7 +224,24 @@ def cases(version):
         "EXPECTED_RO_QUERIES": 0, "EXPECTED_PROTECTS": 0,
         "EXPECTED_RESETS": 0, "EXPECTED_USER_SETS": 0,
         "EXPECTED_USER_MASK": 0,
-    }, ["ERROR: unsupported DPB block shift; scan stopped."]
+    }, ["ERROR: inconsistent or unsupported DPB; scan stopped."]
+
+
+    # Layout validation must precede allocation interpretation or protection.
+    for tag, bad in [('bad-mask',{'BLM':3}),('bad-exm',{'EXM':2}),
+                     ('small-block',{'BSH':2}),('no-track',{'SPT':0}),
+                     ('missing-directory',{'AL0':0}),('reserved-outside',{'DSM':0,'AL0':0xc0})]:
+        overrides=dict(EXPECTED_SEARCHES=0,EXPECTED_DMA_SETS=1,EXPECTED_RO_QUERIES=0,
+                       EXPECTED_PROTECTS=0,EXPECTED_RESETS=0,EXPECTED_FINAL_RO=0,
+                       EXPECTED_USER_SETS=0,EXPECTED_USER_MASK=0)
+        overrides.update(bad)
+        yield tag,[],overrides,['ERROR: inconsistent or unsupported DPB; scan stopped.']
+    for shift in range(3,8):
+        yield 'valid-geometry-narrow', [entry('LAYOUT.DAT',[2 if shift==3 else 1],records=128)], {
+            'BSH':shift,'EXM':(1<<(shift-3))-1,'AL0':0xc0 if shift==3 else 0x80}, ['Consistency errors: 0']
+    for shift in range(4,8):
+        yield 'valid-geometry-wide', [entry('LAYOUT.DAT',[1],records=128,wide=True)], {
+            'BSH':shift,'DSM':600,'EXM':(1<<(shift-4))-1}, ['Consistency errors: 0']
 
 
 def run_case(folder, image, version, name, entries, overrides, expected):
@@ -234,7 +253,10 @@ def run_case(folder, image, version, name, entries, overrides, expected):
     (folder / "data.bin").write_bytes(
         image[128 + code_size:128 + code_size + data_size])
     directory = b"".join(entries)
-    directory += bytes(max(128, (len(directory) + 127) // 128 * 128) - len(directory))
+    if overrides.get('REPAIR_FIXTURE'):
+        directory += b'\xe5' * (((overrides.get('DRM',63)+4)//4)*128-len(directory))
+    else:
+        directory += bytes(max(128, (len(directory) + 127) // 128 * 128) - len(directory))
     (folder / "directory.bin").write_bytes(directory)
     settings = {
         "DIR_ENTRIES": len(entries), "BSH": 4, "EXM": 1, "DSM": 157,
@@ -251,6 +273,12 @@ def run_case(folder, image, version, name, entries, overrides, expected):
     if (version & 0xff) >= 0x41:
         settings["EXPECTED_SEARCHES"] += 1
         settings["EXPECTED_DMA_SETS"] += 2
+    if overrides.get('REPAIR_FIXTURE'):
+        import re
+        mapping = (COMMAND/'chkcpmfs.mp2').read_text(errors='replace')
+        public = {name:int(off,16) for off,name in re.findall(r'0000H\s+([0-9A-F]+)H\s+PUB\s+(RAW\w+)',mapping)}
+        assert len(public)==5,public
+        (folder/'raw.inc').write_text(''.join(f'%define {name} {off}\n' for name,off in public.items()))
     (folder / "case.inc").write_text(
         "".join(f"%define {key} {value}\n" for key, value in settings.items()))
     subprocess.run(

@@ -3,6 +3,18 @@ bits 16
 cpu 8086
 org 100h
 %include "case.inc"
+%ifndef REPAIR_FIXTURE
+%define REPAIR_FIXTURE 0
+%endif
+%ifndef SPT
+%define SPT 32
+%endif
+%ifndef BLM
+%define BLM ((1 << BSH)-1) & 0ffh
+%endif
+%if REPAIR_FIXTURE
+%include "raw.inc"
+%endif
 
 start:
     cld
@@ -19,6 +31,23 @@ start:
     mov cx,code_end-code_image
     rep movsb
 
+%if REPAIR_FIXTURE
+    mov bx,RAWOPEN
+    mov dx,raw_open_stub
+    call patch_raw
+    mov bx,RAWREAD
+    mov dx,raw_read_stub
+    call patch_raw
+    mov bx,RAWWRITE
+    mov dx,raw_write_stub
+    call patch_raw
+    mov bx,RAWCLOSE
+    mov dx,raw_close_stub
+    call patch_raw
+    mov bx,RAWARM
+    mov dx,raw_arm_stub
+    call patch_raw
+%endif
     mov ax,3000h
     mov es,ax
     xor ax,ax
@@ -45,6 +74,132 @@ start:
     pop ds
     jmp 2000h:0
 
+%if REPAIR_FIXTURE
+patch_raw:
+    mov byte [es:bx],09ah
+    mov [es:bx+1],dx
+    mov ax,cs
+    mov [es:bx+3],ax
+    mov byte [es:bx+5],0c2h
+    mov word [es:bx+6],0
+    cmp bx,RAWOPEN
+    je patch_six
+    cmp bx,RAWWRITE
+    je patch_six
+    cmp bx,RAWREAD
+    jne patch_done
+    mov word [es:bx+6],4
+    ret
+patch_six:
+    mov word [es:bx+6],6
+patch_done:
+    ret
+
+raw_open_stub:
+    mov byte [cs:raw_held],0
+    mov ax,RAW_OPEN_FAIL
+    or ax,ax
+    jnz raw_open_return
+    mov byte [cs:raw_held],1
+raw_open_return:
+    retf
+raw_close_stub:
+    mov byte [cs:raw_held],0
+    mov byte [cs:raw_armed],0
+    retf
+raw_arm_stub:
+    mov byte [cs:raw_armed],1
+    xor ax,ax
+    retf
+raw_read_stub:
+    push bp
+    mov bp,sp
+    push ds
+    push es
+    push si
+    push di
+    push cx
+    inc word [cs:raw_reads]
+    mov ax,[cs:raw_reads]
+    cmp ax,RAW_READ_FAIL
+    je raw_read_bad
+    push ds
+    pop es
+    push cs
+    pop ds
+    mov ax,[ss:bp+10]
+    cmp ax,(DRM/4)
+    ja raw_read_bad
+    mov cl,7
+    shl ax,cl
+    mov si,directory
+    add si,ax
+    mov di,[ss:bp+8]
+    mov cx,128
+    cld
+    rep movsb
+    xor ax,ax
+    jmp raw_read_done
+raw_read_bad:
+    mov ax,1
+raw_read_done:
+    pop cx
+    pop di
+    pop si
+    pop es
+    pop ds
+    pop bp
+    retf
+raw_write_stub:
+    push bp
+    mov bp,sp
+    push ds
+    push es
+    push si
+    push di
+    push cx
+    cmp byte [cs:raw_armed],1
+    jne raw_write_bad
+    inc word [cs:raw_writes]
+    mov ax,[cs:raw_writes]
+    cmp ax,RAW_WRITE_FAIL
+    je raw_write_bad
+    push cs
+    pop es
+    mov ax,[ss:bp+12]
+    cmp ax,(DRM/4)
+    ja raw_write_bad
+    mov cl,7
+    shl ax,cl
+    mov di,directory
+    add di,ax
+    push di
+    mov si,[ss:bp+10]
+    mov cx,128
+    cld
+    repe cmpsb
+    pop di
+    jne raw_write_bad
+    mov si,[ss:bp+8]
+    mov cx,128
+    rep movsb
+    mov ax,[cs:raw_writes]
+    cmp ax,RAW_VERIFY_FAIL
+    je raw_write_bad
+    xor ax,ax
+    jmp raw_write_done
+raw_write_bad:
+    mov ax,1
+raw_write_done:
+    pop cx
+    pop di
+    pop si
+    pop es
+    pop ds
+    pop bp
+    retf
+%endif
+
 bdos:
     push bp
     mov bp,sp
@@ -60,6 +215,12 @@ bdos:
     je finished
     cmp cl,2
     je console
+%if REPAIR_FIXTURE
+    cmp cl,6
+    je raw_answer
+    cmp cl,142
+    je raw_yield
+%endif
     cmp cl,12
     je get_version
     cmp cl,17
@@ -95,6 +256,14 @@ done:
     pop bp
     iret
 
+%if REPAIR_FIXTURE
+raw_answer:
+    mov ax,ANSWER
+    jmp done
+raw_yield:
+    xor ax,ax
+    jmp done
+%endif
 console:
     mov ah,2
     int 21h
@@ -293,6 +462,25 @@ finished:
 failed_exit:
     mov byte [cs:exit_code],1
 exit:
+%if REPAIR_FIXTURE
+    cmp byte [cs:raw_held],0
+    jne failed_exit
+    push cs
+    pop ds
+    mov dx,after_name
+    xor cx,cx
+    mov ah,3ch
+    int 21h
+    jc failed_exit
+    mov bx,ax
+    mov dx,directory
+    mov cx,((DRM+4)/4)*128
+    mov ah,40h
+    int 21h
+    jc failed_exit
+    mov ah,3eh
+    int 21h
+%endif
     cli
     mov ax,cs
     mov ss,ax
@@ -303,6 +491,13 @@ exit:
     mov ah,4ch
     int 21h
 
+%if REPAIR_FIXTURE
+raw_held: db 0
+raw_armed: db 0
+raw_reads: dw 0
+raw_writes: dw 0
+after_name: db 'after.bin',0
+%endif
 dma: dw INITIAL_DMA
 dma_sets: db 0
 first_count: db 0
@@ -322,8 +517,8 @@ ro_vector: dw INITIAL_RO
 protect_fail: db PROTECT_FAIL
 restore_fail: db RESTORE_FAIL
 dpb:
-    dw 32
-    db BSH, ((1 << BSH)-1) & 0ffh, EXM
+    dw SPT
+    db BSH, BLM, EXM
     dw DSM, DRM
     db AL0, AL1
     dw 0, 1

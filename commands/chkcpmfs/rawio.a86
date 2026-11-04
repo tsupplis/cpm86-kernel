@@ -1,0 +1,553 @@
+; CHKCPMFS -- guarded directory I/O for the local IBM PC kernels.
+; PL/M near ABI: arguments left-to-right; caller DS is the DATS group.
+; Native XIOS uses 512-byte sectors; CP/M BIOS supplies 128-byte deblocking.
+; Never calls disk BDOS while MXdisk is held. No kernel modifications.
+name rawio
+dgroup group dats,stack
+cgroup group code
+assume cs:cgroup,ds:dgroup,ss:dgroup
+stack segment word stack 'STACK'
+stack ends
+dats segment para public 'DATA'
+rdrive dw 0
+rspt dw 0
+rofs dw 0
+rmode dw 0
+rheld db 0
+rkept db 0
+rerr db 0
+rwrite db 0
+ropened db 0
+rfailed db 0
+rresult dw 0
+rsys dw 0
+ruda dw 0
+rpd dw 0
+rkeep dw 0
+rerror db 0
+rfunc db 0
+rrecord dw 0
+rbuffer dw 0
+rexpect dw 0
+rnew dw 0
+rtrack dw 0
+rsector dw 0
+rpart dw 0
+rbseg dw 0
+rqueue db 8 dup (0),'MXdisk  ',6 dup (0)
+rpacket db 0
+rcx dw 0
+rdx dw 0
+; Up to 511 alignment bytes plus one complete physical sector.
+rspace db 1056 dup (0)
+rverify db 512 dup (0)
+dats ends
+code segment public 'CODE'
+public rawopen,rawclose,rawread,rawwrite,rawarm
+; rawopen(drive,spt,ofs): exact supported OS, track geometry and lock.
+rawopen proc near
+ push bp
+ mov bp,sp
+ push si
+ push di
+ push es
+ mov ax,[bp+8]
+ mov rdrive,ax
+ mov ax,[bp+6]
+ mov rspt,ax
+ mov ax,[bp+4]
+ mov rofs,ax
+ mov ropened,0
+ mov rwrite,0
+ mov rheld,0
+ mov rkept,0
+ mov rerr,0
+ mov rfailed,0
+ mov rmode,0
+ mov cx,12
+ int 0e0h
+ cmp ax,22h
+ jne rshort1
+ jmp ropen_cpm
+rshort1:
+ and ax,0fdffh
+ cmp ax,1431h
+ jne rshort2
+ jmp ropen_native
+rshort2:
+ cmp ax,1441h
+ je rshort3
+ jmp ropen_bad
+rshort3:
+ropen_native:
+ mov rmode,1
+ mov cx,154
+ int 0e0h
+ mov rsys,es
+ mov cx,156
+ int 0e0h
+ mov rpd,bx
+ mov ax,es:[10h][bx]
+ mov ruda,ax
+ mov es,rsys
+ mov bx,88h
+ cmp word ptr es:[bx],0
+ je rshort4
+ jmp ropen_bad
+rshort4:
+ mov bx,rpd
+ mov ax,es:6[bx]
+ and ax,2
+ mov rkeep,ax
+ or word ptr es:6[bx],2
+ mov rkept,1
+ mov dx,offset rqueue
+ mov cx,135
+ int 0e0h
+ or ax,ax
+ jz rshort5
+ jmp ropen_bad
+rshort5:
+ mov dx,offset rqueue
+ mov cx,137
+ int 0e0h
+ or ax,ax
+ jz rshort6
+ jmp ropen_bad
+rshort6:
+ mov rheld,1
+ mov es,rsys
+ mov bx,88h
+ cmp word ptr es:[bx],0
+ je rshort7
+ jmp ropen_bad
+rshort7:
+ mov bx,rdrive
+ shl bx,1
+ mov bx,es:[0c18h][bx]
+ or bx,bx
+ jnz rshort8
+ jmp ropen_bad
+rshort8:
+ mov bx,es:8[bx]
+ or bx,bx
+ jnz rshort9
+ jmp ropen_bad
+rshort9:
+ cmp byte ptr es:15[bx],2
+ je rshort10
+ jmp ropen_bad
+rshort10:
+ mov es,ruda
+ mov bx,10h
+ mov al,es:[bx]
+ mov rerror,al
+ mov bx,10h
+ mov byte ptr es:[bx],0feh
+ mov rerr,1
+ jmp ropen_align
+ropen_cpm:
+ mov ax,rdrive
+ mov rcx,ax
+ mov rdx,1
+ mov al,9
+ call rbios
+ ; Local IBM BIOS selects the drive; BDOS already validated selection.
+ mov ax,ds
+ mov rcx,ax
+ mov al,17
+ call rbios
+ropen_align:
+ mov ax,offset rspace
+ add ax,15
+ mov cl,4
+ shr ax,cl
+ mov dx,ds
+ add ax,dx
+ add ax,31
+ and ax,0ffe0h
+ mov rbseg,ax
+ mov ropened,1
+ xor ax,ax
+ jmp ropen_done
+ropen_bad:
+ call rawclose
+ mov ax,1
+ropen_done:
+ pop es
+ pop di
+ pop si
+ pop bp
+ ret 6
+rawopen endp
+
+; Release exactly the process/queue state acquired by this command.
+rawclose proc near
+ mov ropened,0
+ mov rwrite,0
+ push bp
+ push si
+ push di
+ push es
+ cmp rerr,0
+ jne rshort12
+ jmp rclose_queue
+rshort12:
+ mov es,ruda
+ mov al,rerror
+ mov bx,10h
+ mov es:[bx],al
+ mov rerr,0
+rclose_queue:
+ cmp rheld,0
+ jne rshort13
+ jmp rclose_keep
+rshort13:
+ mov dx,offset rqueue
+ mov cx,139
+ int 0e0h
+ mov rheld,0
+rclose_keep:
+ cmp rkept,0
+ jne rshort14
+ jmp rclose_done
+rshort14:
+ mov es,rsys
+ mov bx,rpd
+ and word ptr es:6[bx],0fffdh
+ mov ax,rkeep
+ or es:6[bx],ax
+ mov rkept,0
+rclose_done:
+ pop es
+ pop di
+ pop si
+ pop bp
+ ret
+rawclose endp
+
+; BIOS packet helper, preserving the C/PLM data segment and frame registers.
+rbios proc near
+ mov rpacket,al
+ push bp
+ push si
+ push di
+ push ds
+ push es
+ mov dx,offset rpacket
+ mov cx,50
+ int 0e0h
+ pop es
+ pop ds
+ pop di
+ pop si
+ pop bp
+ ret
+rbios endp
+
+; rawread(record,buffer): record is relative to the directory, in 128 bytes.
+rawarm proc near
+ cmp ropened,1
+ jne rarm_bad
+ cmp rfailed,0
+ je rshort15
+ jmp rarm_bad
+rshort15:
+ mov rwrite,1
+ xor ax,ax
+ ret
+rarm_bad:
+ mov ax,1
+ ret
+rawarm endp
+
+rawread proc near
+ push bp
+ mov bp,sp
+ push si
+ push di
+ push es
+ mov ax,[bp+6]
+ mov rrecord,ax
+ mov ax,[bp+4]
+ mov rbuffer,ax
+ cmp rfailed,0
+ je rshort16
+ jmp rread_bad
+rshort16:
+ call rread_sector
+ or ax,ax
+ jz rshort17
+ jmp rread_bad
+rshort17:
+ cmp rmode,0
+ jne rshort18
+ jmp rread_done
+rshort18:
+ mov es,rbseg
+ mov si,rpart
+ mov di,rbuffer
+ mov cx,128
+rread_copy:
+ mov al,es:[si]
+ mov [di],al
+ inc si
+ inc di
+ loop rread_copy
+ xor ax,ax
+ jmp rread_done
+rread_bad:
+ mov rfailed,1
+ mov ax,1
+rread_done:
+ pop es
+ pop di
+ pop si
+ pop bp
+ ret 4
+rawread endp
+
+; rawwrite(record,before,after): reread/compare before changing one record.
+; Native writes preserve and verify all 512 bytes, including adjacent entries.
+rawwrite proc near
+ push bp
+ mov bp,sp
+ push si
+ push di
+ push es
+ cmp rwrite,1
+ je rshort19
+ jmp rwrite_bad
+rshort19:
+ mov ax,[bp+8]
+ mov rrecord,ax
+ mov ax,[bp+6]
+ mov rexpect,ax
+ mov ax,[bp+4]
+ mov rnew,ax
+ mov rbuffer,offset rverify
+ cmp rfailed,0
+ je rshort20
+ jmp rwrite_bad
+rshort20:
+ call rread_sector
+ or ax,ax
+ jz rshort21
+ jmp rwrite_bad
+rshort21:
+ mov si,rexpect
+ mov di,offset rverify
+ cmp rmode,0
+ jne rshort22
+ jmp rwrite_compare
+rshort22:
+ mov es,rbseg
+ mov di,rpart
+rwrite_compare:
+ mov cx,128
+rwrite_compare_loop:
+ mov al,[si]
+ cmp rmode,0
+ jne rshort23
+ jmp rwrite_compare_cpm
+rshort23:
+ cmp al,es:[di]
+ jmp rwrite_compared
+rwrite_compare_cpm:
+ cmp al,[di]
+rwrite_compared:
+ je rshort24
+ jmp rwrite_bad
+rshort24:
+ inc si
+ inc di
+ loop rwrite_compare_loop
+ mov si,rnew
+ mov di,offset rverify
+ cmp rmode,0
+ jne rshort25
+ jmp rwrite_replace
+rshort25:
+ mov di,rpart
+rwrite_replace:
+ mov cx,128
+rwrite_replace_loop:
+ mov al,[si]
+ cmp rmode,0
+ jne rshort26
+ jmp rwrite_replace_cpm
+rshort26:
+ mov es:[di],al
+ jmp rwrite_replaced
+rwrite_replace_cpm:
+ mov [di],al
+rwrite_replaced:
+ inc si
+ inc di
+ loop rwrite_replace_loop
+ cmp rmode,0
+ jne rshort27
+ jmp rwrite_cpm
+rshort27:
+ ; Retain the exact intended physical sector for verification.
+ mov si,0
+ mov di,offset rverify
+ mov cx,512
+rwrite_save:
+ mov al,es:[si]
+ mov [di],al
+ inc si
+ inc di
+ loop rwrite_save
+ mov al,11
+ call rxios
+ or ax,ax
+ jz rshort28
+ jmp rwrite_bad
+rshort28:
+ mov al,10
+ call rxios
+ or ax,ax
+ jz rshort29
+ jmp rwrite_bad
+rshort29:
+ mov si,0
+ mov di,offset rverify
+ mov cx,512
+rwrite_verify:
+ mov al,es:[si]
+ cmp al,[di]
+ je rshort30
+ jmp rwrite_bad
+rshort30:
+ inc si
+ inc di
+ loop rwrite_verify
+ xor ax,ax
+ jmp rwrite_done
+rwrite_cpm:
+ mov rcx,offset rverify
+ mov al,12
+ call rbios
+ mov rcx,1
+ mov al,14
+ call rbios
+ or al,al
+ jz rshort31
+ jmp rwrite_bad
+rshort31:
+ call rread_sector
+ or ax,ax
+ jz rshort32
+ jmp rwrite_bad
+rshort32:
+ mov si,rnew
+ mov di,offset rverify
+ mov cx,128
+ cld
+ push ds
+ pop es
+ repe cmpsb
+ je rshort33
+ jmp rwrite_bad
+rshort33:
+ xor ax,ax
+ jmp rwrite_done
+rwrite_bad:
+ mov rfailed,1
+ mov ax,1
+rwrite_done:
+ pop es
+ pop di
+ pop si
+ pop bp
+ ret 6
+rawwrite endp
+
+rread_sector proc near
+ cmp rrecord,511
+ jbe rindex_ok
+ jmp rsector_bad
+rindex_ok:
+ mov ax,rrecord
+ cmp rmode,0
+ je rlogical_track
+ ; Native DPB SPT counts physical sectors. Convert the 128-byte directory
+ ; record first; CP/M BIOS DPB SPT instead counts 128-byte records.
+ and ax,3
+ mov cl,7
+ shl ax,cl
+ mov rpart,ax
+ mov ax,rrecord
+ shr ax,1
+ shr ax,1
+rlogical_track:
+ xor dx,dx
+ div rspt
+ add ax,rofs
+ jnc rtrack_ok
+ jmp rsector_bad
+rtrack_ok:
+ mov rtrack,ax
+ mov rsector,dx
+ cmp rmode,0
+ je rsector_cpm
+ mov al,10
+ call rxios
+ ret
+rsector_cpm:
+ mov rcx,ax
+ mov al,10
+ call rbios
+ mov ax,rsector
+ mov rcx,ax
+ mov rdx,0
+ mov al,16
+ call rbios
+ mov rcx,bx
+ mov al,11
+ call rbios
+ mov ax,rbuffer
+ mov rcx,ax
+ mov al,12
+ call rbios
+ mov al,13
+ call rbios
+ xor ah,ah
+ ret
+rsector_bad:
+ mov ax,1
+ ret
+rread_sector endp
+
+rxios proc near
+ push bp
+ push si
+ push di
+ push ds
+ push es
+ xor ah,ah
+ mov dx,rdrive
+ mov dh,1
+ push dx
+ push rtrack
+ push rsector
+ push rbseg
+ xor dx,dx
+ push dx
+ mov es,ruda
+ mov ds,rsys
+ mov bx,28h
+ call dword ptr [bx]
+ add sp,10
+ ; XIOS status is AL only; CCP/M leaves transfer bytes in AH.
+ xor ah,ah
+ pop es
+ pop ds
+ pop di
+ pop si
+ pop bp
+ ret
+rxios endp
+code ends
+end
