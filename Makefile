@@ -54,7 +54,7 @@ SHARED     = $(SETUP) $(HDMAINT) \
              $(CONFIG) $(PRINT) 
 
 CORETOOLS  = $(PIP) $(STAT) $(SUBMIT) $(ED) $(FUNCTION) \
-             $(HELP) $(ASSIGN) $(MFORM) base/mformq.cmd \
+             $(HELP) $(ASSIGN) $(MFORM) \
              $(HLP) $(DSKMAINT) $(DATPFK) \
              $(TOD) $(SHARED)
 EXPCORE    = $(PIP) $(STAT) $(SUBMIT) $(ED) $(HELP) $(TOD) $(ASSIGN) \
