@@ -32,7 +32,7 @@ TESTSUB  = $(CMDDIR)/submit/testcpm.sub
 DATPFK   = $(CMDDIR)/function/data.pfk
 
 # Content sets shared by every image recipe. The feature (720K/1.44M) images
-# take everything; the smaller formats take subsets.
+# take everything; the 320K images take subsets.
 ASMTOOLS   = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
              dev/sid86.cmd
@@ -41,13 +41,9 @@ DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 EXTTOOLS   = $(DFORM) $(DCOPY) $(DCOMP)
 CHKCPMFS   = $(CMDDIR)/chkcpmfs/chkcpmfs.cmd
 
-DIST_DISKS =cpm86-160-1-at.img cpm86-160-1.img cpm86-160-2.img cpm86-160-3.img \
-    cpm86-160-4.img \
-    cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
-    cpm86-chkcpmfs.img \
-    cpm86-1440-at.img \
-	cpm86-exp-160-1.img cpm86-exp-160-1-at.img cpm86-exp-1440-at.img \
-	cpm86-720-at.img cpm86-exp-720-at.img
+DIST_DISKS = cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
+    cpm86-chkcpmfs.img cpm86-1440-at.img cpm86-exp-1440-at.img \
+    cpm86-720-at.img cpm86-exp-720-at.img
 
 # Tools that are the same whichever kernel the image carries.
 SHARED     = $(SETUP) $(HDMAINT) \
@@ -81,16 +77,9 @@ $(HLP): commands/helphlp/help.dat $(HELP)
 # Expand each image's target-specific content list at dependency evaluation.
 $(DIST_DISKS): Makefile $$(FTOOLS)
 
-# Every image target drives one of the three canned recipes below through
+# Every image target drives one of the two image recipes below through
 # target-specific FEAT/BASE/KRNL/FTOOLS variables. KRNL is empty on the
 # data-only disks, ATSTART is set only on the -at variants.
-define flat_image
-	cp $(BASE) $@
-	$(if $(KRNL),cpmcp -f $(FEAT) $@ $(KRNL) 0:CPM.SYS)
-	$(if $(ATSTART),cpmcp -f $(FEAT) $@ extra/atinit.cmd 0:ATINIT.CMD)
-	cpmcp -f $(FEAT) $@ $(FTOOLS) 0:
-	cpmls -F -f $(FEAT) $@ 0:*.*
-endef
 
 # 320K disks need the side-1 reordering, so the work happens on an untwisted
 # copy that is twisted back at the end.
@@ -130,14 +119,8 @@ extra: extra/144feat.inc
 cpmwk.img: base-160.img
 	cp $< $@
 
-# The "-at" bases differ from their plain counterparts only by the startup
-# command the BIOS stuffs into the keyboard buffer at boot. base-160.img
-# already carries a config sector so its settings are preserved; base-320.img
-# does not, so one is created.
-base-160-at.img: base-160.img
-	cp $< $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-
+# The AT base starts ATINIT through the keyboard buffer at boot.
+# Create the configuration sector missing from the original 320K base.
 base-320-at.img: base-320.img
 	cp $< $@
 	python3 tools/cpm86cfgsec.py $@ atinit
@@ -219,57 +202,6 @@ cpm86-chkcpmfs.img: cpm.sys base-320.img | commands
 
 .PHONY: chkcpmfs-live-images
 chkcpmfs-live-images: cpm86-chkcpmfs.img
-
-# Experimental kernel with source-built core tools.
-cpm86-exp-160-1-at.img: FEAT = ibmpc-514ss
-cpm86-exp-160-1-at.img: BASE = base-160-at.img
-cpm86-exp-160-1-at.img: KRNL = cpmexp.sys
-cpm86-exp-160-1-at.img: ATSTART = 1
-cpm86-exp-160-1-at.img: FTOOLS = $(EXPCORE)
-cpm86-exp-160-1-at.img: cpmexp.sys base-160-at.img | commands
-	$(flat_image)
-
-cpm86-exp-160-1.img: FEAT = ibmpc-514ss
-cpm86-exp-160-1.img: BASE = base-160.img
-cpm86-exp-160-1.img: KRNL = cpmexp.sys
-cpm86-exp-160-1.img: FTOOLS = $(EXPCORE)
-cpm86-exp-160-1.img: cpmexp.sys base-160.img | commands
-	$(flat_image)
-
-cpm86-160-1-at.img: FEAT = ibmpc-514ss
-cpm86-160-1-at.img: BASE = base-160-at.img
-cpm86-160-1-at.img: KRNL = cpm.sys
-cpm86-160-1-at.img: ATSTART = 1
-cpm86-160-1-at.img: FTOOLS = $(CORETOOLS)
-cpm86-160-1-at.img: cpm.sys base-160-at.img | commands
-	$(flat_image)
-
-cpm86-160-1.img: FEAT = ibmpc-514ss
-cpm86-160-1.img: BASE = base-160.img
-cpm86-160-1.img: KRNL = cpm.sys
-cpm86-160-1.img: FTOOLS = $(CORETOOLS)
-cpm86-160-1.img: cpm.sys base-160.img | commands
-	$(flat_image)
-
-cpm86-160-2.img: FEAT = ibmpc-514ss
-cpm86-160-2.img: BASE = base-160.img
-# HELP stays on the bootable core disks; duplicating it here exceeds 160K.
-cpm86-160-2.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(ASMTOOLS) \
-             $(EXTTOOLS)
-cpm86-160-2.img: base-160.img
-	$(flat_image)
-
-cpm86-160-3.img: FEAT = ibmpc-514ss
-cpm86-160-3.img: BASE = base-160.img
-cpm86-160-3.img: FTOOLS = $(DRTOOLS)
-cpm86-160-3.img: base-160.img
-	$(flat_image)
-
-cpm86-160-4.img: FEAT = ibmpc-514ss
-cpm86-160-4.img: BASE = base-160.img
-cpm86-160-4.img: FTOOLS = $(BASICTOOLS)
-cpm86-160-4.img: base-160.img
-	$(flat_image)
 
 # Track the generated file, rather than an alias that never exists.
 extra/144feat.inc: cpm.sys cpmexp.sys tools/gen_144feat_inc.py
@@ -367,8 +299,10 @@ clean-images:
 
 dist: disks.zip
 
-disks.zip: $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
-	zip -j $@ $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
+disks.zip: Makefile $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
+	$(RM) $@.tmp.zip
+	zip -j $@.tmp.zip $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs tools/cpm86twist.py
+	mv $@.tmp.zip $@
     
 
 # Frozen references and pinned hashes guard source cleanup against code drift.
