@@ -4,10 +4,9 @@
 CMDINFO=cmdinfo
 TOOLS=hexcom.cmd
 
-CC=aztec42_cc
-LD=aztec42_link
-CFLAGS=-I. +0 -D__CPM__
-CPM_LDFLAGS=-lc86
+CC=aztec43_acc
+LD=aztec43_acc
+CFLAGS=-I. -D__CPM__
 
 .PHONY: all check clean
 .DELETE_ON_ERROR:

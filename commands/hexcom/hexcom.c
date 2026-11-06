@@ -37,7 +37,7 @@
 #define TPA 0x100        /* CP/M transient program area base address */
 #define RECSZ 128        /* CP/M record (sector) size                */
 #define ADDRSP 0x10000UL /* 64K address space                        */
-#define WINSZ 0x1000UL   /* conversion window: 4K of image at a time */
+#define WINSZ 0x1000   /* conversion window: 4K of image at a time */
 
 /******************************************************************************/
 
