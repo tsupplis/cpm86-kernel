@@ -320,7 +320,9 @@ select_single_sided:
 report_source_read_error:
 	mov	ax,offset msg_read_error
 	call	report_disk_error
-	jmp	read_track_succeeded
+	mov dx,offset msg_source_aborted
+	call puts
+	jmp cleanup
 
 retry_source_not_ready:
 	call	handle_not_ready
@@ -457,23 +459,43 @@ check_incompatible_target:
 	jnz	report_target_write_error
 	cmp	dh,1h
 	jnz	report_target_write_error
+	mov exit_status,2
 	mov	dx,offset msg_incompatible_drives
 	call	puts
 	mov	dx,offset msg_target_unusable
 	jmp	show_completion_status
 
 ;-----------------------------------------------------------------------------
-; BIOS verify (AH=04h), with retry and not-ready handling.
+; Read back and compare source bytes, with retry and not-ready handling.
 ;-----------------------------------------------------------------------------
 
 verify_target_track:
-	and	byte ptr copy_flags,0F7h
-	xor	bx,bx
-	mov	ax,bios_verify_track
-	mov	al,track_sectors
-	call	disk_io
-	jc	verify_track_failed
-	mov	byte ptr verify_retries,0h
+	and byte ptr copy_flags,0F7h
+	push es
+	mov es,verify_segment
+	xor bx,bx
+	mov ax,bios_read_track
+	mov al,track_sectors
+	call disk_io
+	pop es
+	jc verify_track_failed
+; Compare only disk bytes; preserve source segment and all live cursors.
+	push ds ! push es ! push si ! push di ! push cx
+	mov ax,es
+	mov ds,ax
+	mov ax,cs:verify_segment
+	mov es,ax
+	xor si,si
+	xor di,di
+	xor cx,cx
+	mov ch,cs:track_sectors
+	repe cmpsw
+	pop cx ! pop di ! pop si ! pop es ! pop ds
+	je verify_bytes_equal
+	mov ah,10h
+	jmp verify_track_failed
+verify_bytes_equal:
+	mov byte ptr verify_retries,0h
 
 verify_track_ret:
 	ret
@@ -573,6 +595,7 @@ format_track_failed:
 	inc	byte ptr format_retries
 	cmp	byte ptr format_retries,4h
 	jnz	format_track_attempt
+	mov exit_status,2
 	mov	dx,offset msg_format_failed
 	jmp	show_completion_status
 
@@ -618,6 +641,7 @@ show_error_track_side:
 	mov	dx,offset msg_track_side
 	call	puts
 ; Remember that the final completion message must warn about target damage.
+	mov exit_status,2
 	or	byte ptr copy_flags,flag_errors_seen
 
 report_disk_error_ret:
@@ -725,6 +749,7 @@ msg_copy_complete	db	0Dh,0Ah
 	db	0Dh,0Ah
 	db	'$'
 
+msg_source_aborted db 'Copy aborted; unread source batch was not written.',13,10,'$'
 msg_read_error	db	0Dh,0Ah
 	db	'Unrecoverable read error on source$'
 
@@ -825,6 +850,7 @@ parameter_error:
 
 ; As in MFORM, an empty command displays the banner and command syntax.
 show_usage:
+	mov exit_status,2
 	mov	dx,offset msg_banner
 	call	puts
 	mov	dx,offset msg_usage
@@ -832,6 +858,7 @@ show_usage:
 	jmp	doexit
 
 print_init_error_exit:
+	mov exit_status,2
 	call	puts
 	jmp	doexit
 
@@ -858,6 +885,7 @@ allocate_copy_buffer:
 	call	ccpm_lock
 buffer_backend_ready:
 	call disk_setup
+	mov exit_status,0
 	jmp	begin_copy
 
 begin_copy:
@@ -974,6 +1002,12 @@ exit_cpm:
 	mov	cl,f_resetdrive
 	call	bdos
 exit_program:
+	cmp return_code_supported,0
+	je exit_without_status
+	mov dx,exit_status
+	mov cl,108
+	call bdos
+exit_without_status:
 	xor	dx,dx
 	mov	cl,f_reset
 	int	i_bdos
@@ -1153,6 +1187,8 @@ mem_length	dw	5100h
 mem_ext	db	0
 
 ; Private downward-growing stack, separate from the base page and buffers.
+return_code_supported db 0
+exit_status dw 2
 stack_space	rs	stack_size
 stack_top:
 

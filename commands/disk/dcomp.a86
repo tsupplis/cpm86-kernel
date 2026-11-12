@@ -332,6 +332,7 @@ read_track_failed:
 	jnc	report_read_error
 	test	byte ptr compare_flags,flag_geometry_known
 	jz	discard_side_probe_buffer
+	mov exit_status,2
 	mov	dx,offset msg_incompatible_disks
 	jmp	show_compare_status
 
@@ -364,6 +365,7 @@ select_single_sided:
 	jmp	advance_read_buffer
 
 report_read_error:
+	mov exit_status,2
 	or	byte ptr compare_flags,flag_mismatch_seen ; No success after unread data.
 	mov	error_drive_char,dl
 	add	byte ptr error_drive_char,41h
@@ -424,65 +426,53 @@ show_sides:
 	ret
 
 ;-----------------------------------------------------------------------------
-; Compare buffered bytes with REPE CMPSB and report differences.
+; Compare sector words with REPE CMPSW and report differences.
 ;-----------------------------------------------------------------------------
 
-; DS:SI selects the resident small buffer; ES:DI the matching large span.
+ ; Compare each head separately: padding is storage, never disk data.
 compare_buffers:
-	mov	si,word ptr small_buffer_offset
-	mov	es,word ptr bulk_compare_segment
-	xor	di,di
-	mov	cx,8000h                        ; Two 16 KiB slots; unused sector bytes are zero.
-
-compare_next_span:
-	jcxz	advance_compare_buffer
-	repe	cmpsb
-	jz	advance_compare_buffer
-	call	report_mismatch
-	jmp	compare_next_span
-
-; The caller consumed one 16 KiB span regardless of how many mismatches it
-; contained.
-advance_compare_buffer:
-	mov	ax,word ptr bulk_compare_segment
-	add	ax,800h                         ; Advance the large-buffer cursor by two 16 KiB slots.
-	mov	word ptr bulk_compare_segment,ax
+	xor bx,bx
+	call compare_head
+	inc bx
+	call compare_head
+	mov ax,word ptr bulk_compare_segment
+	add ax,800h
+	mov word ptr bulk_compare_segment,ax
 	ret
 
-;-----------------------------------------------------------------------------
-; Report the track/side of a mismatch; adjust the remaining comparison span.
-;-----------------------------------------------------------------------------
+compare_head:
+	mov si,word ptr small_buffer_offset
+	mov ax,word ptr bulk_compare_segment
+	or bx,bx
+	jz compare_head_ready
+	add si,4000h
+	add ax,400h
+compare_head_ready:
+	mov es,ax
+	xor di,di
+	xor cx,cx
+	mov ch,track_sectors             ; 256 words per sector
+	repe cmpsw
+	jne report_mismatch
+	ret
 
+; Report at most one mismatch per head, independent of its byte position.
 report_mismatch:
-	or	byte ptr compare_flags,flag_mismatch_seen
-	mov	dl,current_cylinder
-	mov	dh,30h
-	cmp	cx,3FFFh
-	ja	mismatch_first_span
-; A mismatch in the second span completes this small-buffer comparison.
-	xor	cx,cx
-	test	byte ptr compare_flags,flag_two_heads
-	jz	mismatch_next_cylinder
-	inc	dh                              ; For double-sided media this span belongs to head one.
-	jmp	format_mismatch_location
-
-; The second 16 KiB is head one on a double-sided disk, or the next cylinder
-; on a single-sided disk.
+	cmp exit_status,0
+	jne mismatch_status_ready
+	mov exit_status,1
+mismatch_status_ready:
+	or byte ptr compare_flags,flag_mismatch_seen
+	mov dl,current_cylinder
+	mov dh,30h
+	or bx,bx
+	jz format_mismatch_location
+	test byte ptr compare_flags,flag_two_heads
+	jz mismatch_next_cylinder
+	inc dh
+	jmp format_mismatch_location
 mismatch_next_cylinder:
-	inc	dl
-	jmp	format_mismatch_location
-
-; After reporting a mismatch in the first 16 KiB, skip to the second span to
-; avoid duplicate reports.
-mismatch_first_span:
-	mov	bp,word ptr bulk_compare_segment
-	add	bp,400h
-	mov	es,bp
-	add	si,cx
-; Skip the remainder of the first span after reporting its first mismatch.
-	mov	cx,4000h
-	sub	si,cx
-	xor	di,di
+	inc dl
 
 format_mismatch_location:
 	mov	side_digit_char,dh
@@ -634,6 +624,7 @@ parameter_error:
 
 ; As in MFORM, an empty command displays the banner and command syntax.
 show_usage:
+	mov exit_status,2
 	mov	dx,offset msg_banner
 	call	puts
 	mov	dx,offset msg_usage
@@ -641,6 +632,7 @@ show_usage:
 	jmp	doexit
 
 print_init_error_exit:
+	mov exit_status,2
 	call	puts
 	jmp	doexit
 
@@ -667,6 +659,7 @@ allocate_compare_buffers:
 	call	ccpm_lock
 buffer_backend_ready:
 	call disk_setup
+	mov exit_status,0
 	jmp	begin_comparison
 
 begin_comparison:
@@ -784,6 +777,12 @@ exit_cpm:
 	mov	cl,f_resetdrive
 	call	bdos
 exit_program:
+	cmp return_code_supported,0
+	je exit_without_status
+	mov dx,exit_status
+	mov cl,108
+	call bdos
+exit_without_status:
 	xor	dx,dx
 	mov	cl,f_reset
 	int	i_bdos
@@ -950,6 +949,7 @@ buffer_sized:
 	mov	bulk_buffer_segment,dx
 	mov	ax,ds
 	mov	bx,offset small_buffer
+	add	bx,15                 ; round up before physical alignment
 	mov	cl,4
 	shr	bx,cl
 	add	ax,bx
@@ -976,6 +976,8 @@ mem_length	dw	5100h
 mem_ext	db	0
 
 ; Private downward-growing stack, separate from the base page and buffers.
+return_code_supported db 0
+exit_status dw 2
 stack_space	rs	stack_size
 stack_top:
 ; Up to 16 KiB padding aligns the 16 KiB read buffer for BIOS DMA.

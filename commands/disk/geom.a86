@@ -277,6 +277,7 @@ geometry_ambiguous:
 geometry_conflict:
         mov dx,offset msg_geometry_mismatch
 geometry_stop:
+        mov exit_status,2
         call puts
         jmp cleanup
 

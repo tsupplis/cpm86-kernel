@@ -120,6 +120,18 @@ start:
     mov ax,cs
     add ax,(payload-$$+100h) / 16
     mov es,ax
+%ifdef LOAD_SEG
+    push ds
+    mov ds,ax
+    mov si,0
+    mov ax,LOAD_SEG
+    mov es,ax
+    xor di,di
+    mov cx,payload_end-payload
+    cld
+    rep movsb
+    pop ds
+%endif
     mov byte [es:80h],tailend-tail
     mov si,tail
     mov di,81h
@@ -139,6 +151,8 @@ equipment:
     iret
 
 bdos:
+    cmp cl,108
+    je set_status
     cmp cl,12
     je version
 %if NATIVE
@@ -180,6 +194,19 @@ bdos:
     cmp cl,55
     je allocate
     jmp bad_2
+set_status:
+%if EXPECT_STATUS < 0
+    jmp bad
+%else
+    cmp dx,EXPECT_STATUS
+    jne bad
+    cmp byte [cs:status_calls],0
+    jne bad
+    cmp byte [cs:queue_held],0
+    jne bad
+    inc byte [cs:status_calls]
+    jmp corrupt
+%endif
 version:
     mov ax,OSVER
     jmp corrupt
@@ -313,6 +340,14 @@ corrupt:
     std
     iret
 finish:
+    cmp byte [cs:status_calls],(EXPECT_STATUS >= 0) & 1
+    jne bad
+%ifdef LOAD_SEG
+    mov ax,LOAD_SEG
+    mov es,ax
+    cmp byte [es:BUFFER_START-1],'$'
+    jne bad
+%endif
 %if NATIVE
     cmp byte [cs:invalidated],EXPECT_TOUCHED
     jne bad
@@ -374,18 +409,14 @@ disk_model:
     pop ax
     jnz bad_11
 .nonzero:
-%if NATIVE
+%if IS_COPY
     cmp ah,2
     jne .not_verify
-%if IS_COPY
     cmp byte [cs:last_write],1
     jne .not_verify
-    mov ah,4
+    mov byte [cs:verify_read],1
     mov byte [cs:last_write],0
 .not_verify:
-%else
-.not_verify:
-%endif
 %endif
     cmp al,1
     jne .bulk_count
@@ -405,6 +436,17 @@ disk_model:
     je .format
     jmp bad_13
 .read:
+%ifdef SOURCE_FAIL
+    cmp byte [cs:verify_read],0
+    jne .source_ok
+    cmp ch,1
+    jne .source_ok
+    cmp dh,0
+    jne .source_ok
+    mov ah,10h
+    jmp .error
+.source_ok:
+%endif
 %if READ_RETRY
     cmp byte [cs:read_retried],0
     jne .read_retry_done
@@ -417,7 +459,10 @@ disk_model:
     cmp dh,1
     je .absent
 %endif
+    cmp byte [cs:verify_read],0
+    jne .counted
     inc word [cs:read_count]
+.counted:
     push cx
     push di
     push ax
@@ -437,13 +482,33 @@ disk_model:
 %if MISMATCH
     cmp dl,1
     jne .same
-%if MISMATCH == 2
+%if MISMATCH == 4
+    cmp dh,1
+    jne .same
+    xor byte [es:bx+SECTORS*512-1],1
+%elif MISMATCH == 3
+    xor byte [es:bx+SECTORS*512-1],1
+%elif MISMATCH == 2
     mov byte [es:bx+(SECTORS-1)*512],0ffh
 %else
     mov byte [es:bx],0ffh
 %endif
 .same:
 %endif
+%ifdef POISON_PADDING
+    mov di,bx
+    add di,SECTORS*512
+    mov cx,4000h-SECTORS*512
+    mov al,dl
+    rep stosb
+%endif
+%ifdef CORRUPT_VERIFY
+    cmp byte [cs:verify_read],0
+    je .no_corruption
+    xor byte [es:bx+SECTORS*512-1],1
+.no_corruption:
+%endif
+    mov byte [cs:verify_read],0
     pop ax
     pop di
     pop cx
@@ -924,10 +989,12 @@ xios:
     pop bp
     retf
 %endif
+status_calls db 0
 native_failures db 0
 invalidated db 0
 waiting db 0
 flushing db 0
+verify_read db 0
 last_write db 0
 queue_held db 0
 queued db 2
@@ -944,3 +1011,5 @@ tailend:
 align 16
 payload:
 incbin IMAGE,128
+
+payload_end:

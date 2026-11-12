@@ -136,6 +136,7 @@ ccpm_console_busy:
 ccpm_queue_error:
 	mov	dx,offset msg_queue
 ccpm_stop:
+	mov exit_status,2
 	call	puts
 	jmp	cleanup
 
@@ -294,6 +295,7 @@ check_native_probe:
 	jnz	native_probe_return
 	cmp	dh,1
 	jnz	native_probe_return
+	mov exit_status,2
 	mov	dx,offset msg_native_probe
 	call	puts
 	jmp	cleanup
@@ -402,6 +404,7 @@ select_concurrent:
 	je select_ccpm
 	cmp ax,1441h
 	jne wrong_os
+	mov return_code_supported,1
 	mov os_mode,2
 	jmps select_native_init
 select_ccpm:
@@ -427,8 +430,10 @@ select_no_floppy:
 	mov	byte ptr drive_count,0
 	ret
 cancelled:
+	mov exit_status,3
 	mov	dx,offset msg_cancelled
-	jmp	print_init_error_exit
+	call puts
+	jmp cleanup
 wrong_os:
 	mov	byte ptr os_mode,2
 	mov	dx,offset msg_wrong_os

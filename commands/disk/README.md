@@ -37,10 +37,14 @@ Both cylinder and sector counts must match for comparison. These larger
 profiles are rejected on the CP/M/CCP/M backends.
 
 DCOPY formats the target to the selected source geometry before writing its
-tracks, then verifies them. This also removes a leftover ninth sector when
+tracks, then reads them back and compares every sector byte with the source. This also removes a leftover ninth sector when
 copying an eight-sector disk over a nine-sector target. All target contents
 are overwritten. DCOMP is read-only. Neither command installs a new system;
 copying a bootable disk copies its existing bootstrap unchanged.
+
+An unrecoverable source read aborts the copy before the affected memory batch
+is written. Earlier completed batches remain on the target; there is no salvage
+mode that writes unread or partially read source data.
 
 Native head-one failures remain ambiguous and stop the operation; use [1]
 for known single-sided media. A failed read is not evidence that a head is absent.
@@ -62,8 +66,8 @@ kernels provide physical read/write 35/36 and variable format 29. This extends
 maintenance access; it does not add FAT filesystem mounting to CCP/M.
 
 Each head uses a physical 16 KiB-aligned slot. Eighteen sectors fit without crossing
-a 64 KiB DMA boundary. Padding is cleared, and DCOMP compares two slots while
-excluding stale padding bytes. Format CHRN DMA and verification use separate
+a 64 KiB DMA boundary. Padding is cleared, and DCOMP compares only the sector data in each of its
+two slots, using word comparisons and excluding padding bytes. Format CHRN DMA and verification use separate
 aligned resident scratch, preserving buffered source data across retries.
 The private stack remains resident. Trailing DMA buffers are uninitialized
 storage: CMD MIN reserves them, while LEN omits their zero bytes from disk.
@@ -85,3 +89,13 @@ native paths. Real-kernel tests use only disposable PCE images.
 From the project root, `make check-disk` runs these regression cases;
 `make check-disk-live` builds the project and copies/compares disposable disks
 under PCE using the actual local kernel.
+
+## Return status
+
+On Concurrent DOS 4.1 (full version 1441h), the commands set BDOS 108 after
+cleanup: 0 success, 1 comparison differences, 2 command/I/O/geometry error,
+3 cancellation. Errors and differences remain recorded across repeated disk
+pairs; cancellation returns 3. Corrected transient retries do not mark failure.
+CP/M-86 1.1 and CCP/M-86 3.1 do not implement function 108; it is never called
+on those versions, including the extended CCP/M XIOS backend. Unknown versions
+are rejected without probing function 108.
