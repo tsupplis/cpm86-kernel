@@ -3,6 +3,11 @@ bits 16
 cpu 8086
 org 100h
 %include "raw.inc"
+%ifndef PHYSHIFT
+%define PHYSHIFT 2
+%endif
+%define RECORDS (1<<PHYSHIFT)
+%define LAST (2*RECORDS-1)
 start:
  cld
  mov dx,bdos
@@ -34,7 +39,15 @@ start:
  mov word [es:106h],0
  mov word [es:0c18h],200h
  mov word [es:208h],300h
- mov byte [es:30fh],2
+ mov word [es:20eh],220h
+ mov word [es:220h],400h
+ mov byte [es:400h],0
+ mov byte [es:404h],1
+ mov word [es:40ch],420h
+ mov byte [es:420h],1
+ mov byte [es:424h],1
+ mov word [es:42ch],0
+ mov byte [es:30fh],PHYSHIFT
  mov ax,3000h
  mov ds,ax
  call open
@@ -51,7 +64,7 @@ start:
  cmp [0e07fh],al
  jne bad
  inc si
- cmp si,8
+ cmp si,2*RECORDS
  jne .loop
  cmp word [cs:reads],2
  jne bad
@@ -59,16 +72,36 @@ start:
  mov bx,RAWCLOSE
  call far [cs:zero_ptr]
  call open
- mov ax,7
+ mov ax,LAST
  call read
  cmp word [cs:reads],3
  jne bad
+ ; Pending target directory writes must prevent arming, with no invalidation.
+ mov bx,RAWARM
+ call far [cs:zero_ptr]
+ or ax,ax
+ jz bad
+ mov ax,4000h
+ mov es,ax
+ cmp byte [es:400h],0
+ jne bad
+ mov byte [es:404h],0
  ; Once armed, same-sector reads must always reach the disk.
  mov bx,RAWARM
  call far [cs:zero_ptr]
- mov ax,7
+ or ax,ax
+ jnz bad
+ mov ax,4000h
+ mov es,ax
+ cmp byte [es:400h],0ffh
+ jne bad
+ cmp byte [es:420h],1
+ jne bad
+ cmp byte [es:424h],1
+ jne bad
+ mov ax,LAST
  call read
- mov ax,7
+ mov ax,LAST
  call read
  cmp word [cs:reads],5
  jne bad
@@ -79,7 +112,7 @@ start:
  push ds
  pop es
  rep stosb
- mov ax,7
+ mov ax,LAST
  mov dx,0e000h
  mov cx,0e100h
  mov bx,RAWWRITE
@@ -92,7 +125,7 @@ start:
  jne bad
  ; A disk change since before-buffer capture must refuse a second write.
  mov byte [cs:changed],1
- mov ax,7
+ mov ax,LAST
  mov dx,0e100h
  mov cx,0e000h
  mov bx,RAWWRITE
@@ -179,9 +212,9 @@ xios:
  cmp byte [cs:failread],0
  jne .failed
  mov ax,[ss:bp+10]
- shl ax,1
- shl ax,1
- mov si,4
+ mov cl,PHYSHIFT
+ shl ax,cl
+ mov si,RECORDS
 .fill_records:
  mov cx,128
  rep stosb
@@ -193,7 +226,7 @@ xios:
  cmp word [ss:bp+10],1
  jne .ok
  mov di,[ss:bp+6]
- add di,384
+ add di,(RECORDS-1)*128
  mov al,0a5h
  cmp byte [cs:changed],0
  je .fill
@@ -204,13 +237,13 @@ xios:
  jmp .ok
 .write:
  inc word [cs:writes]
- cmp byte [es:di],4
+ cmp byte [es:di],RECORDS
  jne bad
- cmp byte [es:di+383],6
+ cmp byte [es:di+(RECORDS-1)*128-1],LAST-1
  jne bad
- cmp byte [es:di+384],0a5h
+ cmp byte [es:di+(RECORDS-1)*128],0a5h
  jne bad
- cmp byte [es:di+511],0a5h
+ cmp byte [es:di+RECORDS*128-1],0a5h
  jne bad
 .ok:
  xor ax,ax

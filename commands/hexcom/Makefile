@@ -6,7 +6,7 @@ TOOLS=hexcom.cmd
 
 CC=aztec43_acc
 LD=aztec43_acc
-CFLAGS=-I. -D__CPM__
+CFLAGS=-squeeze -Osize -I. -D__CPM__
 
 .PHONY: all check clean
 .DELETE_ON_ERROR:

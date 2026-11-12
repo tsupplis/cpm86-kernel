@@ -65,7 +65,7 @@ reserved bits. File data, allocation slots, record counts, names, attributes,
 S1, labels and timestamp records are never rewritten by these repairs.
 
 Each directory record is reread and compared immediately before writing.
-The native adapter preserves and verifies the complete 512-byte physical
+The native adapter preserves and verifies the complete physical
 sector; CP/M BIOS uses checked 128-byte directory writes with deblocking.
 A final full directory scan verifies the result. An I/O error stops further
 writes and reports possible partial changes; no crash-atomic transaction or
@@ -76,19 +76,21 @@ rollback is claimed. Successfully completed prefixes are tested for safe retry.
 | System | Repair I/O | Protection |
 |---|---|---|
 | CP/M-86 1.1 / BDOS 2.2 | Local IBM PC BIOS through BDOS 50, including sector translation/deblocking | Single-user execution; refuse an already read-only drive |
-| CCP/M-86 3.1 | Native XIOS, 512-byte physical sectors | MXdisk held throughout planning, confirmation, writes and verification; refuse open files |
-| CDOS 4.1 | Native XIOS, 512-byte physical sectors | Same locking/state restoration; DOS/FAT media refused |
+| CCP/M-86 3.1 | Native XIOS, 512-byte or 2 KiB physical sectors | MXdisk held throughout planning, confirmation, writes and verification; refuse open files |
+| CDOS 4.1 | Native XIOS, 512-byte or 2 KiB physical sectors | Same locking/state restoration; DOS/FAT media refused |
 
 CP/M BIOS DPB SPT counts 128-byte records; native XIOS DPB SPT counts physical
 sectors. The adapter handles this distinction and treats XIOS status as AL,
 not the whole AX register. No kernel extensions or kernel source changes are
-required. Unknown OS interfaces and unsupported physical sector sizes are
+required. Unknown OS interfaces and unsupported physical sector sizes other than 512 bytes or 2 KiB are
 refused for repair. MXdisk cannot protect against an independent raw-disk
 writer that ignores that lock.
 
 On concurrent systems, the prior P_KEEP bit and disk error mode are restored.
-After any write attempt, the drive is reset to discard cached allocation and
-directory state; its next access may require a re-login. If interrupted or
+Before arming a repair, clean shared directory buffers for the selected drive
+are discarded under MXdisk; a pending directory write prevents repair. After
+any write attempt, the drive is reset so allocation state is rebuilt on login.
+Reset alone does not discard CCP/M shared directory buffers. If interrupted or
 cleanup fails, check drive state with STAT on CP/M, or SHOW/SET on concurrent
 systems. A previously read-only drive is never made writable for repair.
 
@@ -124,13 +126,25 @@ records, unrelated directory entries, reserved tracks and all file data.
 
 ## Native planning-read cache
 
-While MXdisk is held, the repair planning scan reuses its 512-byte physical
-sector buffer for adjacent 128-byte directory records. No additional sector
+While MXdisk is held, the repair planning scan reuses its selected physical
+sector buffer (512 bytes or 2 KiB) for adjacent 128-byte directory records. No additional sector
 storage is allocated. Reopening or closing invalidates the cache; a failed
 read is never cached. Arming a confirmed repair disables caching for the rest
 of that session, including execution reads and the final verification scan.
 The CP/M BIOS path retains its existing 128-byte deblocking behavior.
 
 `make check` also executes the linked native adapter against synthetic XIOS
-for CCP/M and CDOS: eight adjacent records require two physical reads, while
+for CCP/M and CDOS: adjacent records share physical reads, while
 armed reads, before-image checking and write verification remain fresh.
+
+### Larger native hard-disk volumes
+
+The allocation bitmap already covers all 16-bit allocation-block numbers.
+CDOS's 8 KiB/EXM=1 format is accepted alongside the full-capacity extent layouts;
+all nonzero allocation slots remain checked. The directory limit is 2048 entries.
+Native repair preserves/verifies a complete 512-byte or 2 KiB physical sector,
+including neighbouring directory records. The latter is required by CCP/M's
+hard-disk XIOS; cache keys and record slices use the selected physical size.
+
+CHKCPMFS cannot repair an undersized kernel allocation reservation: drive login
+must already be safe. It checks directory consistency, not file-data integrity.

@@ -1,6 +1,6 @@
 ; CHKCPMFS -- guarded directory I/O for the local IBM PC kernels.
 ; PL/M near ABI: arguments left-to-right; caller DS is the DATS group.
-; Native XIOS uses 512-byte sectors; CP/M BIOS supplies 128-byte deblocking.
+; Native XIOS uses 512/2048-byte sectors; CP/M BIOS supplies 128-byte deblocking.
 ; Never calls disk BDOS while MXdisk is held. No kernel modifications.
 name rawio
 dgroup group dats,stack
@@ -13,6 +13,9 @@ rdrive dw 0
 rspt dw 0
 rofs dw 0
 rmode dw 0
+rshift dw 2
+rphysize dw 512
+rmask dw 3
 rheld db 0
 rkept db 0
 rerr db 0
@@ -25,6 +28,7 @@ rresult dw 0
 rsys dw 0
 ruda dw 0
 rpd dw 0
+rdirroot dw 0
 rkeep dw 0
 rerror db 0
 rfunc db 0
@@ -40,9 +44,9 @@ rqueue db 8 dup (0),'MXdisk  ',6 dup (0)
 rpacket db 0
 rcx dw 0
 rdx dw 0
-; Up to 511 alignment bytes plus one complete physical sector.
-rspace db 1056 dup (0)
-rverify db 512 dup (0)
+; Up to 2047 alignment bytes plus one complete 2K physical sector.
+rspace db 4128 dup (0)
+rverify db 2048 dup (0)
 dats ends
 code segment public 'CODE'
 public rawopen,rawclose,rawread,rawwrite,rawarm
@@ -67,6 +71,9 @@ rawopen proc near
  mov rerr,0
  mov rfailed,0
  mov rmode,0
+ mov rshift,2
+ mov rphysize,512
+ mov rmask,3
  mov cx,12
  int 0e0h
  cmp ax,22h
@@ -132,6 +139,8 @@ rshort7:
  jnz rshort8
  jmp ropen_bad
 rshort8:
+ mov ax,es:14[bx]
+ mov rdirroot,ax
  mov bx,es:8[bx]
  or bx,bx
  jnz rshort9
@@ -139,7 +148,13 @@ rshort8:
 rshort9:
  cmp byte ptr es:15[bx],2
  je rshort10
+ cmp byte ptr es:15[bx],4
+ je ropen_2k
  jmp ropen_bad
+ropen_2k:
+ mov rshift,4
+ mov rphysize,2048
+ mov rmask,15
 rshort10:
  mov es,ruda
  mov bx,10h
@@ -167,8 +182,8 @@ ropen_align:
  shr ax,cl
  mov dx,ds
  add ax,dx
- add ax,31
- and ax,0ffe0h
+ add ax,127
+ and ax,0ff80h
  mov rbseg,ax
  mov ropened,1
  xor ax,ax
@@ -257,6 +272,51 @@ rawarm proc near
  je rshort15
  jmp rarm_bad
 rshort15:
+ ; Function 37 logs out the drive but does not discard shared directory BCBs.
+ ; While MXdisk excludes other disk activity, reject pending directory writes
+ ; before discarding clean copies. Otherwise PC-MODE can see stale metadata
+ ; after a successful raw repair. No disk BDOS calls may occur under this lock.
+ cmp rmode,0
+ je rarm_ready
+ push bx
+ push es
+ mov es,rsys
+ mov bx,rdirroot
+ or bx,bx
+ jz rarm_cache_done
+ mov bx,es:[bx]
+rarm_check:
+ or bx,bx
+ jz rarm_discard_start
+ mov ax,rdrive
+ cmp es:[bx],al
+ jne rarm_check_next
+ cmp byte ptr es:4[bx],0
+ jne rarm_pending
+rarm_check_next:
+ mov bx,es:12[bx]
+ jmp rarm_check
+rarm_discard_start:
+ mov bx,rdirroot
+ mov bx,es:[bx]
+rarm_discard:
+ or bx,bx
+ jz rarm_cache_done
+ mov ax,rdrive
+ cmp es:[bx],al
+ jne rarm_discard_next
+ mov byte ptr es:[bx],0ffh
+rarm_discard_next:
+ mov bx,es:12[bx]
+ jmp rarm_discard
+rarm_pending:
+ pop es
+ pop bx
+ jmp rarm_bad
+rarm_cache_done:
+ pop es
+ pop bx
+rarm_ready:
  mov rcachevalid,0
  mov rwrite,1
  xor ax,ax
@@ -289,14 +349,14 @@ rshort16:
  cmp rrecord,511
  ja rcache_miss
  mov ax,rrecord
- shr ax,1
- shr ax,1
+ mov cx,rshift
+ shr ax,cl
  cmp rcachevalid,0
  je rcache_miss
  cmp ax,rcachekey
  jne rcache_miss
  mov ax,rrecord
- and ax,3
+ and ax,rmask
  mov cl,7
  shl ax,cl
  mov rpart,ax
@@ -313,8 +373,8 @@ rshort17:
  cmp rwrite,0
  jne rcache_ready
  mov ax,rrecord
- shr ax,1
- shr ax,1
+ mov cx,rshift
+ shr ax,cl
  mov rcachekey,ax
  mov rcachevalid,1
 rcache_ready:
@@ -347,7 +407,7 @@ rread_done:
 rawread endp
 
 ; rawwrite(record,before,after): reread/compare before changing one record.
-; Native writes preserve and verify all 512 bytes, including adjacent entries.
+; Native writes preserve and verify the complete physical sector.
 rawwrite proc near
  mov rcachevalid,0
  push bp
@@ -432,7 +492,7 @@ rshort27:
  ; Retain the exact intended physical sector for verification.
  mov si,0
  mov di,offset rverify
- mov cx,512
+ mov cx,rphysize
 rwrite_save:
  mov al,es:[si]
  mov [di],al
@@ -453,7 +513,7 @@ rshort28:
 rshort29:
  mov si,0
  mov di,offset rverify
- mov cx,512
+ mov cx,rphysize
 rwrite_verify:
  mov al,es:[si]
  cmp al,[di]
@@ -514,13 +574,13 @@ rindex_ok:
  je rlogical_track
  ; Native DPB SPT counts physical sectors. Convert the 128-byte directory
  ; record first; CP/M BIOS DPB SPT instead counts 128-byte records.
- and ax,3
+ and ax,rmask
  mov cl,7
  shl ax,cl
  mov rpart,ax
  mov ax,rrecord
- shr ax,1
- shr ax,1
+ mov cx,rshift
+ shr ax,cl
 rlogical_track:
  xor dx,dx
  div rspt

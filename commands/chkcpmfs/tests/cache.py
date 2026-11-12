@@ -12,9 +12,9 @@ with tempfile.TemporaryDirectory(prefix='raw-cache-') as tmp:
     (tmp/'code.bin').write_bytes(image[128:128+code])
     (tmp/'data.bin').write_bytes(image[128+code:128+code+data])
     (tmp/'raw.inc').write_text(''.join(f'%define {name} {off}\n' for name,off in public.items()))
-    for version in (0x1431,0x1441):
+    for version,shift in ((0x1431,2),(0x1431,4),(0x1441,2)):
         subprocess.run(['nasm','-f','bin',str(root/'tests/cache.asm'),'-I',str(tmp)+'/',
-                        f'-DOSVER={version}','-o',str(tmp/'cache.com')],cwd=tmp,check=True)
+                        f'-DOSVER={version}',f'-DPHYSHIFT={shift}','-o',str(tmp/'cache.com')],cwd=tmp,check=True)
         p=subprocess.run(['emu2',str(tmp/'cache.com')],capture_output=True,timeout=15)
-        assert p.returncode==0,(version,p.returncode,p.stdout,p.stderr)
-print('PASS: native cache counts, reopen invalidation, fresh repair/verification and failed fills (CCP/M, CDOS)')
+        assert p.returncode==0,(version,shift,p.returncode,p.stdout,p.stderr)
+print('PASS: native cache counts, reopen invalidation, fresh repair/verification and failed fills (512-byte and 2K sectors)')

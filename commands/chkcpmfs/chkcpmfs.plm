@@ -359,7 +359,7 @@ dos$media: procedure byte;
 end dos$media;
 
 /* Validate the layout before interpreting any allocation slot. EXM must
- * describe exactly the directory entry capacity implied by BSH and DSM.
+ * describe a supported extent grouping for BSH and DSM.
  * Extra reserved blocks are legal, but every directory block must be reserved. */
 valid$dpb: procedure byte;
     declare (capacity, expected, blocks, i, reserved, mask) address;
@@ -370,7 +370,10 @@ valid$dpb: procedure byte;
     else capacity = capacity * 16;
     if capacity < 128 then return 0;
     expected = capacity / 128 - 1;
-    if extmsk <> expected then return 0;
+    /* CDOS HDMAINT uses 32K extent groups with 8K blocks (four of
+     * eight wide allocation slots). Older kernels honour that EXM too. */
+    if extmsk <> expected then
+        if not (blkshf = 6 and maxall > 255 and extmsk = 1) then return 0;
     blocks = (maxdir / 4 + 1 + shl(1,blkshf)-1) / shl(1,blkshf);
     if blocks = 0 or blocks > 16 then return 0;
     reserved = 0;
@@ -611,7 +614,11 @@ repair$directory: procedure;
         call newline;
         return;
     end;
-    if rawarm <> 0 then return;
+    if rawarm <> 0 then do;
+        call print$string(.('ERROR: repair could not be armed; no changes written.$'));
+        call newline;
+        return;
+    end;
     /* Delete redundant records first. An interrupted operation must not
      * normalize the survivor while leaving an otherwise identical duplicate
      * with different reserved bits, making a safe retry ambiguous. */

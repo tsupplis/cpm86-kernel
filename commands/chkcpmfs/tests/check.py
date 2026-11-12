@@ -85,6 +85,15 @@ def cases(version):
         "BLOCK 601 IS OUTSIDE THE DISK",
         "Consistency errors: 2",
     ]
+    yield "cdos-large-volume", [
+        entry("LARGE.DAT", [4031], records=64, wide=True),
+        entry("LARGE.DAT", [3000], extent=2, records=64, wide=True),
+    ], {"BSH": 6, "BLM": 63, "DSM": 4031, "DRM": 1023,
+        "EXM": 1, "AL0": 0xf0}, ["Consistency errors: 0"]
+    yield "large-volume-last-block", [
+        entry("LAST.DAT", [4031,4032], records=128, wide=True),
+    ], {"BSH": 6, "BLM": 63, "DSM": 4031, "DRM": 1023,
+        "EXM": 1, "AL0": 0xf0}, ["BLOCK 4032 IS OUTSIDE THE DISK"]
     yield "invalid-extent", [
         entry("BAD.DAT", [1], extent=0x20, module=0x40, records=129),
     ], {}, [
