@@ -12,7 +12,7 @@ count = 0
 def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
          repeat=0, retry=0, formatting=0, memfail=0, error=None, native=False, version=None, full_version=0x1431,
          console_state=0, console_number=0, open_files=0, open_after_lock=0,
-         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0):
+         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0, corrupt_verify=False, source_fail=False, relocation=0, poison_padding=False):
     global count
     probe_error = native and '[1' not in tail and (
         sides == 1 or (fail_probe and fail_times >= 4))
@@ -37,6 +37,10 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
     second_geometry_error = tool == "dcomp" and second_sectors is not None and second_sectors != sectors and geometry_error
     if second_geometry_error:
         reads = min((memory-0x3ff)//0x400,cylinders*heads) & ~1
+    if corrupt_verify:
+        reads=cylinders*heads; writes=4*cylinders*heads
+    if source_fail:
+        reads=heads; writes=0
     touched = 0
     if native and (reads or writes or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')):
         drives = re.findall(r'([AB]):', tail.upper())
@@ -45,6 +49,8 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
         touched = 1 << first
         if writes or (abort < 0 and not probe_error and not geometry_error) or (probe_error and probe_drive == 1) or second_geometry_error:
             touched |= 1 << second
+    if source_fail and native:
+        touched=1
     reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes or geometry_error)))
     options = dict(BAD_BPB=bad_bpb, CYLINDERS=cylinders, SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
                    NATIVE_STATUS=native_status, EXPECT_TOUCHED=touched,
@@ -60,6 +66,17 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
                    FORCE_FORMAT=formatting, MEMFAIL=memfail,
                    EXPECT_READS=reads * (repeat + 1),
                    EXPECT_WRITES=writes * (repeat + 1))
+    supported=native and full_version==0x1441 and ((options['OSVER']>>8)&15) in (4,6)
+    status=3 if error=='Cancelled.' or abort>=0 or abort_write>=0 else 2 if error else 1 if mismatch else 0
+    options['EXPECT_STATUS']=status if supported else -1
+    if poison_padding: options['POISON_PADDING']=1
+    if corrupt_verify: options['CORRUPT_VERIFY']=1
+    if source_fail: options['SOURCE_FAIL']=1
+    if relocation:
+        data=(ROOT/(tool+'.cmd')).read_bytes()[128:]
+        end=data.index(b'$',data.index(b'Nine-sector/probe'))+1
+        options['BUFFER_START']=end
+        options['LOAD_SEG']=relocation-(end>>4)
     with tempfile.TemporaryDirectory(prefix='cpm-disk-') as td:
         image = Path(td) / 'test.com'
         subprocess.run(['nasm', '-f', 'bin', str(ROOT / 'tests/dsktest.asm'),
@@ -89,6 +106,9 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
         raise AssertionError('Ambiguous probe failure selected single-sided media')
     if formatting and not probe_error and 'Formatting while copying' not in output:
         raise AssertionError('Formatting path was not reached')
+    if mismatch==4:
+        locations=re.findall(r'Track (\d+), Side (\d)',output)
+        assert locations==[(f'{c:02}', '1') for c in range(cylinders)]*(repeat+1),locations
     count += 1
 
 
@@ -201,4 +221,30 @@ for tool in ('dcopy','dcomp'):
     for sectors in (9,15,18):
         case(tool,native=True,full_version=0x1441,sectors=sectors,
              cylinders=80,bad_bpb=1,error='Incompatible or conflicting')
+for native,version in ((False,0x1431),(True,0x1431),(True,0x1441)):
+    case('dcopy',native=native,full_version=version,corrupt_verify=True,
+         error='Target diskette may be unusable')
+    case('dcopy',native=native,full_version=version,source_fail=True,
+         error='Copy aborted; unread source batch was not written')
+    for boundary in (0x1400,0x1800,0x1c00):
+        case('dcomp',native=native,full_version=version,relocation=boundary)
+for native,version,extended in ((False,0x1431,0),(True,0x1431,1),(True,0x1441,0)):
+    for sectors in (8,9):
+        case('dcomp',native=native,full_version=version,extended=extended,
+             sectors=sectors,poison_padding=True)
+        for mismatch in (3,4):
+            case('dcomp',native=native,full_version=version,extended=extended,
+                 sectors=sectors,mismatch=mismatch)
+for sectors in (15,18):
+    case('dcomp',native=True,full_version=0x1441,sectors=sectors,cylinders=80,poison_padding=True)
+    case('dcomp',native=True,full_version=0x1441,sectors=sectors,cylinders=80,mismatch=4)
+for tool in ('dcopy','dcomp'):
+    case(tool,native=True,full_version=0x1441,tail='A: [bad]',error='Invalid parameter')
+    case(tool,native=True,full_version=0x1441,abort=1,error='Cancelled.')
+    case(tool,native=True,full_version=0x1441,memfail=53,error='Insufficient memory')
+case('dcomp',native=True,full_version=0x1441,mismatch=1)
+case('dcomp',native=True,full_version=0x1441,fail_native=2,fail_times=4,error='Unrecoverable read error')
+for tool in ('dcopy','dcomp'):
+    case(tool,native=True,version=0x1641,full_version=0x1441)
+    case(tool,native=True,full_version=0x1442,error='Requires CP/M-86')
 print(f'PASS: {count} dual-OS simulated-disk cases (BDOS clobbers ES and working registers)')

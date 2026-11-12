@@ -8,15 +8,17 @@ ROOT = Path(__file__).resolve().parent.parent / "commands/dskmaint"
 count = 0
 
 
-def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
+def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
          fail=0, status=3, error=None, version=0x22, equipment=0x41,
          drive=0, retry=False, abort_verify=False, native=False,
          console_state=0, open_files=0, queue_fail=0, console_number=0,
          floppy_count=2, full_version=0x1431, initial_keep=0,
-         open_after_lock=0, initial_error_mode=7, ignore_errors=False):
+         open_after_lock=0, initial_error_mode=7, ignore_errors=False, corrupt_read=0, corrupt_track=0):
     global count
     if native and version == 0x22:
         version = 0x0431
+    if verify is False and 'Q' not in tail.upper(): tail += '[Q]'
+    if verify is None: verify='Q' not in tail.upper()
     formats = sides * 40
     writes = 1
     verifies = sides * 40 if verify else 0
@@ -33,6 +35,7 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
         writes = verifies = 0
     elif fail == 4 and not retry:
         verifies = 0
+    if corrupt_read==2: verifies=corrupt_track
     reset = int(bool(formats or fail))
     options = dict(SIDES=sides, ANSWER=ord(answer), TAIL=f'"{tail}"',
                    ABORT_AT=abort, ABORT_VERIFY=int(abort_verify), FAIL_OP=fail,
@@ -47,6 +50,9 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
                    EXPECT_FORMATS=formats, EXPECT_WRITES=writes,
                    EXPECT_VERIFIES=verifies, EXPECT_FAILURES=failures,
                    EXPECT_RESET=reset)
+    options['CORRUPT_READ']=corrupt_read
+    options['CORRUPT_TRACK']=corrupt_track
+    options['EXPECT_STATUS']=2 if native and full_version==0x1441 and ((version>>8)&15) in (4,6) else -1
     track = bytearray([0xE5]) * 4096
     boot = (ROOT / 'bootsect.bin').read_bytes()
     loader = (ROOT / 'loader.bin').read_bytes()
@@ -66,19 +72,31 @@ def case(tail='A:', sides=2, verify=False, answer='Y', abort=-1,
         p = subprocess.run(['emu2', str(temp / 'test.com')],
                            capture_output=True, timeout=10)
     output = p.stdout.decode(errors='replace')
-    expected = error or ('Cancelled.' if answer.upper() != 'Y' or abort >= 0 or abort_verify
+    expected = ('BIOS/XIOS status 10' if corrupt_read==2 else None) or error or ('Cancelled.' if answer.upper() != 'Y' or abort >= 0 or abort_verify
                          else f'BIOS/XIOS status {status:02X}' if fail and not retry
                          else 'Format complete.')
     assert not p.returncode and expected in output, (options, p.returncode,
                                                     output, p.stderr)
     if error and not (native and (open_files or queue_fail or open_after_lock)):
         assert 'Continue (Y/N)?' not in output, output
-    if error or abort >= 0 or abort_verify or (fail and not retry) or answer.upper() != 'Y':
+    if corrupt_read==2 or error or abort >= 0 or abort_verify or (fail and not retry) or answer.upper() != 'Y':
         assert 'Format complete.' not in output, output
     else:
         assert ('Verifying...' in output) == verify, output
         assert ('160K, single-sided' in output) == (sides == 1), output
         assert ('verification enabled.' in output) == verify, output
+    if corrupt_read==2:
+        cylinder=corrupt_track if corrupt_track<40 else 79-corrupt_track
+        head=int(corrupt_track>=40)
+        assert f'Verify failed at cylinder {cylinder:02}, head {head}' in output,output
+        assert 'Disk may be partially formatted or unusable.' in output,output
+    if fail and not retry:
+        operation={5:'Format',3:'Write',4:'Verify'}[fail]
+        assert f'{operation} failed at cylinder 00, head 0' in output,output
+    if (abort>0 or abort_verify):
+        assert 'Disk may be partially formatted or unusable.' in output,output
+    if not error and not fail and answer.upper()=='Y' and abort<0 and not abort_verify and not corrupt_read:
+        assert ('Warning: data was not verified.' in output)==(not verify),output
     count += 1
 
 
@@ -144,4 +162,16 @@ for op in (5, 3, 4):
     case('A:[V]', native=True, verify=True, fail=op, ignore_errors=True)
     case('A:[V]', native=True, verify=True, fail=op, retry=True,
          ignore_errors=True)
+for native in (False,True):
+    case(native=native,corrupt_read=1)
+    case(native=native,corrupt_read=2)
+    case('A:[Q]',native=native)
+    case('A:[VQ]',native=native,error='Invalid parameter.')
+case(native=True,full_version=0x1441,error='requires CP/M-86')
+case('A:[bad]',native=True,full_version=0x1441,error='Invalid parameter.')
+for native in (False,True):
+    for track in (1,39,40,79):
+        case(native=native,corrupt_read=2,corrupt_track=track)
+    case('A:[1VQ]',native=native,error='Invalid parameter.')
+    case('A:[QV]',native=native,error='Invalid parameter.')
 print(f'PASS: {count} dual-OS DFORM cases; boot images, BIOS/XIOS, locks and cleanup checked')
