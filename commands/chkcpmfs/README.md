@@ -121,3 +121,16 @@ records, unrelated directory entries, reserved tracks and all file data.
 | `rawio.a86` | Guarded local BIOS/XIOS directory I/O and lock/state lifecycle |
 | `scd.a86` | Existing PL/M startup and BDOS interface |
 | `tests/` | Compiled command tests and disposable native verification |
+
+## Native planning-read cache
+
+While MXdisk is held, the repair planning scan reuses its 512-byte physical
+sector buffer for adjacent 128-byte directory records. No additional sector
+storage is allocated. Reopening or closing invalidates the cache; a failed
+read is never cached. Arming a confirmed repair disables caching for the rest
+of that session, including execution reads and the final verification scan.
+The CP/M BIOS path retains its existing 128-byte deblocking behavior.
+
+`make check` also executes the linked native adapter against synthetic XIOS
+for CCP/M and CDOS: eight adjacent records require two physical reads, while
+armed reads, before-image checking and write verification remain fresh.

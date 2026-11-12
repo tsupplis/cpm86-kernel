@@ -55,6 +55,7 @@ check-bdos: all
 	$(PYTHON) tests/check.py
 	$(PYTHON) tests/repairs.py
 	$(PYTHON) tests/saturation.py
+	$(PYTHON) tests/cache.py
 
 check-live: all
 	$(MAKE) -C ../.. chkcpmfs-live-images

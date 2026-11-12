@@ -19,6 +19,8 @@ rerr db 0
 rwrite db 0
 ropened db 0
 rfailed db 0
+rcachevalid db 0
+rcachekey dw 0
 rresult dw 0
 rsys dw 0
 ruda dw 0
@@ -57,6 +59,7 @@ rawopen proc near
  mov rspt,ax
  mov ax,[bp+4]
  mov rofs,ax
+ mov rcachevalid,0
  mov ropened,0
  mov rwrite,0
  mov rheld,0
@@ -183,6 +186,7 @@ rawopen endp
 
 ; Release exactly the process/queue state acquired by this command.
 rawclose proc near
+ mov rcachevalid,0
  mov ropened,0
  mov rwrite,0
  push bp
@@ -253,6 +257,7 @@ rawarm proc near
  je rshort15
  jmp rarm_bad
 rshort15:
+ mov rcachevalid,0
  mov rwrite,1
  xor ax,ax
  ret
@@ -275,11 +280,44 @@ rawread proc near
  je rshort16
  jmp rread_bad
 rshort16:
+ ; Cache only native planning reads. Arming disables caching for every
+ ; execution and post-repair verification read until the next rawopen.
+ cmp rmode,0
+ je rcache_miss
+ cmp rwrite,0
+ jne rcache_miss
+ cmp rrecord,511
+ ja rcache_miss
+ mov ax,rrecord
+ shr ax,1
+ shr ax,1
+ cmp rcachevalid,0
+ je rcache_miss
+ cmp ax,rcachekey
+ jne rcache_miss
+ mov ax,rrecord
+ and ax,3
+ mov cl,7
+ shl ax,cl
+ mov rpart,ax
+ jmp rshort17
+rcache_miss:
+ mov rcachevalid,0
  call rread_sector
  or ax,ax
  jz rshort17
  jmp rread_bad
 rshort17:
+ cmp rmode,0
+ je rcache_ready
+ cmp rwrite,0
+ jne rcache_ready
+ mov ax,rrecord
+ shr ax,1
+ shr ax,1
+ mov rcachekey,ax
+ mov rcachevalid,1
+rcache_ready:
  cmp rmode,0
  jne rshort18
  jmp rread_done
@@ -297,6 +335,7 @@ rread_copy:
  xor ax,ax
  jmp rread_done
 rread_bad:
+ mov rcachevalid,0
  mov rfailed,1
  mov ax,1
 rread_done:
@@ -310,6 +349,7 @@ rawread endp
 ; rawwrite(record,before,after): reread/compare before changing one record.
 ; Native writes preserve and verify all 512 bytes, including adjacent entries.
 rawwrite proc near
+ mov rcachevalid,0
  push bp
  mov bp,sp
  push si
