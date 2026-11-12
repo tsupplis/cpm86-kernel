@@ -160,6 +160,10 @@ ccpm_io:
 	xor	cx,cx
 	push	cx
 	mov	cx,buffer_segment
+	cmp operation,4
+	jne native_dma_ready
+	mov cx,verify_segment
+native_dma_ready:
 	push	cx
 	xor	cx,cx
 	push	cx

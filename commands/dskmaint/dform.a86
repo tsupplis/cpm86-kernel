@@ -11,12 +11,13 @@
 ;	drive:	Required installed floppy drive, A: or B:.
 ;	1	Single-sided, 160 KiB (40 cylinders, eight 512-byte sectors).
 ;	2	Double-sided, 320 KiB; the default if neither 1 nor 2 appears.
-;	V	Verify every track after formatting and writing the boot track.
+;	V	Verify every track (default) after formatting and writing the boot track.
 ;
 ;	Combine options or use separate groups. The closing ] is optional;
 ;	DFORM A:[1V], DFORM A: [1] [V and DFORM A: [1V are equivalent.
 ;	Letters are case-insensitive. Unknown options and conflicting 1/2
 ;	selections print usage. An empty command also prints usage and exits.
+;	Q skips verification; V and Q conflict.
 ;	Formatting always requires Y confirmation; N or Ctrl-C cancels.
 ;
 ;	A fresh disk contains the DSKMAINT boot sector and loader. The system
@@ -26,7 +27,7 @@
 ;
 ;	CP/M-86 1.1 uses ROM BIOS; Concurrent CP/M-86 3.1 uses native XIOS.
 ;	CCP/M uses DSKMAINT 1.5's MXdisk, P_KEEP and console exclusion protocol.
-;	The 512-byte private stack and aligned 4 KiB track buffer stay resident.
+;	The 512-byte stack and separate aligned 4 KiB track buffers stay resident.
 ;	All exits restore the BIOS vector or release the CCP/M locks.
 ;	The loader retry byte follows the detected OS: CP/M=2, CCP/M=3.
 ;	Raw BDOS console I/O avoids an implicit Ctrl-C exit during formatting.
@@ -44,6 +45,7 @@ f_resetdrive	equ	37
 opt_single	equ	1
 opt_double	equ	2
 opt_verify	equ	4
+opt_quick equ 8
 stack_size	equ	512
 
 start:
@@ -60,6 +62,7 @@ start:
 	cld
 	mov	dx,offset msg_banner
 	call	puts
+	call detect_return_code
 	call	parse_args
 
  ; Select the OS backend before any disk access.
@@ -98,8 +101,8 @@ floppy_present:
 	jmp	bad_drive
 installed_drive:
 
-; Align within an 8 KiB resident reservation; one 4 KiB track fits after
-; rounding up, and never straddles a physical 64 KiB BIOS DMA boundary.
+; Align within a 12 KiB reservation; two 4 KiB tracks fit after
+; rounding up, and neither straddles a physical 64 KiB BIOS DMA boundary.
 	mov	ax,offset buffer_space
 	add	ax,15
 	mov	cl,4
@@ -109,6 +112,8 @@ installed_drive:
 	add	ax,0ffh
 	and	ax,0ff00h
 	mov	buffer_segment,ax
+	add ax,100h
+	mov verify_segment,ax
 	mov	dx,offset msg_double
 	cmp	byte ptr sides,1
 	jz	show_capacity
@@ -197,11 +202,24 @@ verify_loop:
 	inc	byte ptr track
 	mov	al,track
 	cmp	al,track_count
-	jnz	verify_loop
+	jz format_complete
+; All later tracks should retain the formatter's E5 fill.
+	mov es,buffer_segment
+	xor di,di
+	mov ax,0e5e5h
+	mov cx,800h
+	rep stosw
+	jmp verify_loop
 format_complete:
+	mov exit_status,0
 	mov	dx,offset msg_complete
-	call	puts
-	jmp	cleanup
+	call puts
+	test options,opt_quick
+	jz complete_verified
+	mov dx,offset msg_unverified
+	call puts
+complete_verified:
+	jmp cleanup
 
 ;-----------------------------------------------------------------------------
 ; Parse the bounded CP/M base-page tail. Drive comes first; options are one
@@ -257,10 +275,15 @@ next_option:
 	cmp	al,'2'
 	jz	option_two
 	and	al,0dfh
+	cmp al,'Q'
+	je option_quick
 	cmp	al,'V'
 	jnz	bad_syntax
 	or	byte ptr options,opt_verify
 	jmp	next_option
+option_quick:
+	or byte ptr options,opt_quick
+	jmp next_option
 option_one:
 	or	byte ptr options,opt_single
 	jmp	next_option
@@ -279,6 +302,14 @@ bad_syntax:
 	call	puts
 	jmp	usage
 args_done:
+	mov al,options
+	and al,opt_verify+opt_quick
+	cmp al,opt_verify+opt_quick
+	je bad_syntax
+	test options,opt_quick
+	jnz verify_option_ready
+	or byte ptr options,opt_verify
+verify_option_ready:
 	mov	al,options
 	and	al,3
 	cmp	al,3
@@ -321,8 +352,10 @@ wrong_os:
 	call	puts
 	jmp	cleanup
 cancelled:
+	mov exit_status,3
 	mov	dx,offset msg_cancelled
 	call	puts
+	call partial_warning
 	jmp	cleanup
 
 ;-----------------------------------------------------------------------------
@@ -472,6 +505,8 @@ io_request:
 	jz	io_bios
 	call	ccpm_io
 	jc	io_failed
+	call compare_verify
+	jc io_failed
 	ret
 io_bios:
 	call	track_chs
@@ -480,11 +515,18 @@ io_bios:
 	xor	bx,bx
 	mov	es,word ptr buffer_segment
 	mov	ah,operation
-	mov	al,8
-	mov	byte ptr disk_touched,1
+	mov al,8
+	cmp ah,4
+	jne bios_request_ready
+	mov ah,2
+	mov es,verify_segment
+bios_request_ready:
+	mov byte ptr disk_touched,1
 	call	bios
 	jc	io_failed
 	cld
+	call compare_verify
+	jc io_failed
 	ret
 io_failed:
 	mov	last_status,ah
@@ -510,6 +552,8 @@ io_retry_count:
 	mov	status_lo,al
 	mov	dx,offset msg_io_error
 	call	puts
+	call report_location
+	call partial_warning
 	jmp	cleanup
 hex_digit:
 	add	al,'0'
@@ -573,9 +617,89 @@ cleanup_login:
 	mov	cl,f_resetdrive
 	call	bdos
 quit:
+	cmp return_code_supported,0
+	je quit_without_status
+	mov dx,exit_status
+	mov cl,108
+	call bdos
+quit_without_status:
 	xor	dx,dx
 	mov	cl,f_reset
 	int	i_bdos
+
+ ; CDOS 4.1 supplies function 108; CP/M 1.1 and CCP/M 3.1 do not.
+; Detect independently of formatter support, including early syntax exits.
+detect_return_code:
+	mov cl,12
+	call bdos
+	and ah,0fh
+	cmp ah,4
+	je return_version
+	cmp ah,6
+	jne return_detection_done
+return_version:
+	mov cl,163
+	call bdos
+	cmp ax,1441h
+	jne return_detection_done
+	mov return_code_supported,1
+return_detection_done:
+	ret
+
+compare_verify:
+	cmp operation,4
+	je compare_verify_data
+	clc
+	ret
+compare_verify_data:
+	push ds ! push es ! push si ! push di ! push cx
+	mov ax,buffer_segment
+	mov es,verify_segment
+	mov ds,ax
+	xor si,si
+	xor di,di
+	mov cx,800h
+	cld
+	repe cmpsw
+	pop cx ! pop di ! pop si ! pop es ! pop ds
+	jne verify_mismatch
+	clc
+	ret
+verify_mismatch:
+	mov ah,10h
+	stc
+	ret
+
+report_location:
+	call track_chs
+	add dh,'0'
+	mov error_head,dh
+	xor ax,ax
+	mov al,ch
+	mov bl,10
+	div bl
+	add ax,3030h
+	mov error_cylinder,al
+	mov error_cylinder+1,ah
+	mov dx,offset msg_format_op
+	cmp operation,5
+	je print_operation
+	mov dx,offset msg_write_op
+	cmp operation,3
+	je print_operation
+	mov dx,offset msg_verify_op
+print_operation:
+	call puts
+	mov dx,offset msg_location
+	call puts
+	ret
+partial_warning:
+	cmp disk_touched,0
+	je partial_done
+	mov dx,offset msg_partial
+	call puts
+partial_done:
+	ret
 
 ; ---- data ----
 	dseg
@@ -591,17 +715,30 @@ last_status	db	0
 vector_active	db	0
 disk_touched	db	0
 buffer_segment	dw	0
+verify_segment dw 0
+return_code_supported db 0
+exit_status dw 2
 old_offset	dw	0
 old_segment	dw	0
 ; Same bytes as the parameter table embedded in DSKMAINT.
 disk_params	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
 
+msg_format_op db 'Format', '$'
+msg_write_op db 'Write', '$'
+msg_verify_op db 'Verify', '$'
+msg_location db ' failed at cylinder '
+error_cylinder db '00'
+ db ', head '
+error_head db '0',13,10,'$'
+msg_partial db 'Disk may be partially formatted or unusable.',13,10,'$'
+msg_unverified db 'Warning: data was not verified.',13,10,'$'
 msg_banner	db	13,10,'CP/M-86 / CCP/M-86 FLOPPY FORMATTER VER 1.0N',13,10,'$'
 msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10,13,10
 	db	'  A: or B:  Target floppy drive (required)',13,10
 	db	'  1         Single-sided, 160K',13,10
 	db	'  2         Double-sided, 320K (default)',13,10
-	db	'  V         Verify after formatting',13,10
+	db	'  V         Verify after formatting (default)',13,10
+	db '  Q         Quick format: skip verification',13,10
 	db	'  Combine options: [1V] or [1] [V; closing ] is optional.',13,10
 	db	'  Examples: DFORM A:[1V]   DFORM B: [V',13,10,'$'
 msg_single	db	'160K, single-sided; $'
@@ -635,7 +772,7 @@ loader_end:
 
 stack_space	rs	stack_size
 stack_top:
-; Alignment can consume up to 4095 bytes before the 4096-byte track buffer.
-buffer_space	rs	2000h
+; Alignment padding plus separate 4096-byte expected/read-back buffers.
+buffer_space	rs	3000h
 	include	ccpmio.a86
 	end

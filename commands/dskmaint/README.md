@@ -53,3 +53,18 @@ disk access. It checks option parsing, confirmation/cancellation, track
 order and all CHRN fields, the full 4096-byte boot image, optional verify,
 BIOS/XIOS failures, queue/console exclusion and cleanup. BDOS deliberately
 corrupts ES and working registers. Actual kernel/floppy testing is still required.
+
+## DFORM verification and completion
+
+Verification is enabled by default (`[V]` remains accepted). `[Q]` explicitly
+skips verification and prints an unverified-result warning; V and Q conflict.
+Read-back comparison covers the entire boot track and the E5 fill on all
+other formatted tracks. Failed comparisons use the bounded I/O retry loop.
+Errors identify the operation, cylinder and head. Cancellation or failure
+after a disk operation warns that the disk may be partially formatted.
+
+BDOS 108 is called only after recognizing Concurrent DOS 4.1 (full version
+1441h). CP/M-86 1.1 and CCP/M-86 3.1 do not implement it, so DFORM never calls
+it there. DFORM still rejects CDOS formatting, but returns error status 2 on
+that version. Status definitions are 0 success, 2 error and 3 cancellation;
+older systems retain console diagnostics and their normal termination path.

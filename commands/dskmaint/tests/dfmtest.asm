@@ -64,6 +64,8 @@ equipment:
     mov ax,EQUIPMENT
     iret
 bdos:
+    cmp cl,108
+    je set_status
     cmp cl,0
     je finish
     cmp cl,6
@@ -93,6 +95,17 @@ bdos:
     je reset_all
 %endif
     jmp bad
+set_status:
+%if EXPECT_STATUS < 0
+    jmp bad
+%else
+    cmp dx,EXPECT_STATUS
+    jne bad
+    cmp byte [cs:status_calls],0
+    jne bad
+    inc byte [cs:status_calls]
+    jmp corrupt
+%endif
 version:
     mov ax,OSVER
     jmp corrupt
@@ -331,7 +344,7 @@ xios:
 %endif
     cmp bl,[cs:verify_count]
     jne bad
-    inc byte [cs:verify_count]
+    call fill_verify
     xor ax,ax
     jmp .return
 .failed:
@@ -410,7 +423,11 @@ bios:
     pop si
     pop ds
 %if FAIL_OP
+%if FAIL_OP == 4
+    cmp ah,2
+%else
     cmp ah,FAIL_OP
+%endif
     jne .no_failure
     cmp byte [cs:failed_requests],FAIL_LIMIT
     jb .failure
@@ -420,7 +437,7 @@ bios:
     je .format
     cmp ah,3
     je .write
-    cmp ah,4
+    cmp ah,2
     je .verify
     jmp bad
 .format:
@@ -469,7 +486,7 @@ bios:
 .verify:
     mov al,[cs:verify_count]
     call check_chs
-    inc byte [cs:verify_count]
+    call fill_verify
 .success:
     xor ax,ax
     pop bp
@@ -480,6 +497,48 @@ bios:
     or word [ss:bp+6],1
     pop bp
     iret
+
+ ; Successful physical reads return expected bytes, or injected corruption.
+fill_verify:
+    push ds
+    push si
+    push di
+    push cx
+    xor di,di
+    cmp byte [cs:verify_count],0
+    jne .blank
+    push cs
+    pop ds
+    mov si,expected_track
+    mov cx,4096
+    cld
+    rep movsb
+    jmp .filled
+.blank:
+    mov ax,0e5e5h
+    mov cx,2048
+    cld
+    rep stosw
+.filled:
+%if CORRUPT_READ
+    cmp byte [cs:verify_count],CORRUPT_TRACK
+    jne .good
+%if CORRUPT_READ == 1
+    cmp byte [cs:bad_reads],0
+    jne .good
+%endif
+    xor byte [es:4095],1
+    inc byte [cs:bad_reads]
+    jmp .done
+%endif
+.good:
+    inc byte [cs:verify_count]
+.done:
+    pop cx
+    pop di
+    pop si
+    pop ds
+    ret
 
 ; The second head runs backwards, exactly as in DSKMAINT.
 check_chs:
@@ -499,6 +558,8 @@ check_chs:
     ret
 
 finish:
+    cmp byte [cs:status_calls],(EXPECT_STATUS >= 0) & 1
+    jne bad
 %if NATIVE
     cmp byte [cs:queue_held],0
     jne bad
@@ -540,6 +601,8 @@ bad:
 prompt_seen db 0
 flushed db 0
 answered db 0
+status_calls db 0
+bad_reads db 0
 format_count db 0
 write_count db 0
 verify_count db 0
