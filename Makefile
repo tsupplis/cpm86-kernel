@@ -330,6 +330,7 @@ check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/ker
 	$(MAKE) -C commands/disk check
 	python3 tools/kernel_check.py
 	python3 tools/feature_compat_check.py
+	python3 tools/rtc_check.py
 	python3 tools/kernel_check_test.py
 	$(MAKE) -C commands/chkcpmfs check-bdos
 

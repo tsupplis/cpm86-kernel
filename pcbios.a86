@@ -3495,7 +3495,7 @@ INIT5:
 	mov	al,' '
 	mov	cx,000Eh
 	rep	stosb
-	call	RESETIO			; Reset disk and I/O ports
+	call	INIT_RTC		; Optional RTC date, then RESETIO
 	cli
 	sub	ax,ax
 	mov	ds,ax			; To address zero page
@@ -4224,5 +4224,130 @@ HD_CAP_OK:
 HD_CAP_BAD:
 	stc
 	ret
+
+; Ts: Optional AT RTC date, cold start only. The PC/XT may ignore AH=04h;
+; invalid sentinels catch that even if carry is cleared. No CMOS port access.
+; Uses existing INIT padding, reclaimed after boot. All old symbols stay put.
+	cseg
+	org	4400h
+INIT_RTC:
+	pushf
+	push	ax
+	push	bx
+	push	cx
+	push	dx
+	push	si
+	push	di
+	push	ds
+	push	es
+	mov	cx,0FFFFh
+	mov	dx,0FFFFh
+	mov	ah,04h
+	clc				; Some RTC BIOSes leave carry unchanged
+RTC_INT:
+	int	1Ah
+	nop
+	push	cs
+	pop	ds
+	jnc	RTC_VALIDATE
+	jmp	RTC_DONE
+RTC_VALIDATE:
+	mov	al,ch
+	call	RTC_BCD
+	jc	RTC_BAD
+	cmp	al,19			; Reject unset/implausible century
+	jb	RTC_BAD
+	xor	ah,ah
+	mov	di,ax
+	mov	al,cl
+	call	RTC_BCD
+	jc	RTC_BAD
+	xor	ah,ah
+	mov	si,ax
+	mov	al,dh
+	call	RTC_BCD
+	jc	RTC_BAD
+	dec	al
+	cmp	al,11
+	ja	RTC_BAD
+	xor	ah,ah
+	mov	bx,ax
+	mov	bl,cs:byte ptr RTC_DAYS[bx]
+	cmp	dh,02h
+	jne	RTC_DAY
+	test	si,3
+	jnz	RTC_DAY
+	test	si,si
+	jnz	RTC_LEAP
+	test	di,3			; Century years: divisible by 400
+	jnz	RTC_DAY
+RTC_LEAP:
+	inc	bl
+RTC_DAY:
+	mov	al,dl
+	call	RTC_BCD
+	jc	RTC_BAD
+	test	al,al
+	jz	RTC_BAD
+	cmp	al,bl
+	ja	RTC_BAD
+; Commit only after the complete date passes validation.
+	mov	al,ch
+	call	RTC_ASCII
+	mov	word ptr BCENT,ax
+	mov	al,cl
+	call	RTC_ASCII
+	mov	word ptr AYEAR,ax
+	mov	al,dh
+	call	RTC_ASCII
+	mov	word ptr AMONTH,ax
+	mov	al,dl
+	call	RTC_ASCII
+	mov	word ptr ADAY,ax
+RTC_BAD:
+RTC_DONE:
+	pop	es
+	pop	ds
+	pop	di
+	pop	si
+	pop	dx
+	pop	cx
+	pop	bx
+	pop	ax
+	popf
+	jmp	RESETIO			; Original cold-start call, unchanged
+
+; Packed BCD AL -> binary AL, carry on either invalid nibble.
+RTC_BCD:
+	mov	ah,al
+	and	al,0Fh
+	cmp	al,9
+	ja	RTC_BCD_BAD
+	shr	ah,1
+	shr	ah,1
+	shr	ah,1
+	shr	ah,1
+	cmp	ah,9
+	ja	RTC_BCD_BAD
+	aad
+	clc
+	ret
+RTC_BCD_BAD:
+	stc
+	ret
+
+; Packed BCD AL -> two ASCII bytes (tens first in memory).
+RTC_ASCII:
+	mov	ah,al
+	and	ah,0Fh
+	shr	al,1
+	shr	al,1
+	shr	al,1
+	shr	al,1
+	add	ax,3030h
+	ret
+RTC_DAYS:
+	db	31,28,31,30,31,30,31,31,30,31,30,31
+RTC_END:
 
 	end

@@ -247,3 +247,22 @@ BDOS, preserving the CCP DIR patch at `0A40h`. The EXP BDOS uses
 `TGSHI` uses the previously reserved word at `24B8h`; subsequent system
 variables retain their addresses. Existing 144FEAT patch locations and byte
 signatures are checked by `tools/feature_compat_check.py`.
+
+### Optional BIOS RTC date
+
+Both maintained PC BIOSes replace the three-byte cold-start call at `3CDFh`
+with `INIT_RTC`. The helper occupies `4400h`–`44D5h` in existing INIT padding,
+before `CFG_BUF` at `4780h`. It finishes by jumping to the original `RESETIO`.
+All pre-existing symbols, resident entry points and 144FEAT hooks retain
+their addresses. The frozen BIOS is unchanged.
+
+INT 1Ah/AH=04h supplies the cold-start date only. Carry errors, unchanged
+registers on unsupported PC/XT BIOSes, invalid BCD and impossible calendar
+dates leave the default intact. Century, year, month and day are committed
+together; time initialization is unchanged. No CMOS ports are accessed.
+The helper is not used after cold start, when disk buffers may reclaim it.
+
+The call clears carry first for BIOSes that leave it unchanged on success
+([RBIL](https://fd.lod.bz/rbil/interrup/bios/1a04.html)); `FFFFh` sentinels in
+CX/DX distinguish an unsupported no-op from a valid date.
+`tools/rtc_check.py` exercises both built kernels with simulated BIOS replies.
