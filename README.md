@@ -154,19 +154,13 @@ Images use source-built tools. Experimental images boot `cpmexp.sys`; other boot
 
 | Image | Contents |
 | --- | --- |
-| `cpm86-exp-160-1.img` | `cpmexp.sys` + source-rebuilt core tools |
-| `cpm86-exp-160-1-at.img` | Same, AT-compatible clock |
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
 | Image constraint | Detail |
 | --- | --- |
-| 160K tools | Stock and EXP share `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; HELP stays on the core disk |
-| CHKCPMFS | About 54K each for the command file and minimum load memory; supplied on its own checker disk and on 720K/1.44M images |
-| 144FEAT | Detects stock/EXP kernels at runtime; see `extra/144feat.inc` |
-| Boot signature | Only 160K images carry `55AA`. Other formats use byte `01FFh` for disk parameters; overwriting it breaks booting |
 
-PCE launchers: `./cpm86`, `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. Shortcuts: `make test`, `make test-320`, `make test-exp`.
+PCE launchers: `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. Shortcuts: `make test`, `make test-320`, `make test-exp`.
 
 ## cpmtools formats
 
