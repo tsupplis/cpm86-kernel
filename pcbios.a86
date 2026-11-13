@@ -3890,12 +3890,20 @@ CHKCP1:
 ; Ensure partition not too big for cpm
 
 CHKCP2:
-	mov	al,byte ptr HDDBUF+47
-	mov	ah,0
-	mov	cl,byte ptr HDDBUF+43
-	shl	ax,cl
-	test	ah,ah			; <= 8192 mb ?
-	jz	CHKCP3			; Yes
+	call	HD_CAPACITY
+	jnc	CHKCP3
+; Keep subsequent BIOS addresses and 144FEAT byte signatures unchanged.
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+	nop
+
 
 	mov	si,offset ERRHP2BIG	; 'Hard disk partition too big'
     ; Original display-string target is retained.
@@ -4160,11 +4168,12 @@ CFG_PFKTBL	rs	400		; Config: programmable function key table
 
 ; Fixed-address buffers — these three ORGs pin the large runtime buffers
 ; To known absolute offsets within the CP/M load segment.
-; The gaps between them are intentional padding reserved by the original
-; Digital Research layout; do not add data inside the gaps.
+; Keep these addresses fixed. The former gap contains HD_CAPACITY only
+; during cold initialization; it must not hold resident code or data.
+; The floppy track buffer and 144FEAT may reuse it after initialization.
 
 ; 4980h .. 4B7Fh  HDDBUF   (512 bytes — one hdd sector)
-; 4B80h .. 4BE1h  <62h bytes / 98 bytes padding — reserved>
+; 4B80h .. 4BE1h  cold-only HD_CAPACITY helper and remaining padding
 ; 4BE2h .. 4C61h  DIRBUF   (128 bytes — directory scratch buffer)
 ; 4C62h           CSV14    (allocation vector for drive 4, grows upward)
 
@@ -4180,5 +4189,40 @@ CSV14		equ	$		; Allocation vector for drive 4 (grows upward)
 ;----------------------------------------
 
 ; End of pcbios.A86 file
+
+; Cold-start validation in the former padding after HDDBUF. Reclaimed as
+; disk-cache space after INIT; fixed HDDBUF/DIRBUF/config addresses stay put.
+	cseg
+	org	4B80h
+HD_CAPACITY:
+	cmp	word ptr HDDBUF+46,0fffh
+	ja	HD_CAP_BAD
+	cmp	word ptr HDDBUF+48,07ffh
+	ja	HD_CAP_BAD
+	cmp	word ptr HDDBUF+52,8000h
+	jne	HD_CAP_BAD
+	cmp	word ptr HDDBUF+68,220
+	ja	HD_CAP_BAD
+	mov	cl,byte ptr HDDBUF+43
+	cmp	cl,3
+	jb	HD_CAP_BAD
+	cmp	cl,7
+	ja	HD_CAP_BAD
+	mov	ax,1
+	shl	ax,cl
+	mov	bx,word ptr HDDBUF+46
+	inc	bx
+	mul	bx
+	cmp	dx,3
+	ja	HD_CAP_BAD
+	jb	HD_CAP_OK
+	cmp	ax,0f000h
+	ja	HD_CAP_BAD
+HD_CAP_OK:
+	clc
+	ret
+HD_CAP_BAD:
+	stc
+	ret
 
 	end

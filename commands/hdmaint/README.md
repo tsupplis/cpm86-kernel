@@ -12,8 +12,7 @@ This binary supports **both CP/M-86 2.2 and Concurrent CP/M-86 3.1**. At CODE
 0042h/0047h it accepts BDOS version words 1431h and 0022h, then selects separate
 initialization paths. The identical original also exists in `ccpm86-kernel`.
 The Concurrent path requires a local, dynamic console and claims the console
-and disk mutex queues; the CP/M path uses fixed XIOS locations. This preserves
-the original compatibility and hardware assumptions, without extending them.
+and disk mutex queues; the CP/M path uses fixed XIOS locations. The maintained version extends capacity for rebuilt kernels as described below.
 
 ## Source layout
 
@@ -78,7 +77,7 @@ CALL, also without raw opcode declarations.
 
 `make check` compares all three boot images and the frozen `hdmtorg.cmd`
 against the reference. The maintained build is checked separately for its
-1.1N banner, CMD group layout, and unchanged embedded boot images. The frozen
+1.1N banner, CMD group layout, and the maintained embedded boot images. The frozen
 source digest is also checked. These checks do not run disk writes in a guest.
 
 ## 1.1N correction
@@ -96,7 +95,8 @@ This fixes display lettering; physical BIOS drive numbers remain 80h/81h.
 The existing IBM PC assumption of at least one floppy is retained.
 
 The maintained CODE and DATA may move as instructions/text are added; their
-symbolic references are rebuilt. Embedded disk-stage bytes stay unchanged.
+symbolic references are rebuilt. The larger-volume extension below supplies
+separate maintained boot stages; frozen reference stages stay unchanged.
 
 ## Historical reference
 
@@ -111,3 +111,52 @@ for the version 1.1 binary being reconstructed here.
 The OEM D11/pcboot1.a86 and D10/cpmboot2.a86/cpmboot3.a86 provide boot-stage
 terminology. Their later memory-relocation changes are not applied. Matching
 routines in the repository BDOS source supply the loader's `bd_` routine names.
+
+## Larger volumes and CDOS-compatible allocation
+
+The maintained formatter creates variable cylinder-aligned volumes up to
+31.5 MiB of allocation space (less metadata). The last remap sector must also
+fit the existing 16-bit physical-sector path. 20 MiB and 30 MiB are supported
+sizes, rounded to whole cylinders; the UI displays KiB and accepts cylinders.
+Use a freshly generated maintained kernel. Old CP/M-86 kernels remain limited
+to 8 MiB, and old CCP/M kernels retain their smaller allocation reservation.
+This feature covers freshly created partitions, not migration of existing disks.
+
+Allocation follows CDOS HDMAINT: 2 KiB blocks through 1 MiB, 4 KiB through
+16 MiB, and 8 KiB above 16 MiB. Large volumes use EXM=1 (32 KiB extent groups,
+four populated wide allocation slots), matching CDOS's formatter. Keeping
+DSM below 4096 fits CDOS's allocation-vector reservation. This is a native
+CP/M type-DBh volume, not FAT. Filesystem interchange does not imply that an
+unchanged CDOS boot/controller path supports every BIOS geometry.
+
+The MBR start and length fields are written as complete 32-bit values.
+Foreign partition ranges, including extended-partition containers, are
+reserved using their full LBA extents, rounded outward to cylinders. Invalid
+ranges fail closed. The formatter does not create or edit logical partitions.
+
+`btlarge.a86` loads the label plus all twelve loader sectors.
+`ldlarge.a86` is the maintained loader: it keeps the original entry/data ABI,
+retains the high logical-record word, and uses a separate runtime allocation
+bitmap. `loader.a86`, `hdmtorg.a86` and the frozen original payload remain
+unchanged. New partitions receive the maintained loader automatically.
+
+`make check` also executes capacity, MBR, remap-rounding and loader arithmetic
+on an 8086 emulator. `tools/hd_capacity_check.py` tests the built kernel;
+`tools/hd_volume_check.py` uses disposable PCE images for filesystem read/write
+and partition-boundary checks. Neither test accesses host physical disks.
+
+`tools/hd_followup_check.py` cold-boots an existing disposable test fixture
+without a floppy, then corrupts reserved extent bits, repairs them with the
+rebuilt CHKCPMFS, rescans through BDOS, and compares the entire disk image.
+Use the `Diagnostics:` directory printed by `hd_volume_check.py` as `--fixture`.
+For example, from the repository root after rebuilding the kernel and commands:
+
+```
+python3 tools/hd_volume_check.py --system ccpm --kib 30720 --spt 17
+python3 tools/hd_followup_check.py --system ccpm --root . --maint commands/hdmaint --fixture /path/to/hd-volume-fixture
+```
+
+Use `--system cpm` for CP/M, `native` for the native CCP/M kernel, or `cdos`
+with `--root` pointing to the CDOS repository and `--maint` to this formatter.
+The emulator checks cover 17- and 63-sector geometries. This validates native
+CP/M volume access, not CDOS FAT geometry or real-controller compatibility.

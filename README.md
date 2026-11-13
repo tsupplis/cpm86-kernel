@@ -1,159 +1,101 @@
 # CP/M-86 Kernel and Base Tools
 
-## Synopsis
+CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II.
 
-CP/M-86 1.1 kernel (BIOS, BDOS, CCP) and standard command set for IBM PC XT, emulators, and the V20 MBC, fully patched and buildable from source. Three parallel kernel source sets are kept: a frozen reference, an annotated working copy, and an experimental build. All standard commands are being rebuilt from original PL/M and assembler sources; original and patched binaries, the Digital Research and Microsoft dev toolchains, and `asm80`/`hexcom` for mixed 8080/8086 environments are also included.
+Build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
-Also new cli tools have been added to be completely cli driven... (dform, dcopy, dcomp ....).
-
-Build requires [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
-
-## Distributions
-
-| # | What | Where |
-| --- | --- | --- |
-| 1 | Kernel source sets | repository root |
-| 2 | Original/patched tool binaries and dev toolchains | `base/`, `dev/`, `extra/` |
-| 3 | Tool reconstruction from source | `commands/` |
-
-### 1. Kernel source sets
-
-The kernel was recovered by disassembly. Three parallel PC sets allow diffing and rebuilding against each other; `ccp` and `bdos` are shared by all kernels, only the BIOS differs.
-
-| Set | Sources | Kernel | Intent |
-| --- | --- | --- | --- |
-| `*org.*` | `ccporg.a86` `bdosorg.a86` `pcbioorg.a86` | `cpmorg.sys` | Frozen patched reference — never edited |
-| `*.*` | `ccp.a86` `bdos.a86` `pcbios.a86` | `cpm.sys` | Byte-identical to `*org.*`; labelling and commenting in progress |
-| `*exp.*` | `ccpexp.a86` `bdosexp.a86` `pcbioexp.a86` | `cpmexp.sys` | Experimental cleaned-up variant |
-
-`make check` rebuilds all three PC source sets. It compares each maintained
-standard module with its frozen reference, compares the complete standard
-images, and verifies pinned SHA-256 baselines for both standard and EXP
-kernels. The EXP module bytes are also pinned independently. The BIOS pair
-may differ only in the status-line attribute at 3220h (green/yellow) and
-banner digit at 3707h (03/04). Frozen reference sources are checked using
-normalized line endings; their content must remain unchanged.
-
-Kernel headers, instruction indentation and comment layout use the same
-style in the standard and EXP sources. `pcbios.a86`/`pcbioexp.a86` are the
-BIOS filenames. Comments and formatting can change without updating the
-baseline; intentional executable changes require an explicit review and
-update of `tools/kernel-baseline.json`. The check also runs isolated mutation
-tests proving that image changes, module changes and frozen-reference edits
-are rejected.
-
-A fourth PC kernel with the 8080-model flag set (CP/M-80 binary compatibility on PC XT) is built under `private/` as `cpm86.sys`.
-
-Two further BIOSes target the V20 MBC, sharing the same CCP and BDOS:
-
-| Kernel | Target |
+| Location | Contents |
 | --- | --- |
-| `cpmv20.sys` | V20 MBC, 8088 mode (`mbcv20.a86`) |
-| `cpm816.sys` | V20 MBC, mixed 8080/8088 mode with CP/M-80 compatibility (`mbc816.a86`) |
+| Repository root | Kernel sources and builds |
+| `commands/` | Reconstructed commands and new disk tools |
+| `base/`, `dev/`, `extra/` | Original/patched binaries, development tools and extensions |
 
-#### Kernel patches
+## Kernels
 
-Patches were recovered by comparing the sources with the notes in `patching/`: `patch-drcpm86.txt` (Digital Research patches 01–15), `annotations.txt` (annotated IBM PC/XT 1.1 `cpm.h86`, which lists the patches present in the release), `at-patch.txt` and `y2k-patch.txt`. Local changes are marked `Ts:` in the sources, and addresses are listed in `mapping.md`. All patched code sits in the patch areas (`0A00h`–`0A7Fh` in BDOS, `09FAh`/`0A40h` in CCP) or in place, so the layout of the rest of the kernel is unchanged.
+### Kernel source sets
 
-**Digital Research BDOS patches** (`bdosorg.a86`, shared by `bdos.a86` and `bdosexp.a86`)
+The PC kernel was recovered by disassembly. Maintained and experimental builds have separate baselines; they intentionally differ from the frozen reference.
 
-| Patch | Function | Where | What it does |
-| --- | --- | --- | --- |
-| 01 | 47 Chain | `MCHAIN` | Copy loop stops on the terminating 0 (`STOSB` / `OR AL,AL` / `JZ`), and the length is stored in the CCP buffer after `POP DS`. |
-| 06 | 17, 18 Search | `DRCOPY` | Directory record is copied to the user DMA address using `DMASEG` (`MOV ES,DMASEG`). |
-| 07 | 12 Version | `BDOSB` | `XOR AX,AX` clears the result, so `BH` is 0 on return. |
-| 08 | 59 Load | `MLOADP`, `MLOADK` (`0A20h`) | `PUSH ES` and the FCB offset saved in `UFCBOF`; stub restores `INSTOF` and `ES`. Fixes loads with a drive in the FCB overwriting memory. |
-| 10 | all | `BDOSBC` (`0A50h`) | Out-of-range function code returns `0FFFFh` in `AX`/`BX`. |
-| 11 | 59 Load | `MLOADQ` (`0A30h`) | Failed (absolute memory denied) load returns `0FFFFh` in `AX`. |
-| 13 | internal calls | `PATCH13` (`0A00h`), hooked at `BDOSIS` | Internal BDOS call saves and restores `AFWFCB` and `FLOMOD`, so a Function 59 load no longer overwrites memory. |
-| 15 | 59 Load | `PATCH15` (`0A60h`), hooked at `STLDBL` | Data group with an absolute base (EXTRA/STACK segments) uses that base instead of `AX`. |
-
-Patch 15 is not in the PC/XT release; patches 08, 10 and 11 are installed there at different addresses. The sources use the layout of the Digital Research notes.
-
-**Digital Research patches outside the kernel**: 03 `gendef`, 04 and 05 `ed`, 09 `pip` and 12 `submit` are applied to the tools (see Tools). 02 (`LDCOPY`) and 14 (sample BIOS `TRACK.A86`) are not part of this kernel.
-
-**CCP** (`ccporg.a86`)
-
-| Patch | Where | What it does |
+| Output | CCP / BDOS / BIOS sources | Purpose |
 | --- | --- | --- |
-| Short-line `DIR` (`DIRPAT`, `0A40h`) | `DIROUD` → `DIRPAT` | On screens narrower than 60 columns (`CONWID`) `DIR` shows two columns instead of four. Present in the PC/XT release; not a numbered Digital Research patch. |
-| Submit out of home (`09FAh`) | `PATCHSUBMITSELDSK`, called from `RDCOMN` and `DELSUS` | The submit file is accessed on the current drive instead of switching to drive A. Present in the PC/XT release. |
-| No submit interrupt | `RDCOMN`, after `CHKCIT` | `JZ RDCOMD` becomes `JMPS RDCOMD`: a key press no longer cancels a running submit file. Local. |
+| `cpm.sys` | `ccp.a86`, `bdos.a86`, `pcbios.a86` | Maintained PC kernel |
+| `cpmorg.sys` | `ccporg.a86`, `bdosorg.a86`, `pcbioorg.a86` | Frozen patched reference; do not edit |
+| `cpmexp.sys` | `ccpexp.a86`, `bdosexp.a86`, `pcbioexp.a86` | Experimental PC kernel |
+| `mbcv20.sys` | `ccp.a86`, `bdos.a86`, `mbcv20.a86` | V20 MBC, 8088 mode; segment `0040h` |
+| `mbc816.sys` | `ccp.a86`, `bdos.a86`, `mbc816.a86` | V20 MBC, mixed 8080/8088 mode; segment `0040h` |
+| `ad88.sys` | `ccp.a86`, `bdos.a86`, `ad88bios.a86` | AD8088 / Apple II; segment `4000h`; [source](https://github.com/ushicow/ad8088cpm) |
 
-**Other kernel changes**
+### Kernel patches
 
-| Patch | Where | What it does |
+Patch history is in `patching/`; addresses and reserved-space use are in [mapping.md](mapping.md). Local edits are marked `Ts:`. Public entry points and existing system-data addresses are preserved.
+
+| DR patch | Area | Fix |
 | --- | --- | --- |
-| Reference alignment | `IDCODE` (`ccporg.a86`), user ID bytes at `0B00h` (`bdosorg.a86`) | OEM code, version and serial bytes set to the values of the reference `cpm.sys`. Local. |
-| Console abort order | `CONSTA` | `MRSDSY` is called before the `CNUMCB` test, as in the original XT code. Local. |
-| User 0 system-file match (CP/M interop) | `SRDRNZ` in `bdos.a86`, `bdosexp.a86`, `bdosorg.a86` | When searching user 0 for a `SYS` file from another user area, BDOS also required the S1 byte (`BC=S1`) of the FCB to be zero, so system commands in user 0 were not found and CP/M-80-style programs could not run them. This is a kernel bug. The S1 test (`inc bx` / `cmp byte ptr [bx],0` / `jnz SRDRNT`) is removed and replaced by `nop`s, so the code size and all following addresses are unchanged. Local. |
+| 01 | Chain (`MCHAIN`) | Stop at the terminating zero; store the command length correctly |
+| 06 | Search (`DRCOPY`) | Copy directory records to the user's DMA segment |
+| 07 | Version (`BDOSB`) | Clear `BH` on return |
+| 08 | Load (`MLOADP`, `MLOADK`) | Preserve the FCB offset and segment; prevent memory corruption |
+| 10 | Dispatch (`BDOSBC`) | Return `FFFFh` for invalid function numbers |
+| 11 | Load (`MLOADQ`) | Return `FFFFh` when absolute memory is denied |
+| 13 | Internal calls (`PATCH13`) | Preserve `AFWFCB` and `FLOMOD` during loads |
+| 15 | Load (`PATCH15`) | Honour absolute data-group bases |
 
-**BIOS** (`pcbioorg.a86`): the AT patch (the two interrupt vector clearing loops use `INC DI` instead of `STOSW`), the year 2000 patch (`BCENT` is `'20'`), and a local patch that falls back to 80-column colour text instead of 40-column text.
+These patches are present in the frozen and maintained BDOS sets. The original PC/XT release lacks patch 15 and places patches 08, 10 and 11 at different addresses. Its free-memory patch at `0A3Ah` is absent here.
 
-The PC/XT release also contains a patch at `0A3Ah` for Functions 56–58 (free memory), listed in `annotations.txt`. It is not present in these sources.
+| Other change | Effect |
+| --- | --- |
+| CCP `DIRPAT` | Two-column `DIR` on screens narrower than 60 columns |
+| CCP submit handling | Use the current drive; prevent key presses from cancelling submit files |
+| Reference IDs | Align OEM, version and serial bytes with the recovered reference |
+| Console abort | Match the XT call order in `CONSTA` |
+| User 0 system files | Remove the erroneous S1 test in `SRDRNZ`; retain instruction offsets with NOPs |
+| PC BIOS | AT interrupt-vector fix, year-2000 fix and 80-column colour fallback |
+| Maintained PC hard disks | Support partitions up to 31.5 MiB; see [HDMAINT compatibility notes](commands/hdmaint/README.md) |
 
-### 2. Tools
+Tool patches: 03 GENDEF, 04–05 ED, 09 PIP and 12 SUBMIT. Patches 02 (LDCOPY) and 14 (sample BIOS TRACK.A86) are outside this kernel.
 
-The CP/M-86 command set is available both as patched/original binaries (`base/`) and as reconstructed source builds (`commands/`). The table below shows the status of each tool in both dimensions.
+## Tools
 
-Several imported command sources are Concurrent CP/M-86 3.1 vintage and assume BDOS 3.x; this kernel reports BDOS 2.2 with `BH=0`. Each tool was audited for version guards and for calls into BDOS functions not present in this kernel.
+Original/patched binaries live in `base/`; source builds live in `commands/`. Imported CCP/M commands are adapted for this kernel's BDOS 2.2 interface (`BH=0`).
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `asm86` | Original | Adapted from CCP/M-86 3.1 |
-| `assign` | Original | Reverse engineered from CP/M-86 and adapted|
+| `asm86` | Original | CCP/M-86 3.1 port |
+| `assign` | Original | Reconstructed CP/M-86 source |
 | `chkcpmfs` | — | New shared PL/M-86 CP/M checker with confirmed metadata repair |
-| `config` | Original | Reverse engineered from CP/M-86 and adapted |
-| `ddt86` | Original | Adapted from CCP/M-86 3.1 |
-| `dskmaint` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
-| `ed` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
-| `function` | Original | Reverse engineered from CP/M-86 and adapted |
-| `gencmd` | Original | Adapted from CCP/M-86 3.1 |
-| `gendef` | Patched (DR rec.) | Adapted from MP/M-86 PL/M sources; CP/M final-record fix; output checked against original |
-| `hdmaint` | Updated 1.0→1.1 | Reverse engineered from CP/M-86 and adapted |
-| `help` | Original | Adapted from CCP/M-86 3.1 |
+| `config` | Original | Reconstructed CP/M-86 source |
+| `dcomp` | — | Compare 160/180/320/360K CP/M or FAT media |
+| `dcopy` | — | Copy 160/180/320/360K CP/M or FAT media |
+| `ddt86` | Original | CCP/M-86 3.1 port |
+| `dform` | — | Command-line formatter using DSKMAINT's boot sector and loader |
+| `dskmaint` | Updated 1.0→1.2 | Reconstructed CP/M-86 source |
+| `ed` | DR-patched | CCP/M-86 3.1 port |
+| `function` | Original | Reconstructed CP/M-86 source |
+| `gencmd` | Original | CCP/M-86 3.1 port |
+| `gendef` | DR-patched | Adapted from MP/M-86 PL/M sources; CP/M final-record fix; output checked against original |
+| `hdmaint` | Updated 1.0→1.1 | Reconstructed CP/M-86 source |
+| `help` | Original | CCP/M-86 3.1 port |
 | `help.hlp` | Original | Rebuilt for every core distribution; includes new tools too |
-| `mform` | Original| Reverse engineered from CP/M-86 and adapted |
-| `pip` | Patched (DR rec.) | Adapted from CCP/M-86 3.1 |
+| `mform` | Original | Reconstructed CP/M-86 source |
+| `pip` | DR-patched | CCP/M-86 3.1 port |
 | `print` | Original | Labelled assembly reconstruction; maintained and frozen builds match the original exactly |
-| `setup` | Updated 1.0→1.2 | Reverse engineered from CP/M-86 and adapted |
+| `setup` | Updated 1.0→1.2 | Reconstructed CP/M-86 source |
 | `stat` | Original | Adapted from CP/M-80 2.2 |
-| `submit`  | Patched (DR rec.) | Adapted from CP/M-80 2.2 |
+| `submit`  | DR-patched | Adapted from CP/M-80 2.2 |
 | `tod` | — (superseded) | New, CP/M-86 rewrite |
 | `atinit` | Imported from [cpm86-hacking](https://github.com/tsupplis/cpm86-hacking) | — |
 | `asm80` | — | Adapted from CP/M-80 2.2 and translated using XLT86 |
 | `hexcom` | — | HEXCOM 3.00-compatible C from [tpzasm](https://github.com/johnsonjh/tpzasm) |
-> A clean-room reimplementation of `submit` (`msub`) with a visual and configurable menu system for submit orchestration is available at [cpm86-menu](https://github.com/tsupplis/cpm86-menu).
 
-`make commands` builds the full source set. Every `cpm86*.img` distribution uses the maintained `commands/` build wherever available, including CONFIG, SETUP and HDMAINT 1.1N. Only GENDEF and MFORMQ retain their `base/` binaries because they have no corresponding source-build target. Developer toolchains remain in `dev/`.
+[MSUB](https://github.com/tsupplis/cpm86-menu) provides a configurable menu-based and reentrant replacement for SUBMIT.
 
-#### Command-line floppy tools
+DCOPY/DCOMP derive from the [PC DOS 1.10 disassemblies](https://github.com/tsupplis/pcdos11-hacking). They detect geometry and accept `[8]` / `[9]` overrides. See [disk tools](commands/disk/README.md).
 
-| Tool | Binary (`base/`) | Source (`commands/`) |
-| --- | --- | --- |
-| `dcomp` | — | 8/9-sector CP/M/FAT port of DOS DISKCOMP |
-| `dcopy` | — | 8/9-sector CP/M/FAT port of DOS DISKCOPY |
-| `dform` | — | New, CP/M-86 / CCP/M-86 DSKMAINT formatter |
+### Mixed 8080/8086 support
 
-`dcopy` and `dcomp` are CP/M-86 / CCP/M-86 ports of the PC DOS 1.10 DISKCOPY and DISKCOMP utilities, respectively. They derive from the byte-exact disassemblies in [DOS Sources](https://github.com/tsupplis/pcdos11-hacking).
+`asm80` (DR CP/M-80 assembler translated with XLT86) and `hexcom` (ANSI C HEXCOM 3.00 reimplementation) provide a native 8080 development chain. For emulation, see Z80 and VCPM in [cpm86-ports](https://github.com/tsupplis/cpm86-ports).
 
-DCOPY/DCOMP now support 160/180/320/360K raw media with geometry detection
-and explicit [8]/[9] overrides; see [disk tools](commands/disk/README.md).
-
-`dform` is a new command-line derivative of DSKMAINT's formatter, sharing its boot sector and loader sources.
-
-#### Mixed 8080/8086 support
-
-`asm80` and `hexcom` support mixed 8080/8086 environments such as the V20 MBC (`cpm816.sys`) and the experimental `cpm86.sys` PC kernel.
-
-- `asm80`: the original Digital Research CP/M-80 assembler source (copyright 1976–1978) converted and unified for the CP/M-86 model. 
-- `hexcom`: portable ANSI C reimplementation of DR HEXCOM 3.00, imported from [tpzasm](https://github.com/johnsonjh/tpzasm) and validated against the original binary.
-
-As the mixed kernel is still in the work, you can meanwhile use the z80 and vcpm emulators for CP/M-86 available at [cpm86-ports](https://github.com/tsupplis/cpm86-ports) 
-
-Together they form a minimum native 8080 development chain on CP/M-86.
-
-#### 1.44 MB Feature
+### 1.44 MB Feature
 
 Freek Heite's "1.44 MB Feature" adds 720K, 1.2M and 1.44M diskette support. Built from source by `make -C extra` using MASM 5.10 and LINK 5.13 under DOS emulation. The rebuilt `144pat2.cmd` is byte-identical to the binary originally shipped here.
 
@@ -163,9 +105,9 @@ Freek Heite's "1.44 MB Feature" adds 720K, 1.2M and 1.44M diskette support. Buil
 | `144pat2.cmd` | Applies the same patches to an already-running system |
 | `144prep2.cmd` | Prepares a diskette (boot sector + loader appended) |
 
-#### Digital Research and Microsoft toolchains
+### Development toolchains
 
-Shipped unmodified.
+Included in `dev/`.
 
 | Tool | Product | Version | Vendor |
 | --- | --- | --- | --- |
@@ -176,14 +118,14 @@ Shipped unmodified.
 | `sid86.cmd` | SID-86 with 286 Disassembler | 2.4 | Digital Research |
 | `cbas86.cmd` | CBAS86 CBASIC Compiler | 1.4 | Digital Research |
 | `crun86.cmd` | CRUN86 CBASIC Runtime | 1.4 | Digital Research |
-| `pbasic.cmd` | Personal BASIC | 1.2 | Digital Research |
+| `pbasic.cmd` | Personal BASIC | 1.2N (Supports command line) | Digital Research |
 | `mbasic86.cmd` | BASIC-86 (Imported from [cpm86-msbasic](https://github.com/tsupplis/cpm86-msbasic)) | Rev. 5.50 | Microsoft |
 
-### Disk images
+## Disk images
 
-Four sets are produced. The 160K set is the reference layout; the others repack the same material for larger media. The experimental set boots `cpmexp.sys`; both kernel families use source-rebuilt tools.
+Images use source-built tools. Experimental images boot `cpmexp.sys`; other bootable images use `cpm.sys`.
 
-**160K single sided: 4 disks**
+**160K single-sided**
 
 | Image | Contents |
 | --- | --- |
@@ -193,7 +135,7 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-160-3.img` | Digital Research dev tools |
 | `cpm86-160-4.img` | BASIC development |
 
-**320K double sided: 4 disks**
+**320K double-sided**
 
 | Image | Contents |
 | --- | --- |
@@ -202,14 +144,14 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
 | `cpm86-chkcpmfs.img` | Bootable CP/M-86 checker disk with PIP, STAT and CHKCPMFS |
 
-**720K / 1.44M via the "1.44 MB Feature" — 2 disks**
+**720K / 1.44M with 144FEAT**
 
 | Image | Contents |
 | --- | --- |
 | `cpm86-720-at.img` | Full command set including DCOPY/DCOMP/DFORM + dev toolchain, AT-compatible clock |
 | `cpm86-1440-at.img` | Same content on 1.44M media |
 
-**Experimental: 4 disks**
+**Experimental**
 
 | Image | Contents |
 | --- | --- |
@@ -218,17 +160,20 @@ Four sets are produced. The 160K set is the reference layout; the others repack 
 | `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
-The disk-utility commands remain on the dedicated 160K tools disk. Both stock and experimental 160K core variants use the shared `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; the core disks carry the updated help database. HELP is omitted from the tools disk to keep it within 160K. CHKCPMFS needs about 54K of minimum load memory and a 54K command file, so it is supplied on a small bootable `cpm86-chkcpmfs.img` rather than crowding the 160K or 320K core/development disks; the 720K and 1.44M feature images include it directly.
+| Image constraint | Detail |
+| --- | --- |
+| 160K tools | Stock and EXP share `cpm86-160-2.img` for DCOPY/DCOMP/DFORM; HELP stays on the core disk |
+| CHKCPMFS | About 54K each for the command file and minimum load memory; supplied on its own checker disk and on 720K/1.44M images |
+| 144FEAT | Detects stock/EXP kernels at runtime; see `extra/144feat.inc` |
+| Boot signature | Only 160K images carry `55AA`. Other formats use byte `01FFh` for disk parameters; overwriting it breaks booting |
 
-All 160K core disks ship reconstructed core tools; the feature images add `asm86`, `ddt86` and `gencmd` as well as DCOPY/DCOMP/DFORM. Feature programs auto-detect `cpmexp.sys` vs stock `cpm.sys` at runtime (see `extra/144feat.inc`).
-
-PCE helper scripts: `./cpm86`, `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. `make test`, `make test-320` and `make test-exp` are shortcuts for the common ones.
-
-The 160K images carry a `55AA` boot signature for qemu compatibility. The other formats cannot: byte `01FFh` of their boot sector is already used (`01h` = 2K alloc blocks for 320K; `48h`/`90h` = `cpmedia` byte for feature formats). Stamping `55AA` on a 320K image causes the loader to misread the block size and hang.
+PCE launchers: `./cpm86`, `./cpm86-320`, `./cpm86-720`, `./cpm86-1440`, `./cpm86-exp`, `./cpm86-exp-720`, `./cpm86-exp-1440`. Shortcuts: `make test`, `make test-320`, `make test-exp`.
 
 ## cpmtools formats
 
-cpmtools 2.23 with libdsk, install via Homebrew or from https://www.moria.de/~michael/cpmtools/. Run `cpm*` tools from the repo root; cpmtools reads `./diskdefs` in preference to the system-wide file and does **not** merge the two. All five formats use `os 2.2` to match the kernel's BDOS level (using `os 3` causes `mkfs.cpm` to write an `UNLABELED` CP/M Plus label that permanently occupies a directory slot).
+Use [cpmtools 2.23](https://www.moria.de/~michael/cpmtools/) with libdsk, available through Homebrew. Run it from the repository root to use `./diskdefs`; local definitions replace the system file.
+
+All formats use `os 2.2`. Using `os 3` adds an unwanted CP/M Plus label to the directory.
 
 | Format | Geometry | Block | Dir | Reserved |
 | --- | --- | --- | --- | --- |
@@ -238,13 +183,15 @@ cpmtools 2.23 with libdsk, install via Homebrew or from https://www.moria.de/~mi
 | `cpm86-144feat` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
 | `cpm86-xt-hd` | 272 × 63 × 512 (8M partition) | 4K | 2048 | 16 tracks |
 
-Feature format DPBs are documented in [extra/144tech.md](extra/144tech.md). Hard-disk parameters for `cpm86-xt-hd` are not compiled into the BIOS. `CHKHDDPAR` reads them at runtime from the DR disk label embedded in the partition; re-read for a different drive rather than reusing the values above.
-
-**Note on the 320K format:** the stock `ibmpc-514ds` definition shipped with cpmtools corrupts 320K raw images. The CP/M-86 BIOS lays out head 1 in reverse cylinder order (tracks 40–79 → cylinders 39 down to 0), which no cpmtools `diskdef` can express. The corrected `cpm86-320` definition plus `tools/cpm86twist.py` handles the reordering; the `Makefile` targets for `cpm86-320*.img` apply it automatically.
+| Format note | Detail |
+| --- | --- |
+| 144FEAT | DPBs are documented in [extra/144tech.md](extra/144tech.md) |
+| Hard disk | The table describes one image. BIOS reads each drive's actual parameters from its DR partition label |
+| 320K | Head 1 stores cylinders in reverse order. Use `cpm86-320` with `tools/cpm86twist.py`; Makefile image targets handle this automatically. The stock cpmtools `ibmpc-514ds` definition corrupts these raw images |
 
 ## Playing with CP/M-86
 
-Testing requires the [PCE emulator](http://www.hampa.ch/pce/) and cpmtools (see above). Floppy images also work with qemu. Alternatively, use the [V20 MBC](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer) hardware ([shop](https://shop.mcjohn.it/en/diy-kit)).
+Use [PCE](http://www.hampa.ch/pce/) with cpmtools for testing, or try the 160K images in QEMU. Hardware option: [V20 MBC](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer) ([shop](https://shop.mcjohn.it/en/diy-kit)).
 
 <p align="center">
 <img src="./images/v20mbc.png" alt="V20 MBC" width="48%">
@@ -269,7 +216,7 @@ Testing requires the [PCE emulator](http://www.hampa.ch/pce/) and cpmtools (see 
 | [cpm86-cmdtools](https://github.com/tsupplis/cpm86-cmdtools) | CP/M-86 `.cmd` file manipulation tools |
 | [cpm86-ports](https://github.com/tsupplis/cpm86-ports)       | CP/M-86 application ports in C and assembler |
 | [cpm86-vi](https://github.com/tsupplis/cpm86-vi)             | STevie vi port for CP/M-86 and PC-DOS |
-| [cpm86-msbasic](https://github.com/tsupplis/cpm86-msbasic)   | A recreaction of msbasic-86 for CP/M-86 and PC-DOS 1.1 from gwbasic sources |
+| [cpm86-msbasic](https://github.com/tsupplis/cpm86-msbasic)   | A recreation of MSBASIC-86 for CP/M-86 and PC-DOS 1.1 from gwbasic sources |
 | [cpm86-menu](https://github.com/tsupplis/cpm86-menu)   | A submit replacement and a menu system for submit orchestration for CP/M-86 1.1 |
 | [cpm86-make](https://github.com/tsupplis/cpm86-make)   | A simple submit based make tool for CP/M-86 |
 | [pcdos11-hacking](https://github.com/tsupplis/pcdos11-hacking) | PC-DOS 1.1 distribution, tools and notes |
@@ -286,8 +233,6 @@ Primary source: http://www.cpm.z80.de
 | Bug patches | http://www.cpm.z80.de/download/cpm86bug.zip |
 | 144FEAT2 | Freek Heite |
 | hexcom | https://github.com/johnsonjh/tpzasm |
-
---
 
 ## License
 

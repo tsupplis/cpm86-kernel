@@ -7,7 +7,7 @@ GENCMD=cpm86_gencmd
 H862BIN=h862bin
 BIN2ASM=bin2asm
 
-IMAGES=mbr.bin bootsect.bin loader.bin
+IMAGES=mbr.bin bootsect.bin loader.bin ldlarge.bin btlarge.bin
 INCS=$(IMAGES:.bin=.inc)
 
 TOOLS=hdmaint.cmd hdmtorg.cmd
@@ -44,10 +44,13 @@ hdmaint.h86 hdmtorg.h86: %.h86: %.a86 hdboot.inc $(INCS) Makefile
 	$(BIN2ASM) -m -f $@ $<
 
 # The original source is frozen. Only its CMD must match the reference.
+hdmaint.h86: ldlarge.inc btlarge.inc
+
 check: $(TOOLS) $(IMAGES)
 	python3 bootcheck.py compare $(REF)
 	cmp hdmtorg.cmd $(REF)
 	python3 check_maintained.py
+	python3 check_capacity.py
 	@echo "PASS: frozen original matches; maintained HDMAINT 1.1N checks passed"
 
 clean:

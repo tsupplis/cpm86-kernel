@@ -313,6 +313,18 @@ scan_disk_at_0201:
 ; An invalid AA55h signature produces an empty table in the in-memory copy.
 ;-----------------------------------------------------------------------------
 disk_geometry_ready:
+	cmp	byte ptr [bx],15
+	ja	unsupported_geometry
+	cmp	byte ptr 1h[bx],16
+	jb	unsupported_geometry
+	cmp	byte ptr 1h[bx],63
+	ja	unsupported_geometry
+	cmp	word ptr 2h[bx],1023
+	jbe	validated_geometry
+unsupported_geometry:
+	mov	byte ptr error_number,6
+	jmp	fatal_error
+validated_geometry:
 	mov	al,[bx]
 	inc	al
 	mul	byte ptr 1h[bx]
@@ -440,17 +452,7 @@ scan_partition_entry:
 	mov	al,4h[bx+si]
 	or	al,al
 	jz	scan_partition_entry_at_0388
-	mov	al,3h[bx+si]
-	mov	ah,2h[bx+si]
-	rol	ah,1
-	rol	ah,1
-	and	ah,3h
-	mov	cx,ax
-	mov	al,7h[bx+si]
-	mov	ah,6h[bx+si]
-	rol	ah,1
-	rol	ah,1
-	and	ah,3h
+	call	entry_cylinder_range
 	push	ax
 	sub	ax,cx
 	inc	ax
@@ -474,6 +476,8 @@ scan_partition_entry_at_0373:
 	add	di,4h
 scan_partition_entry_at_0385:
 	inc	ax
+	cmp	ax,dx
+	jbe	scan_partition_entry_at_0388
 	mov	dx,ax
 scan_partition_entry_at_0388:
 	add	si,10h
@@ -716,7 +720,7 @@ beep:
 
 ;-----------------------------------------------------------------------------
 ; Choose partition size, constrained to the selected free extent. Display the
-; CP/M-86 8 MB compatibility limit, then calculate the volume parameters.
+; supported capacity limit, then calculate the volume parameters.
 ;-----------------------------------------------------------------------------
 choose_partition_size:
 	call	limit_default_size
@@ -730,6 +734,8 @@ edit_partition_size:
 	call	read_number
 	cmp	ax,0ffffh
 	jz	accept_partition_size
+	cmp	ax,maximum_cpm22_cylinders
+	ja	edit_partition_size_at_0596
 	cmp	ax,0ah
 	jl	edit_partition_size_at_0596
 	add	ax,partition_start
@@ -816,22 +822,27 @@ default_partition_at_0630:
 	mov	byte ptr error_number,5h
 	jmp	fatal_error
 default_partition_at_0646:
-	mov	ax,4007h
+ ; Limit data to 31.5 MiB and the last spare block to 16-bit sectors.
+; Include the system and spare cylinders; derive both bounds from geometry.
+	mov	ax,0fc00h
 	xor	dx,dx
-	mov	bl,last_head
-	inc	bl
-	xor	bh,bh
-	div	bx
-	mov	bx,11h
+	div	sectors_per_cylinder
+	add	ax,2
+	mov	cx,ax
+	mov	ax,0ffffh
 	xor	dx,dx
-	div	bx
-	add	ax,2h
+	div	sectors_per_cylinder
+	inc	ax
+	cmp	ax,cx
+	jbe	default_size_bound
+	mov	ax,cx
+default_size_bound:
 	mov	maximum_cpm22_cylinders,ax
 	mov	byte ptr label_valid,0ffh
 	ret
 
 ;-----------------------------------------------------------------------------
-; Clamp the initial size to the CP/M 2.2 limit and the free-extent endpoint.
+; Clamp the initial size to the supported limit and free-extent endpoint.
 ;-----------------------------------------------------------------------------
 limit_default_size:
 	mov	ax,partition_start
@@ -868,6 +879,15 @@ calculate_dpb:
 	shr	bx,1
 	mul	bx
 	mov	allocation_records,ax
+ ; Match CDOS HDMAINT: 8K blocks above 16 MiB, EXM=1 (32K groups).
+	cmp	ax,4000h
+	jbe	calculate_medium_dpb
+	mov	word ptr directory_size_kb,18
+	mov	byte ptr dpb_bsh,6
+	mov	byte ptr dpb_blm,3fh
+	mov	byte ptr dpb_exm,1
+	jmp	calculate_dpb_at_06e4
+calculate_medium_dpb:
 	cmp	ax,400h
 	jng	calculate_dpb_at_06cf
 	mov	word ptr directory_size_kb,9h
@@ -1185,28 +1205,21 @@ encode_partition_at_0988:
 	mov	7h[bx],al
 	mov	bp,bx
 	mov	ax,partition_start
-	mov	bl,head_count
-	xor	bh,bh
-	xor	dx,dx
-	mul	bx
-	push	bx
-	mov	bl,physical_spt
-	xor	bh,bh
-	mul	bx
+	mul	sectors_per_cylinder
 	xor	cx,cx
-	or	ax,ax
-	jnz	encode_partition_at_09d1
-	inc	cx
+	cmp	partition_start,0
+	jne	encode_start_ready
 	inc	ax
-encode_partition_at_09d1:
+	inc	cx
+encode_start_ready:
 	mov	ds:8h[bp],ax
+	mov	ds:0ah[bp],dx
 	mov	ax,partition_cylinders_count
-	xor	dx,dx
-	mul	bx
-	pop	bx
-	mul	bx
+	mul	sectors_per_cylinder
 	sub	ax,cx
+	sbb	dx,0
 	mov	ds:0ch[bp],ax
+	mov	ds:0eh[bp],dx
 	mov	word ptr mbr_signature,0aa55h
 	ret
 
@@ -1252,10 +1265,14 @@ finalize_bad_blocks:
 	dec	ax
 	mov	last_spare_block,ax
 	mov	ax,bad_block_count
-	cmp	byte ptr dpb_bsh,4h
-	jz	finalize_bad_blocks_at_0a47
-	inc	ax
-	shr	ax,1
+ ; Each bad remap block consumes 2K. Round up in allocation units.
+	mov	cl,dpb_bsh
+	sub	cl,4
+	mov	bx,1
+	shl	bx,cl
+	dec	bx
+	add	ax,bx
+	shr	ax,cl
 finalize_bad_blocks_at_0a47:
 	sub	ax,dpb_dsm
 	neg	ax
@@ -1974,6 +1991,66 @@ label_checksum_at_0f72:
 ;-----------------------------------------------------------------------------
 ; Sort occupied partition entries by their relative starting-sector fields.
 ;-----------------------------------------------------------------------------
+; BX = disk descriptor, SI = partition offset. Preserve next-free DX.
+; Reserve every cylinder touched by a foreign primary/extended partition.
+; Invalid/out-of-disk LBA ranges fail closed by reserving the entire disk.
+entry_cylinder_range:
+	cmp	byte ptr 4h[bx+si],0dbh
+	je	entry_cpm_chs
+	push	dx
+	push	bp
+	mov	ax,0ch[bx+si]
+	or	ax,0eh[bx+si]
+	jz	entry_range_bad
+	mov	ax,8h[bx+si]
+	mov	dx,0ah[bx+si]
+	cmp	dx,4h[bx]
+	jae	entry_range_bad
+	div	word ptr 4h[bx]
+	mov	bp,ax
+	mov	ax,8h[bx+si]
+	mov	dx,0ah[bx+si]
+	add	ax,0ch[bx+si]
+	adc	dx,0eh[bx+si]
+	jc	entry_range_bad
+	sub	ax,1
+	sbb	dx,0
+	cmp	dx,4h[bx]
+	jae	entry_range_bad
+	div	word ptr 4h[bx]
+	cmp	ax,0eh[bx]
+	jae	entry_range_bad
+	mov	cx,bp
+	pop	bp
+	pop	dx
+	ret
+entry_range_bad:
+; Discard previously found holes too: a later invalid entry may cover them.
+	lea	di,28h[bx]
+	mov	cx,10
+	mov	ax,0ffffh
+	rep	stosw
+	mov	di,28h
+	xor	cx,cx
+	mov	ax,0eh[bx]
+	dec	ax
+	pop	bp
+	pop	dx
+	ret
+entry_cpm_chs:
+	mov	al,3h[bx+si]
+	mov	ah,2h[bx+si]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	mov	cx,ax
+	mov	al,7h[bx+si]
+	mov	ah,6h[bx+si]
+	rol	ah,1
+	rol	ah,1
+	and	ah,3h
+	ret
+
 sort_partitions:
 	mov	si,265h
 	mov	cx,3h
@@ -1991,10 +2068,11 @@ sort_partitions_at_0f87:
 sort_partitions_at_0f98:
 	mov	ax,0ah[bx+si]
 	cmp	ax,0ah[bx+di]
-	jg	sort_partitions_at_0fa8
+	ja	sort_partitions_at_0fa8
+	jb	sort_partitions_at_0fbd
 	mov	ax,8h[bx+si]
 	cmp	ax,8h[bx+di]
-	jl	sort_partitions_at_0fbd
+	jb	sort_partitions_at_0fbd
 sort_partitions_at_0fa8:
 	push	cx
 	push	si
@@ -3115,13 +3193,13 @@ bad_block_table	rb	1b8h
 default_mbr:
 	include mbr.inc
 default_boot_copy1:
-	include bootsect.inc
+	include btlarge.inc
 default_boot_copy2:
-	include bootsect.inc
+	include btlarge.inc
 
 	include hdboot.inc
 system_loader:
-	include loader.inc
+	include ldlarge.inc
 
 ;-----------------------------------------------------------------------------
 ; Private 256-byte stack; SP starts at its upper boundary.
@@ -3245,13 +3323,10 @@ maximum_cpm22_cylinders	dw	0h
 size_screen	db	1bh,'Y**If the CP/M partition size shown below is acceptable, press',1bh
 	db	'Y+*F10 to proceed.  Otherwise, enter a new size.  Remember that',1bh
 	db	'Y,*the CP/M partition must be at least 10 cylinders long.',0ffh
-	dw	offset template_if_not_equal
-	dw	offset large_volume
-	db	0h,0ffh
 	dw	offset blink_on
-	db	0h,1bh,'Y.*Only Concurrent CP/M-86 can access volumes larger than 8192K',1bh
-	db	'Y/*bytes.  If you intend to use this volume with CP/M-86, make',1bh
-	db	'Y0*sure the partition size is no greater than ',0ffh
+	db	1bh,'Y.*Large volumes require the updated kernel on every system.',1bh
+	db	'Y/*Size is in cylinders; displayed capacity is in KiB.',1bh
+	db	'Y0*Maximum supported partition size: ',0ffh
 	dw	offset template_decimal
 	dw	offset maximum_cpm22_cylinders
 	db	' cylinders.',0ffh
@@ -3734,7 +3809,10 @@ error_details	db	1bh,'Y%+Unable to continue: ',0ffh
 	db	3h,'Cannot read the CP/M system area',0h,0ffh
 	dw	offset template_if_equal
 	dw	offset error_number
-	db	5h,'Too many bad blocks were found',0h
+	db	5h,'Too many bad blocks were found',0h,0ffh
+	dw	offset template_if_equal
+	dw	offset error_number
+	db	6h,'Unsupported BIOS disk geometry',0h
 reboot_screen	db	1bh,'Y,*It is necessary to reload the operating system from diskette',1bh
 	db	'Y-*at this time.',1bh,'Y12',0ffh
 	dw	offset blink_on

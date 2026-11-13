@@ -1,0 +1,558 @@
+	title	'Customized Basic I/O System'
+
+;*********************************************
+;*                                           *
+;* This Customized BIOS adapts CP/M-86 to    *
+;* the following hardware configuration      *
+;*     Processor: intel 8088                 *
+;*     Brand: ALF                            *
+;*     Controller: AD8088                    *
+;*                                           *
+;*                                           *
+;*     Programmer: Atsushi, USHIRODA         *
+;*     Revisions : 1.0                       *
+;*                                           *
+;*********************************************
+
+true		equ -1
+false		equ not true
+cr		equ 0dh ;carriage return
+lf		equ 0ah ;line feed
+
+;*********************************************
+;*                                           *
+;* Loader_bios is true if assembling the     *
+;* LOADER BIOS, otherwise BIOS is for the    *
+;* CPM.SYS file.                             *
+;*                                           *
+;*********************************************
+
+loader_bios	equ false
+bdos_int	equ 224 ;reserved BDOS interrupt
+
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code	equ 2500h
+ccp_offset	equ 0000h
+bdos_ofst	equ 0B06h ;BDOS entry point
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+
+	IF	loader_bios
+;---------------------------------------------
+;|                                           |
+bios_code	equ 1200h ;start of LDBIOS
+ccp_offset	equ 0003h ;base of CPMLOADER
+bdos_ofst	equ 0406h ;stripped BDOS entry
+;|                                           |
+;---------------------------------------------
+	ENDIF	;loader_bios
+
+	cseg
+	org	ccpoffset
+ccp:
+	org	bios_code
+
+;*********************************************
+;*                                           *
+;* BIOS Jump Vector for Individual Routines  *
+;*                                           *
+;*********************************************
+
+ jmp INIT	;Enter from BOOT ROM or LOADER
+ jmp WBOOT	;Arrive here from BDOS call 0  
+ jmp CONST	;return console keyboard status
+ jmp CONIN	;return console keyboard char
+ jmp CONOUT  	;write char to console device
+ jmp LISTOUT	;write character to list device
+ jmp PUNCH	;write character to punch device
+ jmp READER  	;return char from reader device 
+ jmp HOME	;move to trk 00 on cur sel drive
+ jmp SELDSK  	;select disk for next rd/write
+ jmp SETTRK  	;set track for next rd/write
+ jmp SETSEC  	;set sector for next rd/write
+ jmp SETDMA  	;set offset for user buff (DMA)
+ jmp READ	;read a 128 byte sector
+ jmp WRITE	;write a 128 byte sector
+ jmp LISTST  	;return list status 
+ jmp SECTRAN 	;xlate logical->physical sector 
+ jmp SETDMAB 	;set seg base for buff (DMA)
+ jmp GETSEGT 	;return offset of Mem Desc Table
+ jmp GETIOBF	;return I/O map byte (IOBYTE)
+ jmp SETIOBF	;set I/O map byte (IOBYTE) 
+
+;*********************************************
+;*                                           *
+;* INIT Entry Point, Differs for LDBIOS and  *
+;* BIOS, according to "Loader_Bios" value    *
+;*                                           *
+;*********************************************
+
+INIT:	;print signon message and initialize hardware
+	mov ax,cs	;we entered with a JMPF so use
+	mov ss,ax	;CS: as the initial value of SS:,
+	mov ds,ax	;DS:,
+	mov es,ax	;and ES:
+	;use local stack during initialization
+	mov sp,offset stkbase
+	cld		;set forward direction
+
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+	; This is a BIOS for the CPM.SYS file.
+	; Setup all interrupt vectors in low
+	; memory to address trap
+
+	push ds		;save the DS register
+	mov IOBYTE,0	;clear IOBYTE
+	mov ax,0
+	mov ds,ax
+	mov es,ax 	;set ES and DS to zero
+	;setup interrupt 0 to address trap routine
+	mov int0_offset,offset int_trap
+	mov int0_segment,CS
+	mov di,4
+	mov si,0	;then propagate
+	mov cx,510	;trap vector to
+	rep movs ax,ax	;all 256 interrupts
+	;BDOS offset to proper interrupt
+	mov bdos_offset,bdos_ofst
+	pop ds		;restore the DS register
+
+;	(additional CP/M-86 initialization)
+	mov ax,xlt4+1
+	mov dpe4,ax
+	mov ax,seg ramdisk
+	mov es,ax
+	mov al,es:byte ptr ramdisk
+	inc al
+	mov es:byte ptr ramdisk,al
+	cmp al,es:byte ptr ramdisk
+	jne chk_exram
+	mov di,0
+	mov cx,1024
+	mov al,0e5h
+	rep stos al
+	mov ax,xlt4
+	mov dpe4,ax
+	mov bx,offset ramdsk
+	call pmsg
+
+chk_exram:
+	mov ax,seg ad512k
+	mov es,ax
+	mov al,es:byte ptr ad512k
+	inc al
+	mov es:byte ptr ad512k,al
+	cmp al,es:byte ptr ad512k
+	jne no_exram
+	mov al,2
+	mov byte ptr segtable,al
+	mov bx,offset memory
+	call pmsg
+	mov ax,0
+	mov es,ax
+no_exram:
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+
+	IF	loader_bios
+;---------------------------------------------
+;|                                           |
+	;This is a BIOS for the LOADER
+	push ds		;save data segment
+	mov ax,0
+	mov ds,ax	;point to segment zero
+	;BDOS interrupt offset
+	mov bdos_offset,bdos_ofst
+	mov bdos_segment,CS ;bdos interrupt segment
+;	(additional LOADER initialization)
+	pop ds		;restore data segment
+;|                                           |
+;---------------------------------------------
+	ENDIF	;loader_bios
+
+	mov bx,offset signon
+	call pmsg	;print signon message
+	mov cl,2	;default to dr C: on coldstart
+	jmp ccp		;jump to cold start entry of CCP
+
+WBOOT:	jmp ccp+6	;direct entry to CCP at command level
+
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+int_trap:
+	cli		;block interrupts
+	mov ax,cs
+	mov ds,ax	;get our data segment
+	mov bx,offset int_trp
+	call pmsg
+	hlt		;hardstop
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+
+;*********************************************
+;*                                           *
+;*   CP/M Character I/O Interface Routines   *
+;*                                           *
+;*********************************************
+
+CONST:		;console status
+	push es
+	mov ax,apseg
+	mov es,ax
+	mov al,es:kebd
+	pop es
+	and al,80h
+	jz const_ret
+	or al,255
+const_ret:
+	ret
+
+a2bios:		;call Apple II BIOS
+	test es:flag,0ffh
+	jnz a2bios
+	mov es:flag,ah
+	out 0,al
+wait:	in al,1
+	and al,80h
+	js wait
+	ret
+
+CONIN:			;console input
+	push es
+	mov ax,apseg
+	mov es,ax
+	mov ah,3
+	call a2bios
+	mov al,es:reg_al
+	pop es
+	ret
+
+CONOUT:		;console output
+	push es
+	mov ax,apseg
+	mov es,ax
+	mov ah,4
+	mov es:reg_cx,cl
+	call a2bios
+	pop es
+	ret		;then return data
+
+LISTOUT:		;list device output
+	ret
+
+LISTST:			;poll list status
+	ret
+
+PUNCH:		;write punch device
+	rs	10	;(fill-in)
+	ret
+
+READER:
+	mov al,1ah
+	ret
+
+GETIOBF:
+	mov al,IOBYTE
+	ret
+
+SETIOBF:
+	mov IOBYTE,cl	;set iobyte
+	ret		;iobyte not implemented
+
+pmsg:
+	mov al,[BX] 	;get next char from message
+	test al,al
+	jz return	;if zero return
+	mov CL,AL
+	call CONOUT  	;print it
+	inc BX
+	jmps pmsg	;next character and loop
+
+;*********************************************
+;*                                           *
+;*          Disk Input/Output Routines       *
+;*                                           *
+;*********************************************
+
+SELDSK:		;select disk given by register CL
+ndisks	equ	4 ;number of disks (up to 16)
+	mov disk,cl	;save disk number
+	mov bx,0000h	;ready for error return
+	cmp cl,ndisks	;n beyond max disks?
+	jnb chkramdsk	;check ram disk if so
+	push es
+	mov ax,apseg
+	mov es,ax
+	mov es:reg_cx,cl
+	mov es:reg_dx,dl
+	mov ah,9
+	call a2bios
+	pop es
+	mov ch,0	;double(n)
+	mov bx,cx	;bx = n
+	mov cl,4	;ready for *16
+	shl bx,cl	;n = n * 16
+	mov cx,offset dpbase
+	add bx,cx	;dpbase + n * 16
+return:	ret		;bx = .dph
+
+chkramdsk:
+ramdrv	equ 15		;RAMDISK is P:
+	cmp cl,ramdrv
+	jne return
+	mov ax,dpe4
+	cmp ax,xlt4
+	jne return
+	mov bx,offset dpe4
+	ret
+
+HOME:	;move selected disk to home position (Track 0)
+	mov trk,0	;set disk i/o to track zero
+	ret
+
+SETTRK: ;set track address given by CX
+	mov trk,CX
+	ret
+
+SETSEC: ;set sector number given by cx
+	mov sect,CX
+	ret
+
+SECTRAN: ;translate sector CX using table at [DX]
+	mov bx,cx
+	ret
+
+SETDMA: ;set DMA offset given by CX
+	mov dma_adr,CX
+	ret
+
+SETDMAB: ;set DMA segment given by CX
+	mov dma_seg,CX
+	ret
+;
+GETSEGT:  ;return address of physical memory table
+	mov bx,offset seg_table
+	ret
+
+;*********************************************
+;*                                           *
+;*  All disk I/O parameters are setup:       *
+;*     DISK     is disk number      (SELDSK) *
+;*     TRK      is track number     (SETTRK) *
+;*     SECT     is sector number    (SETSEC) *
+;*     DMA_ADR  is the DMA offset   (SETDMA) *
+;*     DMA_SEG  is the DMA segment  (SETDMAB)*
+;*  READ reads the selected sector to the DMA*
+;*  address, and WRITE writes the data from  *
+;*  the DMA address to the selected sector   *
+;*  (return 00 if successful,  01 if perm err)*
+;*                                           *
+;*********************************************
+
+READ:	
+	push es
+	push ds
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+; READ RAMDISK
+	mov al,disk
+	cmp al,ramdrv
+	jne RDDISK
+	mov di,dma_adr
+	mov ax,dma_seg
+	mov es,ax
+	mov ax,trk
+	sal ax,1
+	sal ax,1
+	sal ax,1
+	add ax,sect
+	mov cl,7
+	sal ax,cl
+	mov si,ax
+	mov ax,seg ramdisk
+	jmp CPSEC
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+RDDISK:	call setup
+	mov ah,13
+	call a2bios
+	mov al,es:reg_al ; load error code to bl
+	cmp al,0
+	jnz RDRET	; error return
+	mov di,dma_adr
+	mov ax,dma_seg
+	mov es,ax
+	mov si,offset secbuf
+	mov ax,apseg
+CPSEC:	mov ds,ax
+	mov cx,128
+	rep movs al,al
+	mov al,0
+RDRET:	pop ds
+	pop es
+	ret
+
+WRITE:
+	push es
+	push ds
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+; WRITE RAMDISK
+	mov al,disk
+	cmp al,ramdrv
+	jne WRDISK
+	mov ax,trk
+	sal ax,1
+	sal ax,1
+	sal ax,1
+	add ax,sect
+	mov cl,7
+	sal ax,cl
+	mov di,ax
+	mov ax,seg ramdisk
+	mov es,ax
+	mov si,dma_adr
+	mov ax,dma_seg
+	jmp CPSEC
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+WRDISK:	call setup
+	mov di,offset secbuf
+	mov si,dma_adr
+	mov ax,dma_seg
+	mov ds,ax
+	mov cx,128
+	rep movs al,al
+	mov ah,14
+	call a2bios
+	mov al,es:reg_al
+	pop ds
+	pop es
+	ret
+
+setup:	mov ax,apseg
+	mov es,ax
+	mov ax,trk
+	mov es:word ptr reg_cx,ax
+	mov ax,sect
+	mov es:word ptr reg_dx,ax
+	ret
+
+;*********************************************
+;*                                           *
+;*               Data Areas                  *
+;*                                           *
+;*********************************************
+data_offset	equ offset $
+
+	dseg
+	org	data_offset	;contiguous with code segment
+IOBYTE	db	0
+disk	db	0	;disk number
+trk	dw	0	;track number
+sect	dw	0	;sector number
+dma_adr	dw	0	;DMA offset from DS
+dma_seg	dw	0	;DMA Base Segment
+
+	IF	loader_bios
+;---------------------------------------------
+;|                                           |
+signon 	db	cr,lf,cr,lf
+	db	'CP/M-86 Version 1.1',cr,lf,0
+memory	db	'AD128K or AD512K required'
+	db	cr,lf,0
+;|                                           |
+;---------------------------------------------
+	ENDIF	;loader_bios
+
+	IF	not loader_bios
+;---------------------------------------------
+;|                                           |
+signon	db	cr,lf,cr,lf
+	db	'System Generated - 26 Mar. 2022'
+	db	cr,lf,0
+memory	db	'AD512K found'
+	db	cr,lf,0
+ramdsk  db	'RAMDISK P: enabled'
+	db	cr,lf,0
+;|                                           |
+;---------------------------------------------
+	ENDIF	;not loader_bios
+
+int_trp	db	cr,lf
+	db	'Interrupt Trap Halt'
+	db	cr,lf
+
+;	System Memory Segment Table
+
+segtable db 1	;1 segments
+	dw tpa_seg	;1st seg starts after BIOS
+	dw tpa_len	;and extends to 5FFFF
+	dw 6000H	;2nd is 60000 -
+	dw 6000H	;C0000 (384k)
+
+	include apdisk.lib ;read in disk definitions
+
+loc_stk	rw  32	;local stack for initialization
+stkbase	equ offset $
+
+lastoff	equ offset $
+tpa_seg	equ 4000h + (lastoff+15) / 16
+tpa_len	equ 6000h - tpa_seg
+	db 0	;fill last address for GENCMD
+
+;*********************************************
+;*                                           *
+;*          Dummy Data Section               *
+;*                                           *
+;*********************************************
+	dseg	0	;absolute low memory
+	org 	0	;(interrupt vectors)
+int0_offset	rw	1
+int0_segment	rw	1
+;	pad to system call vector
+	rw	2*(bdos_int-1)
+
+bdos_offset	rw	1
+bdos_segment	rw	1
+
+	dseg	2000h
+ramdisk	rs	1
+
+	dseg	4000h	;AD128K
+	org	0
+ad128k	rs	1
+
+	dseg	8000h	;AD512K
+	org	0
+ad512k	rs	1
+
+; APPLE 2 Memory Area
+	dseg 1000h
+apseg	equ 1000h
+	org 0c000h
+kebd	rb 1
+	org 06h
+flag	rs 1		; BIOS function code
+	org 0ebh
+reg_al	rs 1		; Reg. AL 0ebh
+reg_bx	rs 2	 	; Reg. BX 0ech
+reg_cx	rs 2	 	; Reg. CX 0eeh
+	org 0fch
+reg_dx	rs 2	 	; Reg. DX 0fch
+	org 4000h
+secbuf	rs 128	 	; sector buffer
+
+	END

@@ -95,6 +95,16 @@ MLOADK:				; OK end
 	pop	es
 	ret
 
+; Resident helper uses two verified gaps in the combined CCP/BDOS image.
+; 0A40h belongs to the CCP DIR patch and must remain untouched.
+	org	0A25h
+BLTSHI:
+	xor	dx,dx
+	jmps	BLTSHIL
+BLTSHID:
+	mov	TGSHI,dx
+	ret
+
 	org	0A30h
 
 MLOADQ:				; error end of load program
@@ -130,6 +140,15 @@ PATCH15_AX:
 	mov	DGBASE,ax
 END_PATCH15:
 	jmp	STLDBD
+
+; Second half of BLTSHI; fits exactly before the function table at 0A80h.
+	org	0A76h
+BLTSHIL:
+	shl	bx,1
+	rcl	dx,1
+	dec	cl
+	jnz	BLTSHIL
+	jmps	BLTSHID
 
 ; The inactive IBM VINIT experiment is omitted from these comments.
 	org	0A80h
@@ -2175,6 +2194,8 @@ DWRITN:
 ; Set directory track & sector
 
 STDIRT:
+	xor	ax,ax		; directory records are below 65536
+	mov	TGSHI,ax
 	mov	bx,DIRCNT
 	mov	cl,2
 	shr	bx,cl			; get sector count
@@ -2185,7 +2206,7 @@ STDIRT:
 
 TRSSET:
 	mov	ax,TGSECT
-	mov	dx,0
+	mov	dx,TGSHI
 	div	SPT			; get track & sector
 	push	dx			; save sector
 	mov	cx,ax
@@ -2261,7 +2282,7 @@ CHKBLK:
 BLTSCT:
 	mov	cl,BSH
 	mov	bx,TGSECT
-	shl	bx,cl			; get block top sector
+	call	BLTSHI			; retain the high logical-record word
 	mov	BTSECT,bx		; save block top
 	mov	al,CURCNT		; get current count
 	and	al,BLM			; get bias in block
@@ -4124,7 +4145,8 @@ MDCONF	db	0		; complicated I/O mode
 	db	0,0,0,0
 LSTTGL	db	0		; List output echo toggle
 CURDRV	db	0		; current drive
-	rs	40
+TGSHI	dw	0		; high word of logical record, in reserved space
+	rs	38
 
 CONWID	db	80		; console width
 PRNWID	db	0		; printer width

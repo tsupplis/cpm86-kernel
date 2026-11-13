@@ -1,0 +1,7 @@
+disks   5
+diskdef 0,1,32,,1024,128,48,48,3
+diskdef 1,0
+diskdef 2,1,256,,2048,4080,1024,0,1
+diskdef 3,2
+diskdef 4,1,8,,1024,63,32,32,0
+endef

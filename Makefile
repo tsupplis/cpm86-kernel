@@ -1,4 +1,4 @@
-all: cpm.sys cpm816.sys cpmv20.sys cpmexp.sys cpmorg.sys commands extra
+all: cpm.sys mbc816.sys mbcv20.sys ad88.sys cpmexp.sys cpmorg.sys commands extra
 
 # 320K disks store side 1 in reverse cylinder order (pcbios.a86 SETUP_INTREG),
 # so cpmtools has to work on an untwisted copy that is twisted back at the end.
@@ -110,7 +110,7 @@ endef
 
 .PHONY: all commands extra clean dist check test test-exp test-320
 
-commands:
+commands: $(GENDEF)
 	$(MAKE) -C $(CMDDIR)
 
 extra: extra/144feat.inc
@@ -223,27 +223,43 @@ cpmexp.sys: cpm86exp.h86
 	cpm86_gencmd cpm86exp.h86 8080 "CODE[A51,M0000]"
 	mv cpm86exp.cmd cpmexp.sys
 
-cpmv20.sys: cpmv20.h86
-	cpm86_gencmd cpmv20.h86 8080 "CODE[A40]"
-	mv cpmv20.cmd cpmv20.sys
+# BIOS-only objects keep their source basenames. The *k intermediates contain
+# CCP + BDOS + BIOS, and must never overwrite mbcv20.h86 or mbc816.h86.
+mbcv20.sys: mbcv20k.h86
+	cpm86_gencmd $< 8080 "CODE[A40]"
+	mv mbcv20k.cmd $@
 
-cpmv20.bin: cpmv20.sys
-	dd bs=128 skip=1 if=cpmv20.sys of=cpmv20.bin
+mbcv20.bin: mbcv20.sys
+	dd bs=128 skip=1 if=$< of=$@
 
-cpmv20.h86: cpm.h86 mbcv20.h86 
-	doscat cpm.h86 > cpmv20.h86
-	cat mbcv20.h86 >> cpmv20.h86
+mbcv20k.h86: cpm.h86 mbcv20.h86
+	doscat cpm.h86 > $@
+	cat mbcv20.h86 >> $@
 
-cpm816.bin: cpm816.sys
-	dd bs=128 skip=1 if=cpm816.sys of=cpm816.bin
+mbc816.sys: mbc816k.h86
+	cpm86_gencmd $< 8080 "CODE[A40]"
+	mv mbc816k.cmd $@
 
-cpm816.sys: cpm816.h86
-	cpm86_gencmd cpm816.h86 8080 "CODE[A40]"
-	mv cpm816.cmd cpm816.sys
+mbc816.bin: mbc816.sys
+	dd bs=128 skip=1 if=$< of=$@
 
-cpm816.h86: cpm.h86 mbc816.h86 
-	doscat cpm.h86 > cpm816.h86
-	cat mbc816.h86 >> cpm816.h86
+mbc816k.h86: cpm.h86 mbc816.h86
+	doscat cpm.h86 > $@
+	cat mbc816.h86 >> $@
+
+# AD8088 Card for Apple II: upstream mksys.sub specifies segment 4000h.
+ad88.sys: ad88.h86
+	cpm86_gencmd $< 8080 "CODE[A4000]"
+	mv ad88.cmd $@
+
+ad88.h86: cpm.h86 ad88bios.h86
+	doscat cpm.h86 > $@
+	cat ad88bios.h86 >> $@
+
+ad88bios.h86: apdisk.lib
+
+apdisk.lib: apdisk.def tools/gendef.sh $(GENDEF)
+	sh tools/gendef.sh apdisk '$$C'
 
 cpm86.h86: cpm.h86 pcbios.h86
 	doscat cpm.h86 > cpm86.h86
@@ -286,7 +302,10 @@ clean:
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
 	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img
 	rm -rf *.img.wrk
-	rm -rf cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
+	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisk.lib
+	rm -f mbc816k.cmd mbcv20k.cmd ad88.cmd
+	# Remove outputs left by the former MBC target names.
+	rm -f cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin
 	rm -rf *.xxd
 
 clean-images:
@@ -310,6 +329,7 @@ disks.zip: Makefile $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs t
 check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
 	$(MAKE) -C commands/disk check
 	python3 tools/kernel_check.py
+	python3 tools/feature_compat_check.py
 	python3 tools/kernel_check_test.py
 	$(MAKE) -C commands/chkcpmfs check-bdos
 
@@ -329,3 +349,9 @@ check-disk:
 
 check-disk-live: all
 	python3 tools/disk_live_check.py
+
+# Execute built hard-disk capacity/addressing routines; no physical disks.
+.PHONY: check-hd-capacity
+check-hd-capacity: cpm.sys cpmexp.sys
+	$(MAKE) -C commands/hdmaint check
+	python3 tools/hd_capacity_check.py

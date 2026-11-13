@@ -5,3 +5,7 @@ mbr.inc
 bootsect.inc
 loader.inc
 __pycache__/
+btlarge.bin
+btlarge.inc
+ldlarge.bin
+ldlarge.inc

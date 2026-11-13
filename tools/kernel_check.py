@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard kernel comment/style edits against emitted-byte or reference drift."""
+"""Guard maintained and frozen kernels against unreviewed byte drift."""
 import argparse
 import hashlib
 import json
@@ -59,7 +59,7 @@ def check(root):
                              separators=(',', ':')).encode()
         if hashlib.sha256(payload).hexdigest() != expected:
             raise ValueError(f'{name}: emitted bytes differ from the EXP baseline')
-        print(f'PASS: {name} matches its pre-cleanup baseline ({len(emitted)} bytes)')
+        print(f'PASS: {name} matches its pinned module baseline ({len(emitted)} bytes)')
     variants = manifest.get('variant_differences')
     if variants:
         standard = image_map(root / variants['standard'])
@@ -80,9 +80,7 @@ def check(root):
             raise ValueError(f'{maintained}: differs from {original} at '
                              f'record {kind:02X}, offset {address:04X}')
         print(f'PASS: {maintained} matches {original} ({len(left)} emitted bytes)')
-    if (root / 'cpm.sys').read_bytes() != (root / 'cpmorg.sys').read_bytes():
-        raise ValueError('cpm.sys differs from cpmorg.sys')
-    print('PASS: complete kernel images and frozen references match the baseline')
+    print('PASS: maintained images and frozen references match their independent baselines')
 
 
 if __name__ == '__main__':

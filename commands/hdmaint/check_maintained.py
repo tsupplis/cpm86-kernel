@@ -13,7 +13,7 @@ assert struct.unpack_from("<H", raw, 19)[0] == 0, "EXTRA contains file data"
 assert struct.unpack_from("<H", raw, 23)[0] == 0x800, "EXTRA allocation changed"
 data = raw[128 + code_size:128 + code_size + data_size]
 assert b"version 1.1N" in data, "Missing maintained version banner"
-for name, offsets in (("mbr", (0xefe,)), ("bootsect", (0x10fe, 0x12fe)), ("loader", (0x18fe,))):
+for name, offsets in (("mbr", (0xefe,)), ("btlarge", (0x10fe, 0x12fe)), ("ldlarge", (0x18fe,))):
     payload = Path(name + ".bin").read_bytes()
     for offset in offsets:
         assert data[offset:offset + len(payload)] == payload, f"Embedded {name} differs"

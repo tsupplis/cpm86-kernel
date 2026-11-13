@@ -232,9 +232,18 @@ Notes:
 | Symbol | Start | End+1 | Next ORG | Gap (dec) | Gap (hex) | Hole range | Notes |
 |--------|-------|-------|----------|-----------|-----------|------------|-------|
 | `CFGPFKTBL` | `47F0h` | `4980h` | `4980h` | 0 | — | — | RS 400, ends exactly at `HDDBUF` |
-| `HDDBUF` | `4980h` | `4B80h` | `4BE2h` | 98 | `62h` | `4B80h`–`4BE1h` | Reserved padding — original DRI layout |
+| `HDDBUF` | `4980h` | `4B80h` | `4BE2h` | 98 | `62h` | `4B80h`–`4BE1h` | Cold-only `HD_CAPACITY`; reclaimed after INIT |
 | `DIRBUF` | `4BE2h` | `4C62h` | `4C62h` | 0 | — | — | RS 128, ends exactly at `CSV14` |
 
-- The **98-byte gap** (`4B80h`–`4BE1h`) is present in the original Digital Research binary, confirmed unreferenced in all `.lst` files, and must not be used.
+- The former **98-byte gap** (`4B80h`–`4BE1h`) now contains the cold-only `HD_CAPACITY` helper. It runs during hard-disk discovery, before the track buffer or 144FEAT reclaims this memory. It must not contain resident code or data. The replacement capacity check is padded to preserve all following BIOS addresses and the exact CALL signature checked by 144FEAT patch W.
 - `DSKBUF`/`INIT` overlay: INIT code+data spans `3BE2h`–`4062h` (**1153 bytes**, `481h`), placed in the disk-buffer area and reclaimed after first boot.
 
+
+### Larger-volume compatibility additions
+
+`BLTSHI` uses `0A25h`–`0A2Dh` and `0A76h`–`0A7Fh` in the standard
+BDOS, preserving the CCP DIR patch at `0A40h`. The EXP BDOS uses
+`0A60h`–`0A6Fh`. These additions reduce the free patch space listed above.
+`TGSHI` uses the previously reserved word at `24B8h`; subsequent system
+variables retain their addresses. Existing 144FEAT patch locations and byte
+signatures are checked by `tools/feature_compat_check.py`.

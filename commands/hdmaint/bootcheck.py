@@ -10,6 +10,8 @@ def normalize(source, destination):
         "mbr": [b":02000085006019", b":02000085000079"],
         "bootsect": [b":0200008507C0B2", b":02000085302029"],
         "loader": [],
+        "ldlarge": [],
+        "btlarge": [b":0200008507C0B2", b":02000085302029"],
     }[source.stem]
     lines = source.read_bytes().splitlines()
     declarations = [line for line in lines if len(line) >= 9 and line.startswith(b":")
