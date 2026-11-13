@@ -1,6 +1,41 @@
 ; Synthetic IBM BIOS and CP/M BDOS for the actual linked CMD image.
 ; Runs under emu2 as a DOS COM harness.  No host disks are accessed.
 ; BDOS deliberately corrupts registers and ES; disk contents depend on CH/DH.
+%ifndef SECTORS
+%define SECTORS 8
+%endif
+%if SECTORS == 8
+%define SLOT_PARAS 100h
+%elif SECTORS <= 16
+%define SLOT_PARAS 200h
+%else
+%define SLOT_PARAS 400h
+%endif
+%ifndef REPEAT_SECTORS
+%define REPEAT_SECTORS SECTORS
+%endif
+%macro geom_mov 3
+    mov %1,%2
+%if REPEAT_SECTORS != SECTORS
+    cmp byte [cs:repeated],0
+    je %%done
+    mov %1,%3
+%%done:
+%endif
+%endmacro
+%macro geom_cmp 3
+%if REPEAT_SECTORS != SECTORS
+    cmp byte [cs:repeated],0
+    jne %%second
+%endif
+    cmp %1,%2
+%if REPEAT_SECTORS != SECTORS
+    jmp %%done
+%%second:
+    cmp %1,%3
+%%done:
+%endif
+%endmacro
 bits 16
 cpu 8086
 
@@ -405,9 +440,20 @@ disk_model:
     ; Each aligned head buffer must fit within a 64 KiB DMA page.
     push ax
     mov ax,es
-    test ax,3ffh
+%if REPEAT_SECTORS != SECTORS
+    cmp byte [cs:repeated],0
+    jne .repeat_alignment_0
+%endif
+    test ax,SLOT_PARAS-1
+%if REPEAT_SECTORS != SECTORS
+    jmp .alignment_done_0
+.repeat_alignment_0:
+    test ax,(100h << (REPEAT_SECTORS != 8))-1
+.alignment_done_0:
+%endif
     pop ax
     jnz bad_11
+    call check_bulk_bounds
 .nonzero:
 %if IS_COPY
     cmp ah,2
@@ -424,7 +470,7 @@ disk_model:
     jne bad_12
     jmp .geometry_probe
 .bulk_count:
-    cmp al,SECTORS
+    geom_cmp al,SECTORS,REPEAT_SECTORS
     jne bad_12
     cmp ah,2
     je .read
@@ -469,15 +515,20 @@ disk_model:
     mov al,ch
     xor al,dh
     mov di,bx
-    mov cx,SECTORS*512
+    geom_mov cx,SECTORS*512,REPEAT_SECTORS*512
     cld
     rep stosb
-%if SECTORS >= 9
+%if SECTORS >= 9 || REPEAT_SECTORS >= 9
+    geom_mov cx,SECTORS,REPEAT_SECTORS
+    cmp cx,9
+    jb .no_last_pattern
     mov di,bx
-    add di,(SECTORS-1)*512
+    geom_mov cx,(SECTORS-1)*512,(REPEAT_SECTORS-1)*512
+    add di,cx
     xor al,99h
     mov cx,512
     rep stosb
+.no_last_pattern:
 %endif
 %if MISMATCH
     cmp dl,1
@@ -498,7 +549,13 @@ disk_model:
 %ifdef POISON_PADDING
     mov di,bx
     add di,SECTORS*512
+%if SECTORS == 8
+    mov cx,0
+%elif SECTORS <= 16
+    mov cx,2000h-SECTORS*512
+%else
     mov cx,4000h-SECTORS*512
+%endif
     mov al,dl
     rep stosb
 %endif
@@ -527,20 +584,30 @@ disk_model:
     push di
     mov al,ch
     xor al,dh
-    mov cx,(SECTORS-1)*512
-%if SECTORS == 8
-    mov cx,SECTORS*512
-%endif
+    geom_mov cx,SECTORS,REPEAT_SECTORS
+    cmp cx,9
+    jb .write_plain_count
+    dec cx
+.write_plain_count:
+    push dx
+    push ax
+    mov ax,512
+    mul cx
+    mov cx,ax
+    pop ax
+    pop dx
     mov di,bx
     cld
     repe scasb
     jne bad_14
-%if SECTORS >= 9
+    geom_mov cx,SECTORS,REPEAT_SECTORS
+    cmp cx,9
+    jb .write_data_done
     xor al,99h
     mov cx,512
     repe scasb
-%endif
     jne bad_14
+.write_data_done:
     pop di
     pop cx
 .reset:
@@ -555,7 +622,7 @@ disk_model:
     xor si,si
     mov ds,si
     lds si,[78h]
-    cmp byte [si+4],SECTORS
+    geom_cmp byte [si+4],SECTORS,REPEAT_SECTORS
     jne bad
     pop si
     pop ds
@@ -576,7 +643,7 @@ disk_model:
     jne bad
     add si,4
     inc cl
-    cmp cl,SECTORS+1
+    geom_cmp cl,SECTORS+1,REPEAT_SECTORS+1
     jne .format_id
     mov byte [cs:formatted],1
     pop cx
@@ -591,15 +658,14 @@ disk_model:
 %endif
     cmp dl,1
     je .second_probe
-%if SECTORS == 8
-    jmp .absent
-%else
+    geom_mov ax,SECTORS,REPEAT_SECTORS
+    cmp ax,8
+    je .absent
     jmp .probe_ok
-%endif
 .second_probe:
-%if SECOND_SECTORS == 8
-    jmp .absent
-%endif
+    geom_mov ax,SECOND_SECTORS,REPEAT_SECTORS
+    cmp ax,8
+    je .absent
 .probe_ok:
     jmp .reset
 .boot_probe:
@@ -647,12 +713,12 @@ disk_model:
     mov word [es:bx+22],2
 %endif
     mov word [es:bx+26],SIDES
-    mov word [es:bx+24],SECTORS
-    mov word [es:bx+19],CYLINDERS*SIDES*SECTORS
+    geom_mov word [es:bx+24],SECTORS,REPEAT_SECTORS
+    geom_mov word [es:bx+19],CYLINDERS*SIDES*SECTORS,CYLINDERS*SIDES*REPEAT_SECTORS
     cmp dl,1
     jne .boot_fields_ready
-    mov word [es:bx+24],SECOND_SECTORS
-    mov word [es:bx+19],CYLINDERS*SIDES*SECOND_SECTORS
+    geom_mov word [es:bx+24],SECOND_SECTORS,REPEAT_SECTORS
+    geom_mov word [es:bx+19],CYLINDERS*SIDES*SECOND_SECTORS,CYLINDERS*SIDES*REPEAT_SECTORS
 .boot_fields_ready:
 %if BAD_BPB
     mov word [es:bx+22],0
@@ -703,6 +769,22 @@ bad_9:
 bad_10:
     mov ax,4c0ah
     int 21h
+
+check_bulk_bounds:
+    push ax
+    push dx
+    mov ax,es
+    cmp ax,4400h
+    jb .done                  ; Resident scratch, not the allocated bulk block
+    geom_mov dx,SLOT_PARAS,(100h << (REPEAT_SECTORS != 8))
+    add ax,dx
+    jc bad
+    cmp ax,4001h+MEMSIZE
+    ja bad
+.done:
+    pop dx
+    pop ax
+    ret
 
 bad_11:
     mov ax,4c0bh
@@ -819,7 +901,7 @@ xios:
     jne bad
     cmp byte [ss:bp+15],1
     je .count_ready
-    cmp byte [ss:bp+15],SECTORS
+    geom_cmp byte [ss:bp+15],SECTORS,REPEAT_SECTORS
     jne bad
 .count_ready:
     cmp byte [ss:bp+14],1
@@ -858,9 +940,20 @@ xios:
     je .dma_ok
     push ax
     mov ax,es
-    test ax,3ffh
+%if REPEAT_SECTORS != SECTORS
+    cmp byte [cs:repeated],0
+    jne .repeat_alignment_1
+%endif
+    test ax,SLOT_PARAS-1
+%if REPEAT_SECTORS != SECTORS
+    jmp .alignment_done_1
+.repeat_alignment_1:
+    test ax,(100h << (REPEAT_SECTORS != 8))-1
+.alignment_done_1:
+%endif
     pop ax
     jnz bad
+    call check_bulk_bounds
 .dma_ok:
 %if FAIL_NATIVE
     cmp byte [ss:bp+15],1
@@ -902,7 +995,7 @@ xios:
 %if FAIL_NATIVE == 4
     ; Destroy scratch on a failed read; retries must still have source data.
     xor di,di
-    mov cx,SECTORS*512
+    geom_mov cx,SECTORS*512,REPEAT_SECTORS*512
     mov al,0ffh
     cld
     rep stosb

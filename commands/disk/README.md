@@ -65,10 +65,22 @@ registers; no unknown entry is called without a successful handshake. Updated
 kernels provide physical read/write 35/36 and variable format 29. This extends
 maintenance access; it does not add FAT filesystem mounting to CCP/M.
 
-Each head uses a physical 16 KiB-aligned slot. Eighteen sectors fit without crossing
-a 64 KiB DMA boundary. Padding is cleared, and DCOMP compares only the sector data in each of its
-two slots, using word comparisons and excluding padding bytes. Format CHRN DMA and verification use separate
-aligned resident scratch, preserving buffered source data across retries.
+Bulk storage starts on a physical 16 KiB boundary. Each head uses the smallest
+power-of-two slot that fits its sector data:
+
+| Sectors/head | Data | Slot |
+| --- | --- | --- |
+| 8 | 4 KiB | 4 KiB |
+| 9 | 4.5 KiB | 8 KiB |
+| 15 | 7.5 KiB | 8 KiB |
+| 18 | 9 KiB | 16 KiB |
+
+Slot size and batch capacity are recalculated for each disk pair. Transfers
+stay within physical 64 KiB DMA boundaries. Only sector data is cleared and
+compared; padding is excluded. Smaller slots reduce single-drive swaps, not
+the amount of disk I/O. With 256 KiB of usable bulk memory, a 360K copy needs
+three batches instead of five. Format CHRN DMA and verification retain separate
+aligned resident scratch, preserving source data across retries.
 The private stack remains resident. Trailing DMA buffers are uninitialized
 storage: CMD MIN reserves them, while LEN omits their zero bytes from disk.
 

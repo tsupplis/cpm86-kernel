@@ -225,7 +225,7 @@ copy_geometry_ready:
 	mov	cl,1h
 	mov	ch,current_cylinder
 	add	ch,cylinders_per_buffer
-; Exclusive end of this memory batch; never read beyond cylinder 39.
+; Exclusive end of this memory batch; clamp to the selected cylinder limit.
 	mov	batch_end_cylinder,ch
 	sub	ch,cylinders_per_buffer
 	mov	es,word ptr buffer_segment
@@ -258,16 +258,16 @@ read_track_succeeded:
 	jnz	advance_read_buffer
 	or	byte ptr copy_flags,flag_geometry_known + flag_two_heads
 	mov	ah,cylinders_per_buffer
-	shr	ah,1                            ; Two heads consume twice the buffer space per cylinder.
+	shr	ah,1                            ; Two head slots per cylinder.
 	mov	cylinders_per_buffer,ah
 	mov	batch_end_cylinder,ah
 	mov	byte ptr copy_side_count_char,32h
 	call	show_sides
 
-; Advance ES by 400h paragraphs per head; advance CH only when the head
+; Advance ES by the selected slot size; advance CH only when the head
 ; wraps to zero.
 advance_read_buffer:
-	add	bp,400h
+	add	bp,slot_paragraphs
 	mov	es,bp
 	xchg	dh,next_head
 	or	dh,dh
@@ -304,7 +304,7 @@ read_track_failed:
 ; Head one failed the geometry probe; undo its buffer advance before
 ; selecting one side.
 discard_side_probe_buffer:
-	sub	bp,400h                         ; Undo the advance made before probing head one.
+	sub	bp,slot_paragraphs                         ; Undo the advance made before probing head one.
 	mov	es,bp
 
 ; Do not treat a missing second head as data damage. Keep later reads on
@@ -391,7 +391,7 @@ advance_target_side:
 	inc	ch
 
 advance_write_buffer:
-	add	bp,400h
+	add	bp,slot_paragraphs
 	mov	es,bp
 	cmp	ch,batch_end_cylinder
 	jnz	prepare_target_track
@@ -433,7 +433,7 @@ try_formatting_target:
 ; Formatting starts with head zero, so rewind the buffered head when the
 ; failure was on head one.
 rewind_target_to_side_zero:
-	sub	bp,400h
+	sub	bp,slot_paragraphs
 	mov	es,bp
 	xchg	dh,next_head
 	jmp	prepare_target_track
@@ -1135,7 +1135,7 @@ args_return:
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
 ; Round up to an 16 KiB boundary so a nine-sector BIOS transfer cannot cross
-; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+; a 64 KiB DMA boundary. Geometry determines the head-slot size and count.
 ;-----------------------------------------------------------------------------
 alloc_buffer:
 	mov	dx,offset mem_block
@@ -1161,14 +1161,12 @@ memory_reserved:
 	mov	ax,mem_length
 	sub	ax,bx
 	jc	memory_error
-	mov	cl,10
-	shr	ax,cl
-	cmp	ax,80
-	jbe	buffer_sized
-	mov	ax,80
-buffer_sized:
-	cmp	ax,2
+	mov	bulk_paragraphs,ax
+; Geometry is unknown until the first disk is inserted. Reserve enough for
+; two minimum-sized heads now; check the selected slot size after detection.
+	cmp	ax,200h
 	jc	memory_error
+	mov	al,2
 	mov	cylinders_per_buffer,al
 	mov	word ptr buffer_segment,dx
 	ret

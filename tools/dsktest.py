@@ -12,8 +12,9 @@ count = 0
 def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
          repeat=0, retry=0, formatting=0, memfail=0, error=None, native=False, version=None, full_version=0x1431,
          console_state=0, console_number=0, open_files=0, open_after_lock=0,
-         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0, corrupt_verify=False, source_fail=False, relocation=0, poison_padding=False):
+         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0, corrupt_verify=False, source_fail=False, relocation=0, poison_padding=False, repeat_sectors=None, expected_prompts=None):
     global count
+    slot_paragraphs = 0x100 if sectors == 8 else 0x200 if sectors <= 16 else 0x400
     probe_error = native and '[1' not in tail and (
         sides == 1 or (fail_probe and fail_times >= 4))
     if probe_error:
@@ -24,25 +25,26 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
     if abort >= 0:
         reads, writes = abort, 0
     if abort_write >= 0:
-        reads, writes = min(cylinders*heads,((memory-0x3ff)//0x400)//heads*heads), abort_write
+        reads, writes = min(cylinders*heads,((memory-0x3ff)//slot_paragraphs)//heads*heads), abort_write
     if fail_native == 4:
         reads = cylinders * heads
         writes = cylinders * heads + min(fail_times, 3)
     if tool == 'dcomp' and fail_native == 2 and fail_times == 4 and not fail_probe:
         reads = cylinders * heads * 2 - 1
     if probe_error:
-        reads = (min((memory-0x3ff)//0x400,80)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
+        reads = (min((memory-0x3ff)//slot_paragraphs,2*cylinders)&~1)+1 if probe_drive == 1 and tool == 'dcomp' else 1
         writes = 0
-    geometry_error = error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')
+    geometry_memory_error = error == 'Insufficient memory' and not memfail and memory >= 0x5ff
+    geometry_error = geometry_memory_error or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')
     second_geometry_error = tool == "dcomp" and second_sectors is not None and second_sectors != sectors and geometry_error
     if second_geometry_error:
-        reads = min((memory-0x3ff)//0x400,cylinders*heads) & ~1
+        reads = min((memory-0x3ff)//slot_paragraphs,cylinders*heads) & ~1
     if corrupt_verify:
         reads=cylinders*heads; writes=4*cylinders*heads
     if source_fail:
         reads=heads; writes=0
     touched = 0
-    if native and (reads or writes or error in ('Cannot determine','Incompatible or conflicting','Nine-sector/probe support')):
+    if native and (reads or writes or geometry_error):
         drives = re.findall(r'([AB]):', tail.upper())
         first = ord(drives[0]) - ord('A')
         second = ord(drives[1]) - ord('A') if len(drives) > 1 else 0
@@ -66,6 +68,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
                    FORCE_FORMAT=formatting, MEMFAIL=memfail,
                    EXPECT_READS=reads * (repeat + 1),
                    EXPECT_WRITES=writes * (repeat + 1))
+    if repeat_sectors is not None: options['REPEAT_SECTORS']=repeat_sectors
     supported=native and full_version==0x1441 and ((options['OSVER']>>8)&15) in (4,6)
     status=3 if error=='Cancelled.' or abort>=0 or abort_write>=0 else 2 if error else 1 if mismatch else 0
     options['EXPECT_STATUS']=status if supported else -1
@@ -109,6 +112,8 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
     if mismatch==4:
         locations=re.findall(r'Track (\d+), Side (\d)',output)
         assert locations==[(f'{c:02}', '1') for c in range(cylinders)]*(repeat+1),locations
+    if expected_prompts is not None:
+        assert output.count('Insert ') == expected_prompts, output
     count += 1
 
 
@@ -247,4 +252,23 @@ case('dcomp',native=True,full_version=0x1441,fail_native=2,fail_times=4,error='U
 for tool in ('dcopy','dcomp'):
     case(tool,native=True,version=0x1641,full_version=0x1441)
     case(tool,native=True,full_version=0x1442,error='Requires CP/M-86')
+# Allocation can fit two small slots but fail after detecting larger geometry.
+for tool in ('dcopy', 'dcomp'):
+    for native, version, extended in [(False,0x1431,0),(True,0x1431,1),(True,0x1441,0)]:
+        case(tool, native=native, full_version=version, extended=extended,
+             sectors=9, memory=0x5ff, error='Insufficient memory')
+    case(tool, native=True, full_version=0x1441, sectors=18, cylinders=80,
+         memory=0x7ff, error='Insufficient memory')
+# Exact fit and odd head counts; reduced swap counts with 256 KiB usable.
+for tool in ('dcopy', 'dcomp'):
+    for sectors in (8, 9):
+        for memory in (0x5ff if sectors == 8 else 0x7ff,
+                       0x6ff if sectors == 8 else 0x9ff):
+            case(tool, sectors=sectors, memory=memory, tail='A: A:')
+        case(tool, sectors=sectors, memory=0x43ff, tail='A: A:',
+             expected_prompts=(4 if sectors == 8 else 6) if tool == 'dcopy' else (3 if sectors == 8 else 4))
+        for native,version,extended in [(False,0x1431,0),(True,0x1431,1),(True,0x1441,0)]:
+            case(tool, sectors=sectors, repeat=1, repeat_sectors=17-sectors,
+                 tail='A: A:', memory=0x1401, native=native,
+                 full_version=version,extended=extended)
 print(f'PASS: {count} dual-OS simulated-disk cases (BDOS clobbers ES and working registers)')

@@ -254,6 +254,7 @@ geometry_format_not_1200:
 geometry_format_gap_ready:
         mov ah,geometry_cylinders
         mov cylinder_limit,ah
+        call geometry_buffer_size
         mov geometry_known,1
         mov dx,offset msg_eight
         cmp al,8
@@ -306,14 +307,52 @@ geometry_sector_buffer:
 geometry_sector_done:
         ret
 
-; Every head occupies a 16 KiB slot, aligned on a physical 16 KiB boundary.
-; Eighteen sectors fit inside it and never cross a 64 KiB DMA page. Zero padding
-; allows DCOMP to compare two slots without treating unused bytes as data.
+; Keep the bulk base 16 KiB aligned, then use the smallest power-of-two
+; slot that fits one head. Each slot remains inside a physical 64 KiB page.
+; Recompute once for every disk pair, after validated geometry detection.
+geometry_buffer_size:
+        push ax ! push bx ! push cx
+        mov slot_paragraphs,100h
+        mov slot_bytes,1000h
+        mov cl,8
+        cmp track_sectors,8
+        je geometry_slots_ready
+        mov slot_paragraphs,200h
+        mov slot_bytes,2000h
+        mov cl,9
+        cmp track_sectors,16
+        jbe geometry_slots_ready
+        mov slot_paragraphs,400h
+        mov slot_bytes,4000h
+        mov cl,10
+geometry_slots_ready:
+        mov ax,bulk_paragraphs
+        shr ax,cl
+        xor bx,bx
+        mov bl,cylinder_limit
+        shl bx,1
+        cmp ax,bx
+        jbe geometry_slots_capped
+        mov ax,bx
+geometry_slots_capped:
+; Even counts allow DCOMP's pairs of head slots and unknown side count.
+        and al,0feh
+        cmp ax,2
+        jae geometry_slots_valid
+        jmp memory_error
+geometry_slots_valid:
+        mov cylinders_per_buffer,al
+        pop cx ! pop bx ! pop ax
+        ret
+
+; Clear only disk data, retaining deterministic bytes after failed reads.
+; Padding is never copied or compared.
 clear_track_slot:
         push ax ! push cx ! push di
         xor ax,ax
         xor di,di
-        mov cx,2000h
+        xor cx,cx
+        mov ch,track_sectors
         rep stosw
         pop di ! pop cx ! pop ax
         ret
@@ -364,6 +403,9 @@ disk_restore:
 disk_restore_done:
         ret
         dseg
+bulk_paragraphs dw 0
+slot_paragraphs dw 400h
+slot_bytes dw 4000h
 cylinder_limit db 40
 geometry_candidate_cylinders db 40
 geometry_cylinders db 40

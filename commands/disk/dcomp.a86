@@ -138,7 +138,7 @@ compare_second_diskette:
 ; Two single-sided cylinders or one double-sided cylinder fit the small
 ; buffer.
 	mov	dh,small_buffer_cylinders
-	call	read_tracks                     ; Read the next pair of 16 KiB slots from the second diskette.
+	call	read_tracks                     ; Read the next pair of head slots from the second diskette.
 	call	compare_buffers                 ; Compare that span with its corresponding part of disk one.
 ; Continue at the first cylinder not yet read into the small buffer.
 	mov	ch,batch_end_cylinder
@@ -255,6 +255,11 @@ read_tracks:
 	push dx
 	call geometry_detect
 	pop dx
+; Only the first (bulk) read establishes slot size and capacity. Later
+; cylinder-zero reads validate disk two without changing the small count.
+	test byte ptr compare_flags,flag_geometry_known
+	jnz compare_geometry_ready
+	mov dh,cylinders_per_buffer
 compare_geometry_ready:
 	mov	byte ptr read_retries,0h
 	mov	bp,es
@@ -294,7 +299,7 @@ probe_second_side:
 	jnz	advance_read_buffer
 	or	byte ptr compare_flags,flag_geometry_known + flag_two_heads
 	mov	ah,cylinders_per_buffer
-	shr	ah,1                            ; Double-sided cylinders occupy two 16 KiB head buffers.
+	shr	ah,1                            ; Double-sided cylinders occupy two head slots.
 	mov	cylinders_per_buffer,ah
 	mov	batch_end_cylinder,ah
 ; The small buffer now contains one cylinder instead of two.
@@ -302,10 +307,10 @@ probe_second_side:
 	mov	byte ptr compare_side_count_char,32h
 	call	show_sides
 
-; One DMA-safe head slot consumes 400h paragraphs; increment the cylinder
+; Advance by one geometry-sized DMA-safe slot; increment the cylinder
 ; when heads wrap.
 advance_read_buffer:
-	add	bp,400h
+	add	bp,slot_paragraphs
 	mov	es,bp
 	xchg	dh,next_head
 	or	dh,dh
@@ -351,7 +356,7 @@ retry_disk_not_ready:
 	jmp	read_track_attempt
 
 discard_side_probe_buffer:
-	sub	bp,400h
+	sub	bp,slot_paragraphs
 	mov	es,bp
 
 ; Skip head-one reads and keep the small buffer covering two single-sided
@@ -436,7 +441,8 @@ compare_buffers:
 	inc bx
 	call compare_head
 	mov ax,word ptr bulk_compare_segment
-	add ax,800h
+	add ax,slot_paragraphs
+	add ax,slot_paragraphs
 	mov word ptr bulk_compare_segment,ax
 	ret
 
@@ -445,8 +451,8 @@ compare_head:
 	mov ax,word ptr bulk_compare_segment
 	or bx,bx
 	jz compare_head_ready
-	add si,4000h
-	add ax,400h
+	add si,slot_bytes
+	add ax,slot_paragraphs
 compare_head_ready:
 	mov es,ax
 	xor di,di
@@ -910,7 +916,7 @@ args_return:
 ; function 53 already reserves the block, so skip the second allocation.
 ; Check AL for success and let termination release the transfer storage.
 ; Round up to an 16 KiB boundary so a nine-sector BIOS transfer cannot cross
-; a 64 KiB DMA boundary.  Allow at most 80 head tracks (one complete disk).
+; a 64 KiB DMA boundary. Geometry determines the head-slot size and count.
 ;-----------------------------------------------------------------------------
 alloc_buffer:
 	mov	dx,offset mem_block
@@ -936,15 +942,12 @@ memory_reserved:
 	mov	ax,mem_length
 	sub	ax,bx
 	jc	memory_error
-	mov	cl,10
-	shr	ax,cl
-	cmp	ax,80
-	jbe	buffer_sized
-	mov	ax,80
-buffer_sized:
-	cmp	ax,2
+	mov	bulk_paragraphs,ax
+; Geometry is unknown until the first disk is inserted. Reserve enough for
+; two minimum-sized heads now; check the selected slot size after detection.
+	cmp	ax,200h
 	jc	memory_error
-	and	al,0feh		; small reads consume pairs of head tracks
+	mov	al,2
 	mov	cylinders_per_buffer,al
 	mov	bulk_buffer_segment,dx
 	mov	ax,ds
