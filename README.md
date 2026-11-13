@@ -4,7 +4,7 @@ CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088
 
 It is build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
-![CP/M-86 menu](images/menu.png)
+![CP/M-86](images/cpm86.png)
 
 ## Kernels
 
@@ -194,7 +194,7 @@ Use [PCE](http://www.hampa.ch/pce/) with cpmtools for testing, or try the 160K i
 
 <p align="center">
 <img src="./images/v20mbc.png" alt="V20 MBC" width="48%">
-<img src="./images/cpm86.png" alt="CP/M-86 in PCE" width="48%">
+<img src="./images/menu.png" alt="CP/M-86 Menu" width="48%">
 <br><sub>V20 MBC hardware &nbsp;·&nbsp; CP/M-86 running in PCE</sub><br>
 <img src="./images/setup.png" alt="BIOS Setup 1.2" width="48%">
 <img src="./images/dskmaint.png" alt="Disk Maintenance 1.2" width="48%">
