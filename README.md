@@ -46,6 +46,7 @@ These patches are present in the frozen and maintained BDOS sets. The original P
 | Console abort | Match the XT call order in `CONSTA` |
 | User 0 system files | Remove the erroneous S1 test in `SRDRNZ`; retain instruction offsets with NOPs |
 | PC BIOS | AT interrupt-vector fix, year-2000 fix and 80-column colour fallback |
+| PC BIOS RTC date | Standard and EXP read the initial date via `INT 1Ah/AH=04h` when supported. Stock XT or invalid replies retain the default; time initialization and fixed addresses are unchanged. See [mapping](mapping.md#optional-bios-rtc-date). |
 | Maintained PC hard disks | Support partitions up to 31.5 MiB; see [HDMAINT compatibility notes](commands/hdmaint/README.md) |
 
 Tool patches: 03 GENDEF, 04–05 ED, 09 PIP and 12 SUBMIT. Patches 02 (LDCOPY) and 14 (sample BIOS TRACK.A86) are outside this kernel.

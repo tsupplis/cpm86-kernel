@@ -250,19 +250,38 @@ signatures are checked by `tools/feature_compat_check.py`.
 
 ### Optional BIOS RTC date
 
-Both maintained PC BIOSes replace the three-byte cold-start call at `3CDFh`
-with `INIT_RTC`. The helper occupies `4400h`–`44D5h` in existing INIT padding,
-before `CFG_BUF` at `4780h`. It finishes by jumping to the original `RESETIO`.
-All pre-existing symbols, resident entry points and 144FEAT hooks retain
-their addresses. The frozen BIOS is unchanged.
+Applies to `pcbios.a86` and `pcbioexp.a86`; the frozen BIOS is unchanged.
 
-INT 1Ah/AH=04h supplies the cold-start date only. Carry errors, unchanged
-registers on unsupported PC/XT BIOSes, invalid BCD and impossible calendar
-dates leave the default intact. Century, year, month and day are committed
-together; time initialization is unchanged. No CMOS ports are accessed.
-The helper is not used after cold start, when disk buffers may reclaim it.
+| Location | Use |
+| --- | --- |
+| `3CDFh`–`3CE1h` | Existing three-byte cold-start CALL now targets `INIT_RTC` |
+| `4400h`–`44D5h` | Cold-only RTC helper and month-length table; 214 bytes of existing INIT padding |
+| `4412h` | `INT 1Ah` instruction, with `AH=04h` |
+| `44D6h` | `RTC_END`, first byte after the helper |
+| `4780h` | Existing `CFG_BUF` boundary, unchanged |
+
+The helper finishes by jumping to the original `RESETIO`. All 613 pre-existing
+symbols in each BIOS retain their addresses; all ten fixed 144FEAT hook
+signatures remain unchanged. The helper's space may be reclaimed after boot
+and must not hold resident code or data.
+
+| BIOS response | Cold-start result |
+| --- | --- |
+| Valid RTC date | Set century, year, month and day together |
+| Unsupported call, carry error, invalid BCD or impossible date | Keep the existing default date |
+
+A stock IBM PC/XT BIOS provides timer ticks through `INT 1Ah/AH=00h`, but
+not the AT-style RTC date service `AH=04h`. An XT needs a replacement or
+extension BIOS implementing that service; an add-on clock alone is insufficient.
+This helper reads **date only**. Time initialization is unchanged, and no
+CMOS ports are accessed. A later startup utility such as ATINIT can overwrite
+the initialized date/time.
 
 The call clears carry first for BIOSes that leave it unchanged on success
-([RBIL](https://fd.lod.bz/rbil/interrup/bios/1a04.html)); `FFFFh` sentinels in
-CX/DX distinguish an unsupported no-op from a valid date.
-`tools/rtc_check.py` exercises both built kernels with simulated BIOS replies.
+([RBIL](https://fd.lod.bz/rbil/interrup/bios/1a04.html)). `FFFFh` sentinels in
+CX/DX detect unsupported no-op replies even when carry is clear.
+
+`tools/rtc_check.py`, included in `make check`, tests 25 simulated BIOS replies
+per kernel, including fallback, calendar validation and register/flag preservation.
+PCE boot and DIR checks cover both variants with 144FEAT, with RTC enabled and
+disabled. Tests without ATINIT also verify the BIOS-initialized date directly.
