@@ -1,14 +1,8 @@
 # CP/M-86 Kernel and Base Tools
 
-CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II.
+CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II. The project contains a full distribution of CP/M-86 1.1, patched, y2k compliant, enhanced and complete, for PC and PC XT built entirely from source.
 
-Build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
-
-| Location | Contents |
-| --- | --- |
-| Repository root | Kernel sources and builds |
-| `commands/` | Reconstructed commands and new disk tools |
-| `base/`, `dev/`, `extra/` | Original/patched binaries, development tools and extensions |
+It is build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
 ## Kernels
 
