@@ -334,7 +334,7 @@ check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/ker
 	$(MAKE) -C commands/chkcpmfs check-bdos
 
 test: dist
-	./cpm86
+	./cpm86-320
 
 test-exp: dist
 	./cpm86-exp

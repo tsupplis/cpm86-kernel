@@ -4,6 +4,8 @@ CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088
 
 It is build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
+![CP/M-86 menu](images/menu.png)
+
 ## Kernels
 
 ### Kernel source sets
