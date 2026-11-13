@@ -21,9 +21,9 @@ The PC kernel was recovered by disassembly. Maintained and experimental builds h
 | `cpm.sys` | `ccp.a86`, `bdos.a86`, `pcbios.a86` | Maintained PC kernel |
 | `cpmorg.sys` | `ccporg.a86`, `bdosorg.a86`, `pcbioorg.a86` | Frozen patched reference; do not edit |
 | `cpmexp.sys` | `ccpexp.a86`, `bdosexp.a86`, `pcbioexp.a86` | Experimental PC kernel |
-| `mbcv20.sys` | `ccp.a86`, `bdos.a86`, `mbcv20.a86` | V20 MBC, 8088 mode; segment `0040h` |
-| `mbc816.sys` | `ccp.a86`, `bdos.a86`, `mbc816.a86` | V20 MBC, mixed 8080/8088 mode; segment `0040h` |
-| `ad88.sys` | `ccp.a86`, `bdos.a86`, `ad88bios.a86` | AD8088 / Apple II; segment `4000h`; [source](https://github.com/ushicow/ad8088cpm) |
+| `mbcv20.sys` | `ccp.a86`, `bdos.a86`, `mbcv20.a86` | V20 MBC, 8088 mode; segment `0040h`; ([source](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer)) |
+| `mbc816.sys` | `ccp.a86`, `bdos.a86`, `mbc816.a86` | V20 MBC, mixed 8080/8088 mode; segment `0040h`; ([source](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer)) |
+| `ad88.sys` | `ccp.a86`, `bdos.a86`, `ad88bios.a86` | AD8088 / Apple II; segment `4000h`; ([source](https://github.com/ushicow/ad8088cpm)) |
 
 ### Kernel patches
 
@@ -94,6 +94,19 @@ DCOPY/DCOMP derive from the [PC DOS 1.10 disassemblies](https://github.com/tsupp
 ### Mixed 8080/8086 support
 
 `asm80` (DR CP/M-80 assembler translated with XLT86) and `hexcom` (ANSI C HEXCOM 3.00 reimplementation) provide a native 8080 development chain. For emulation, see Z80 and VCPM in [cpm86-ports](https://github.com/tsupplis/cpm86-ports).
+
+### Extended hard-disk sizes
+
+The maintained PC kernels and HDMAINT support new native CP/M partitions beyond the original 8 MiB limit.
+
+| Feature | Support |
+| --- | --- |
+| Volume size | Variable, including 20 and 30 MiB; up to 31.5 MiB allocation space, less metadata |
+| Sizing | Whole cylinders; actual capacity depends on geometry |
+| Requirements | Updated kernel and HDMAINT; newly created partition, no in-place migration |
+| Interchange | Allocation layout compatible with maintained CCP/M-86 and CDOS 4.1; boot and controller compatibility depend on geometry |
+
+See [HDMAINT](commands/hdmaint/README.md#larger-volumes-and-cdos-compatible-allocation) for limits and format details.
 
 ### 1.44 MB Feature
 
