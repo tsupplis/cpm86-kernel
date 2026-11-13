@@ -134,16 +134,6 @@ Included in `dev/`.
 
 Images use source-built tools. Experimental images boot `cpmexp.sys`; other bootable images use `cpm.sys`.
 
-**160K single-sided**
-
-| Image | Contents |
-| --- | --- |
-| `cpm86-160-1.img` | Bootable core CP/M-86 |
-| `cpm86-160-1-at.img` | Bootable core, AT-compatible clock |
-| `cpm86-160-2.img` | CP/M-86 assembler tools + DCOPY/DCOMP/DFORM |
-| `cpm86-160-3.img` | Digital Research dev tools |
-| `cpm86-160-4.img` | BASIC development |
-
 **320K double-sided**
 
 | Image | Contents |
