@@ -33,7 +33,7 @@ $eject
 dcl
 maxlev       lit '5', /* max no of nested parenthesis */
 parlevel     byte,    /* current no of parenthesis level */
-stck(600)    byte,    /* local stack within module */
+stck(2048)   byte,    /* evaluator calls and four legal parenthesis levels */
 savestack    addr,    /* save of initial entry stack */
 expresserr   byte,    /* error flag */
 noforward    byte,    /* true if undefined symbols to be neglected */
