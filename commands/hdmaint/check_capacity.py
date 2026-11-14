@@ -19,7 +19,9 @@ class Machine:
         self.count = 0
     def s(self, name): return self.names[key(name)]
     def run(self, entry, setup='', checks='', patches=None, bridge=None):
-        with tempfile.TemporaryDirectory(prefix='hd-capacity-') as td:
+        work = ROOT.parents[1]/'local/hdmaint-tests'
+        work.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='hd-capacity-', dir=work) as td:
             p=Path(td)
             def asm(source):
                 (p/'stub.asm').write_text('bits 16\ncpu 8086\n'+source)
@@ -65,6 +67,7 @@ data: incbin "data.bin"
             result=subprocess.run(['emu2','test.com'],cwd=p,capture_output=True,timeout=10)
             assert result.returncode==0,(entry,setup,checks,result.returncode,result.stdout,result.stderr)
         self.count+=1
+        return result.stdout
 
 def eq(where,value,byte=False):
     return f' cmp {"byte" if byte else "word"} [{where}],{value}\n jne failed\n'
@@ -157,6 +160,52 @@ def main():
         h.run('build_free_extents',setup,checks,
               {'initialize_bad_cylinders':'pop bx\n retf'},
               f'push bx\n jmp {S("build_free_extents")}')
+    # Two adjacent foreign LBA extents share cylinder 120; total is 242,
+    # not 243. The CP/M proposal must begin at cylinder 242.
+    setup=f"""mov bx,{base}
+ mov word [bx+4],68
+ mov word [bx+14],615
+"""
+    for i,lba in enumerate([17,8209]):
+        at=base+0x265+i*16
+        setup+=f"""mov byte [{at+4}],{4 if i==0 else 5}
+ mov word [{at+8}],{lba}
+ mov word [{at+10}],0
+ mov word [{at+12}],8192
+ mov word [{at+14}],0
+"""
+    h.run('build_free_extents',setup,eq(base+12,242)+eq(base+0x28,242),
+          {'initialize_bad_cylinders':'pop bx\n retf'},
+          f'push bx\n jmp {S("build_free_extents")}')
+    # New, replacement and empty-disk proposals must retain foreign usage,
+    # reset stale scratch state and never write through the old BX at 0010h.
+    for occupied, existing, slot in [(242, False, 1), (615, True, 1), (0, False, 0)]:
+        start = 242 if occupied else 0
+        ptr = S('partition_cylinders') + slot*4
+        setup = f"""mov ax,ds
+ mov ss,ax
+ mov sp,{S('stack_top')}
+ mov byte [{S('selected_has_cpm')}],{255 if existing else 0}
+ mov word [{S('assigned_cylinders')}],{occupied}
+ mov word [{S('other_assigned_cylinders')}],9999
+ mov word [{S('cpm_partition_offset')}],{0x265+slot*16}
+ mov word [{S('sectors_per_cylinder')}],68
+ mov byte [{S('last_head')}],3
+ mov byte [{S('sectors_per_track')}],17
+ mov word [{ptr}],{start}
+ mov word [{ptr+2}],614
+ mov word [{S('free_extents')}],{start}
+ mov word [{S('free_extents')+2}],614
+ mov word [10h],0faceh
+ mov word [12h],0beefh
+"""
+        setup += ''.join(f'mov word [{S("free_extents")+i}],65535\n' for i in range(4,20,2))
+        checks = eq(S('other_assigned_cylinders'), 242 if occupied else 0)
+        checks += eq(S('assigned_cylinders'),615) + eq(0x10,0xface) + eq(0x12,0xbeef)
+        h.run('default_partition',setup,checks,bridge=f"""call {S('default_partition')}
+ call {S('limit_default_size')}
+ call {S('calculate_dpb')}
+ retf""")
     # The maintained loader must keep all legacy vector/data addresses.
     old=symbols(ROOT/'loader.sym');new=symbols(ROOT/'ldlarge.sym')
     for name in ['BDEXTPNT','BDSTDIRT','BDTRSSET','BIOSCOLDVECTOR','DIRECTORYBUFFER','BDTGSECT']:

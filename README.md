@@ -70,7 +70,7 @@ Original/patched binaries live in `base/`; source builds live in `commands/`. Im
 | `function` | Original | Reconstructed CP/M-86 source |
 | `gencmd` | Original | CCP/M-86 3.1 port |
 | `gendef` | DR-patched | Adapted from MP/M-86 PL/M sources; CP/M final-record fix; output checked against original |
-| `hdmaint` | Updated 1.0→1.1 | Reconstructed CP/M-86 source |
+| `hdmaint` | Updated 1.0→1.2N | Shared maintained formatter; optional MBR preservation |
 | `help` | Original | CCP/M-86 3.1 port |
 | `help.hlp` | Original | Rebuilt for every core distribution; includes new tools too |
 | `mform` | Original | Reconstructed CP/M-86 source |
@@ -104,6 +104,27 @@ The maintained PC kernels and HDMAINT support new native CP/M partitions beyond 
 | Interchange | Allocation layout compatible with maintained CCP/M-86 and CDOS 4.1; boot and controller compatibility depend on geometry |
 
 See [HDMAINT](commands/hdmaint/README.md#larger-volumes-and-cdos-compatible-allocation) for limits and format details.
+
+HDMAINT's **F8** selects `replace` (default) or `preserve` for the MBR bootstrap.
+It applies to creation, deletion and **F4** boot-partition changes. To renew
+only the MBR, select `replace`, then **F4 → F10** without cycling the active partition.
+
+CP/M-86 emulator regressions use `--personality pc` (`cpm.sys`) or
+`--personality experimental` (`cpmexp.sys`):
+
+```sh
+make -C commands/hdmaint check
+python3 tools/hdmaint_live_check.py --emulator pce --personality pc --layout dos-cpm
+python3 tools/hdmaint_mbr_check.py --emulator qemu --personality pc --dos-source /path/to/ibm-dos33.img
+```
+
+Fixtures use 615/4/17 geometry and 640 KiB RAM (the hard-disk loader uses
+`3000:0000`). Repeat with the other emulator/personality. The MBR test exercises both policies,
+F4 renewal/switching, cancelled/confirmed deletion and DOS/CP/M hard-disk boots.
+The shared HDMAINT notes describe the corresponding CCP/M harness; this project's
+scripts use CP/M media and kernels. Fixtures stay in ignored `local/hdmaint-tests/`;
+successful runs remove images and retain diagnostics. Manual `--prepare-only`
+fixtures are retained until removed after inspection.
 
 ### 1.44 MB Feature
 
