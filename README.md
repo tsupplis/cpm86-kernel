@@ -23,7 +23,7 @@ The PC kernel was recovered by disassembly. Maintained and experimental builds h
 
 ### Kernel patches
 
-Patch history is in `patching/`; addresses and reserved-space use are in [mapping.md](mapping.md). Local edits are marked `Ts:`. Public entry points and existing system-data addresses are preserved.
+Patch history is in `patching/`; addresses and reserved-space use are in [mapping.md](mapping.md). Fixed interfaces and external consumers are listed in [api.md](api.md). Local edits are marked `Ts:`. Public entry points and existing system-data addresses are preserved.
 
 | DR patch | Area | Fix |
 | --- | --- | --- |
@@ -47,6 +47,7 @@ These patches are present in the frozen and maintained BDOS sets. The original P
 | User 0 system files | Remove the erroneous S1 test in `SRDRNZ`; retain instruction offsets with NOPs |
 | PC BIOS | AT interrupt-vector fix, year-2000 fix and 80-column colour fallback |
 | PC BIOS RTC date | Standard and EXP read the initial date via `INT 1Ah/AH=04h` when supported. Stock XT or invalid replies retain the default; time initialization and fixed addresses are unchanged. See [mapping](mapping.md#optional-bios-rtc-date). |
+| [PC BIOS Y2K leap-year patch](patching/y2kleap.txt) | Standard and EXP recognize year 00 as leap (2000); four-byte in-place fix preserves addresses. The existing four-year rule is not Gregorian century handling for 2100. |
 | Maintained PC hard disks | Support partitions up to 31.5 MiB; see [HDMAINT compatibility notes](commands/hdmaint/README.md) |
 
 Tool patches: 03 GENDEF, 04–05 ED, 09 PIP and 12 SUBMIT. Patches 02 (LDCOPY) and 14 (sample BIOS TRACK.A86) are outside this kernel.

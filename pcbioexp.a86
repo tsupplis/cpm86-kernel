@@ -2445,8 +2445,12 @@ INCA1:
 LEAP:
 	mov	ax,word ptr AYEAR	; Fetch ascii year
 	call	ASCIINUM		; Convert to number
-	test	al,al			; Check for 0
-	jz	LEAP1
+	; Ts: Year 00 is leap in 2000. Preserve the four-byte slot.
+	; This resident calendar retains its existing four-year cycle.
+	nop
+	nop
+	nop
+	nop
 
 	test	al,03h			; Divisable by 4 ?
 	jnz	LEAP1			; If not, skip

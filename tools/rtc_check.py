@@ -126,6 +126,17 @@ bad:
 """
             m.run("INIT_RTC", patches={S("RTC_INT"): stub, "RESETIO": "ret"}, bridge=bridge)
         print(f"PASS: {kernel}: {m.count} RTC dates/fallbacks; registers, flags and time preserved")
+        # Resident February limits are ASCII day-after-end values, stored as
+        # assembler word constants. Exercise Y2K and adjacent common/leap years.
+        for year, limit in (("99", "29"), ("00", "30"), ("01", "29"),
+                            ("04", "30")):
+            setup = (f"mov word [{S('AYEAR')}],{int.from_bytes(year.encode(), 'little')}\n"
+                     f"mov word [{S('BCENT')}],{int.from_bytes(b'20', 'little')}")
+            checks = (f"cmp word [{S('FEBLENGTH')}],{int.from_bytes(limit.encode(), 'big')}\n"
+                      "jne failed\n")
+            m.run("LEAP", setup, checks)
+        print(f"PASS: {kernel}: 4 resident leap-year cases (99, 00, 01, 04)")
+
 
 
 if __name__ == "__main__":

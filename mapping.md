@@ -1,5 +1,7 @@
 # CP/M-86 Memory Map
 
+For fixed interfaces, external consumers and audit gaps, see [api.md](api.md).
+
 All of CP/M-86 assembles into **one single load segment** (CS = DS = SS at
 runtime).  The three source files are assembled at fixed offsets within that
 segment; no relocation takes place.

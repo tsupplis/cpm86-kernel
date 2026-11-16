@@ -1,0 +1,29 @@
+CP/M-86 PC BIOS: YEAR-2000 LEAP-YEAR FIX
+Local patch, 2026-11-16
+
+Applies to maintained pcbios.a86 and pcbioexp.a86 (cpm.sys and
+cpmexp.sys). Frozen references and other platform BIOSes are unchanged.
+
+The resident LEAP routine rejected year 00 before testing divisibility
+by four. Consequently it treated February 2000 as having 28 days,
+although the cold-start RTC helper correctly accepted 29 February 2000.
+
+At kernel offsets 3121h-3124h (SYS file offsets 31A1h-31A4h), replace:
+    84 C0 74 0B    TEST AL,AL / JZ LEAP1
+with:
+    90 90 90 90    four NOPs
+
+These offsets and bytes were verified in both maintained builds. This
+is distinct from y2k-patch.txt, which changes the default century only.
+
+The existing divisibility-by-four test now accepts year 00. No routine
+or data moves: both SYS files remain 19584 bytes, all symbol addresses
+are unchanged, and the 17-byte clock interface remains unchanged.
+
+Validation: four resident leap-year cases per variant (99, 00, 01, 04),
+50 existing RTC cases, exact four-byte binary comparison, symbol-map
+comparison and full make check passed. Tests are in tools/rtc_check.py.
+
+Scope: fixes 2000; retains the existing four-year calendar rule. It does
+not implement Gregorian century exceptions for 1900/2100 or change TOD
+century selection and two-digit input policy.
