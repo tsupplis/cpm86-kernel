@@ -287,3 +287,11 @@ CX/DX detect unsupported no-op replies even when carry is clear.
 per kernel, including fallback, calendar validation and register/flag preservation.
 PCE boot and DIR checks cover both variants with 144FEAT, with RTC enabled and
 disabled. Tests without ATINIT also verify the BIOS-initialized date directly.
+
+### Displayed century cutoff
+
+The [century patch](patching/century.txt) uses `3222h`–`3224h` for a
+same-size CALL from `PRNBOS1`, and `32C5h`–`32F2h` for the 46-byte
+`DSPCENT` helper inside resident `BIOS_DATA_RSV`. The remaining 29 bytes
+(`32F3h`–`330Fh`) stay reserved. No existing symbol or interface moves.
+Only rendered century characters use the 80 cutoff; stored dates are unchanged.

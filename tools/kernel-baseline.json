@@ -1,8 +1,8 @@
 {
   "images": {
-    "cpm.sys": "6a6c31bc5747631ee9451695628adbeede98eb1558619560ef2754f89a779272",
+    "cpm.sys": "d68282b6b2e6aff26bfe59dfab7401bac0b709e32326a43f61b3e842fc6d1320",
     "cpmorg.sys": "50c82582b08d73ddf1ee5e43e2b1ed9cbf04d579708dc05d0b2715fc6031a8f0",
-    "cpmexp.sys": "b41eab3d16ac2e43bd3c8f6c930b2ada0a5b55378761068d050ff477fb2cc3d6"
+    "cpmexp.sys": "5812afbb4b2007e90b2d6fc13fd457e9074ebeb5e9b06bfd0ac30b7c65b30b2e"
   },
   "frozen_sources": {
     "ccporg.a86": "d739bbb6de2784073f02e796ee64bbb27d84c1b36ecdedfc18260814a5431569",
@@ -18,9 +18,9 @@
   "module_hashes": {
     "ccpexp.h86": "8324c460422811f3295ef2a629f3a3405e07da08f8f8e503fb9923585e9b80f6",
     "bdosexp.h86": "0e538a975048b2f06e79de57d9a5b26b4c83bf5490c565483335862fc9a6761b",
-    "pcbioexp.h86": "656ef4432647de9c6cb3937da742c336e6562c7995f6392b6436c306c3e6a9cb",
+    "pcbioexp.h86": "8fff07e30b3fe4a6d3134d3dd28e47795e97c3f79d37da03bbf25d079b889485",
     "bdos.h86": "3802e44eb96e6290d1a25ddccac90f7bda942d66d64e124831942b5af83f3837",
-    "pcbios.h86": "b691c21be6a8c2b7e504cccadd89a0e2fd1832a40a7cd2bd1458e0c32abf7685"
+    "pcbios.h86": "131b139e97c49aa7dcab0fd68ec79fcde3958c26918b6962751d9391f49b4783"
   },
   "variant_differences": {
     "standard": "pcbios.h86",

@@ -1,0 +1,33 @@
+CP/M-86 PC BIOS: DISPLAYED CENTURY CUTOFF
+Local patch, 2026-11-16
+
+Applies to maintained pcbios.a86 and pcbioexp.a86 only.
+
+PRNBOS previously displayed BCENT literally. TOD updates only the two-digit
+year, so the displayed century could disagree with the intended short date.
+The display now interprets 00-79 as 2000-2079 and 80-99 as 1980-1999.
+This is a fixed display window: even an RTC date of 2080 displays as 1980.
+
+PRNBOS1 at kernel 3222h replaces LODSB / CMP AL,[DI] (AC 3A 05) with
+CALL DSPCENT (E8 A0 00). DSPCENT occupies 32C5h-32F2h: 46 bytes of the
+75-byte resident BIOS_DATA_RSV reservation. 32F3h-330Fh remain reserved.
+SYS file offsets are kernel offsets plus the 128-byte CMD header.
+
+The helper substitutes only characters fetched from BCENT and BCENT+1,
+using BYEAR (the year being displayed). It does not write BCENT, BYEAR or
+the 17-byte software clock, and does not change TOD, ATINIT, RTC handling
+or timer date advancement. Ordinary text is unchanged. BX and AH are
+preserved; SI advances once; AL and comparison flags match the original
+character-fetch/compare contract. The display cache receives the rendered
+characters through the existing STOSB instruction.
+
+Both images remain 19584 bytes. All pre-existing symbols retain their
+addresses. No cold-start or reclaimable disk-buffer storage is used.
+Frozen references and other platform BIOSes are unchanged.
+
+Validation: tools/century_check.py executes the built helper for all 100
+years, both century characters and equal/unequal display-cache contents:
+400 cases plus an ordinary-character case per kernel. It checks state,
+registers, flags, hook target and resident bounds. Binary and symbol-map
+comparisons constrain changes to the three-byte hook and 46-byte helper.
+The test is included in make check.

@@ -150,3 +150,8 @@ shift the time fields and corrupt existing consumers. A full-year setter needs
 an explicitly discoverable extension and a defined policy for legacy YY writes.
 The RTC helper at `4400h` is cold-only overlay storage; it cannot hold a
 resident setter or century variable.
+
+The maintained PC BIOS renders the century using a fixed 80 cutoff:
+`00–79` displays as 20xx; `80–99` as 19xx. This changes display only;
+`BCENT`, the 17-byte clock and all existing addresses remain unchanged.
+See [the display patch](patching/century.txt).

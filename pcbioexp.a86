@@ -2633,8 +2633,7 @@ PRNBOS:
 	mov	bx,000Eh		; Display page 0, attribute 0Eh (bright yellow)
 
 PRNBOS1:
-	lodsb				; Get character
-	cmp	al,[di]
+	call	DSPCENT			; Fetch character; display-only century pivot
 	stosb				; Store in copy status line
 	jz	PRNBOS2			; skip display if same
 
@@ -4352,5 +4351,36 @@ RTC_ASCII:
 RTC_DAYS:
 	db	31,28,31,30,31,30,31,31,30,31,30,31
 RTC_END:
+
+; Ts: Display-only 80 pivot, in resident reserved bytes. No clock writes.
+; PRNBOS supplies DS:SI text and ES:DI display cache. Preserve BX and AH;
+; return AL and comparison flags exactly like LODSB / CMP AL,[DI].
+	cseg
+	org	data_offset
+DSPCENT:
+	lodsb
+	cmp	si,offset BCENT+1
+	jz	DSPYEAR
+	cmp	si,offset BCENT+2
+	jnz	DSPCMP
+DSPYEAR:
+	push	bx
+	mov	bx,word ptr BYEAR
+	xchg	bl,bh
+	cmp	bx,'80'
+	mov	bx,3032h		; ASCII "20", little endian
+	jb	DSPPICK
+	mov	bx,3931h		; ASCII "19", little endian
+DSPPICK:
+	mov	al,bl
+	cmp	si,offset BCENT+1
+	jz	DSPDONE
+	mov	al,bh
+DSPDONE:
+	pop	bx
+DSPCMP:
+	cmp	al,[di]
+	ret
+DSPEND:
 
 	end
