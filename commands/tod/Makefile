@@ -22,3 +22,7 @@ clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn ccpmtest.img
 	rm -f *.loc *.mp? *.lnk
 
+
+.PHONY: check
+check:
+	python3 -B check.py
