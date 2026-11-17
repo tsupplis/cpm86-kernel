@@ -4,6 +4,16 @@ CP/M-86 and CP/M-816 1.1 kernels and commands for IBM PC/XT, emulators, V20 MBC 
 
 It is build using the cross development toolkit [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
+| Goal | Distribution |
+| --- | --- |
+| **Full Source**-built system | Reconstructed PC kernel and maintained commands + extensions and backports from CCP/M-86, with frozen references and all documented patches |
+| **CP/M-816** | Native CP/M-86 CMD and 8080 CP/M-80 2.2 COM programs on V20/V30; standard CP/M-86 kernel remains available |
+| Development tools | DR development chain, DR & Microsoft BASIC, native ASM80/HEXCOM and a separate CP/M-80 tools disk |
+| **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
+| Usability and bug fixes | Enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
+| Storage | 320K distributions, 720K/1.44M support through **144FEAT**, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
+| Other 8-bit options | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu) |
+
 <p align="center">
 <img src="./images/cpm86.png" alt="CP/M-86" width="48%">
 <img src="./images/cpm816.png" alt="CP/M-816" width="48%">
@@ -41,7 +51,7 @@ launchers retain `exp` for compatibility.
 | --- | --- |
 | Native applications | Existing CP/M-86 `.CMD` programs; CMD takes precedence over a same-named COM |
 | 8-bit applications | CP/M-80 2.2 `.COM` programs using the Intel 8080 instruction set |
-| Z80 applications | **Not supported**; a CP/M-80 label alone does not imply 8080 compatibility |
+| Z80 applications | Use [Z80.CMD](https://github.com/tsupplis/cpm86-ports/tree/main/cpu#z80--software-emulator) for software emulation; the CP/M-816 bridge supports 8080 only |
 | Invocation | Bare program name at the CCP prompt or through SUBMIT; arguments and default FCBs supported |
 | Exit | Normal return retains the bank for SAVE; the next program, warm boot or Ctrl-C releases it |
 | Memory | One contiguous 64 KiB bank retained for the current/last COM, plus the resident BIOS extension |
@@ -124,7 +134,12 @@ DCOPY/DCOMP derive from the [PC DOS 1.10 disassemblies](https://github.com/tsupp
 
 ### Mixed 8080/8086 support
 
-`asm80` (DR CP/M-80 assembler translated with XLT86) and `hexcom` (ANSI C HEXCOM 3.00 reimplementation) provide a native 8080 development chain. For emulation, see Z80 and VCPM in [cpm86-ports](https://github.com/tsupplis/cpm86-ports).
+`asm80` (DR CP/M-80 assembler translated with XLT86) and `hexcom` (ANSI C HEXCOM 3.00 reimplementation) provide a native 8080 development chain. [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu) also offers alternatives requiring no kernel change:
+
+| Tool | Use with normal CP/M-86 or alongside CP/M-816 |
+| --- | --- |
+| `z80.cmd` | Software 8080/Z80 emulation; no V20/V30 required. Complements CP/M-816 for Z80 programs. |
+| `vcpm.cmd` | Hardware 8080 execution on V20/V30 with the normal CP/M-86 kernel; an alternative to integrated CP/M-816. No Z80 instructions. |
 
 ### Extended hard-disk sizes
 
@@ -189,7 +204,9 @@ Included in `dev/`.
 ### CP/M-80 commands
 
 Included in `cpm80/` and the 320K data disk `cpm86-8080.img` in `disks.zip`.
-For CP/M-816 on V20/V30: 8080 instructions only, no Z80 support.
+Run 8080 tools directly with CP/M-816, or through `VCPM` on normal CP/M-86
+with V20/V30. For Z80 programs or other CPUs, use `Z80`; see
+[Mixed 8080/8086 support](#mixed-80808086-support).
 A dash indicates an unverified version; not every program or option has been regression-tested.
 
 | Tool | Product | Version | Vendor |
