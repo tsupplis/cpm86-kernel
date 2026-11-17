@@ -27,7 +27,7 @@ It is build using the cross development toolkit [cpm86-crossdev](https://github.
 
 ### Kernel source sets
 
-On NEC V20/V30 PCs, the `cpmexp` configuration becomes **CP/M-816**: native CP/M-86 `.CMD` applications and 8080 CP/M-80 2.2 `.COM` applications on the same system. **No Z80 instruction support.**. All credits to the MBC teams for the implementation of 8080 functionality ported to IBM-PC.
+On NEC V20/V30 PCs, the `cpmexp` configuration becomes **CP/M-816**: native CP/M-86 `.CMD` applications and 8080 CP/M-80 2.2 `.COM` applications on the same system. **No Z80 instruction support.**. All credits to the MBC contributors for the implementation of 8080 functionality ported to IBM-PC.
 
 The PC kernel was recovered by disassembly. Maintained and experimental builds have separate baselines; they intentionally differ from the frozen reference.
 
