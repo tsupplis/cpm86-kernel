@@ -1,4 +1,4 @@
-# CP/M-86 and CP/M-816 Kernel and Base Tools
+# CP/M-86 and CP/M-816 Kernels and Base Tools
 
 CP/M-86 and CP/M-816 1.1 kernels and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II. The project contains a full distribution of CP/M-86 1.1, patched, y2k compliant, enhanced and complete, for PC and PC XT built entirely from source.
 
