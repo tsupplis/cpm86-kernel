@@ -90,7 +90,7 @@ Original/patched binaries live in `base/`; source builds live in `commands/`. Im
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
-| `SAVE` (CP/M-816) | — | `SAVE n filename`: save 0–250 pages of 256 bytes from the last normally returned COM, starting at 0100h; existing files are refused |
+| `save` (CP/M-816) | — | `save n filename`: save 0–250 pages of 256 bytes from the last normally returned COM, starting at 0100h; existing files are refused |
 | `asm86` | Original | CCP/M-86 3.1 port |
 | `assign` | Original | Reconstructed CP/M-86 source |
 | `chkcpmfs` | — | New shared PL/M-86 CP/M checker with confirmed metadata repair |
@@ -186,6 +186,30 @@ Included in `dev/`.
 | `pbasic.cmd` | Personal BASIC | 1.2N (Supports command line) | Digital Research |
 | `mbasic86.cmd` | BASIC-86 (Imported from [cpm86-msbasic](https://github.com/tsupplis/cpm86-msbasic)) | Rev. 5.50 | Microsoft |
 
+### CP/M-80 commands
+
+Included in `cpm80/` and the 320K data disk `cpm86-8080.img` in `disks.zip`.
+For CP/M-816 on V20/V30: 8080 instructions only, no Z80 support.
+A dash indicates an unverified version; not every program or option has been regression-tested.
+
+| Tool | Product | Version | Vendor |
+| --- | --- | --- | --- |
+| `asm.com` | CP/M 8080 Assembler | 2.0 | Digital Research |
+| `mac.com` | Macro Assembler | 2.0 | Digital Research |
+| `ddt.com` | Dynamic Debugging Tool | 2.2 | Digital Research |
+| `load.com` | Intel HEX to COM Loader | — | Digital Research |
+| `link.com` | Linkage Editor | 1.31 | Digital Research |
+| `msm80.com` | Macro-80 Assembler | 3.44 | Microsoft |
+| `msl80.com` | LINK-80 Linker | 3.44 | Microsoft |
+| `mslib80.com` | Library Manager | —3.44| Microsoft |
+| `mbasic80.com` | BASIC-80 Interpreter | 5.21 | Microsoft |
+| `bascom.com` | BASIC Compiler | 5.30a | Microsoft |
+| `brun.com` | BASIC Runtime | 5.30 | Microsoft |
+| `obasic.com` | BASIC Interpreter | 4.51 | Microsoft |
+
+Libraries: `baslib.rel`, `obslib.rel`. Examples: `hello.mac`,
+`hello80.asm`, `ver80.mac`.
+
 ## Disk images
 
 Images use source-built tools. CP/M-816 configuration images boot `cpmexp.sys` (CP/M-86 on Intel CPUs); other bootable images use `cpm.sys`.
@@ -197,6 +221,7 @@ Images use source-built tools. CP/M-816 configuration images boot `cpmexp.sys` (
 | `cpm86-320.img` | Bootable core + assembler tools + DCOPY/DCOMP/DFORM |
 | `cpm86-320-at.img` | Same commands, AT-compatible clock |
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
+| `cpm86-8080.img` | Data-only CP/M-80 tools, libraries and examples from `cpm80/` |
 | `cpm86-chkcpmfs.img` | Bootable CP/M-86 checker disk with PIP, STAT and CHKCPMFS |
 
 **720K / 1.44M with 144FEAT**

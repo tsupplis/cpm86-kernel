@@ -1,0 +1,12 @@
+	.Z80
+	
+	LD DE,msg
+	LD C,9
+	CALL 5
+	JP 0
+	
+msg:DB "Hello World!"
+    DB 10,13
+    DB "$"
+	END
+	

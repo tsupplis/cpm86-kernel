@@ -1,0 +1,88 @@
+		
+		;; Define system calls to be used
+cwrite	EQU		2h 			;argument goes in E
+cwrites	EQU		9h 			;argument address goes in DE
+bdosver	EQU		0Ch			;returns type in B, version in A
+fopen	EQU		0Fh			;FCB address goes in DE
+fclose	EQU		10h			;FCB address goes in DE
+freadr	EQU		14h			;FCB address goes in DE
+fwriter	EQU		15h			;128 byte record at DMA address
+fmake	EQU		16h			;FCB address goes in DE
+setdma	EQU		1Ah			;address goes in DE
+
+		;; Zero page constants
+reset	EQU		0h
+bdos	EQU		5h 			;call number goes in C
+fcb		EQU		5Ch			;first FCB
+srecord	EQU		7Ch			;record index for sequential access
+tlength	EQU		80h			;length of command tail
+ctail	EQU		81h			;command tail
+
+		;; Get and display system version number
+		MVI     C,bdosver	;load bdosver
+		CALL	bdos		;call bdosver
+		CALL	conv		;convert to ASCII
+		MVI     C,cwrites	;load cwrites
+		LXI     D,osname	;parameter is number address
+		CALL	bdos		;call cwrites
+		JMP 	reset		;exit program
+
+		;; Convert byte in A into two ASCII characters
+conv:	
+        SUI		16			;subtract 10 from A
+		JP		tloop		;if positive jump to tloop
+		ADI		16		    ;return the last 10
+		JMP 	ones		;if negative jump to ones
+
+tloop:	
+        LXI	    H,number		;load number into HL
+		INR	    M               ;increment number
+		JMP  	conv			;loop
+
+ones:	
+        SUI	    1				;subtract 1 from A
+		JP	    oloop			;if positive jump to oloop
+		JMP 	done			;if negative jump to done
+
+oloop:	
+        LXI 	H,number+2		;load number+2 into HL
+		INR	    M               ;increment number
+		JMP	    ones			;loop
+
+done:	
+        LDA     number	        ;load contents of number into A
+		SUI	    10				;subtract 10 from A
+		JP	    hex1			;if A is positive we need A-F
+		JMP	    dec1			;if A is negative we need 0-9
+
+hex1:	
+        ADI	    7				;add 7 to A to get ASCII A-F
+
+dec1:	
+        ADI	    58			    ;add 10+48 to A to get ASCII 0-9
+		LXI 	H,number		;load number into HL
+		MOV     M,A			    ;write A to number
+		LDA     number+2     	;load contents of number+2 into A
+		SUI	    10				;subtract 10 from A
+		JP	    hex2			;if A is positive we need A-F
+		JMP	    dec2			;if A is negative we need 0-9
+
+hex2:	
+        ADI	    7  				;add 7 to A to get ASCII A-F
+
+dec2:	
+        ADI	    58  			;add 10+48 to A to get ASCII 0-9
+		LXI     H,number+2
+		MOV     M,A
+		RET					;return to calling routine
+
+		;; Our operating system name and a space
+osname:	
+        DB	"CP/M BDOS "
+		;; Place to store two ASCII characters in positions 0 and 2
+number:	
+        DB	0,".",0
+        DB 10,13,"$"
+		;; End source file
+
+		END

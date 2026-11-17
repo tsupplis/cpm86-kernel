@@ -40,8 +40,9 @@ BASICTOOLS = dev/pbasic.cmd dev/cbas86.cmd dev/crun86.cmd dev/mbasic86.cmd
 DEVTOOLS   = $(DRTOOLS) $(BASICTOOLS)
 EXTTOOLS   = $(DFORM) $(DCOPY) $(DCOMP)
 CHKCPMFS   = $(CMDDIR)/chkcpmfs/chkcpmfs.cmd
+CPM80FILES = $(wildcard cpm80/*)
 
-DIST_DISKS = cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
+DIST_DISKS = cpm86-8080.img cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
     cpm86-chkcpmfs.img cpm86-1440-at.img cpm86-exp-1440-at.img \
     cpm86-720-at.img cpm86-exp-720-at.img
 
@@ -193,6 +194,13 @@ cpm86-320-dev.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(DEVTOOLS)
 cpm86-320-dev.img: base-320.img
 	$(twist_image)
 
+# CP/M-80 tools: data-only 320K disk, all supplied files in user area 0.
+cpm86-8080.img: FEAT = cpm86-320
+cpm86-8080.img: BASE = base-320.img
+cpm86-8080.img: FTOOLS = $(CPM80FILES)
+cpm86-8080.img: base-320.img cpm80/
+	$(twist_image)
+
 cpm86-chkcpmfs.img: FEAT = cpm86-320
 cpm86-chkcpmfs.img: BASE = base-320.img
 cpm86-chkcpmfs.img: KRNL = cpm.sys
@@ -300,7 +308,7 @@ clean:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 	rm -rf *.img.wrk
 	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisk.lib
 	rm -f mbc816k.cmd mbcv20k.cmd ad88.cmd
@@ -314,7 +322,7 @@ clean-images:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img
+	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 
 dist: disks.zip
 
