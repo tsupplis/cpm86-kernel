@@ -7,7 +7,7 @@ The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsuppl
 | Goal | Distribution |
 | --- | --- |
 | **Full Source**-built system | Reconstructed PC kernel and maintained commands + extensions and backports from CCP/M-86, with frozen references and all documented patches |
-| **CP/M-816** | Native CP/M-86 CMD and 8080 CP/M-80 2.2 COM programs on V20/V30; standard CP/M-86 kernel remains available |
+| **CP/M-816** | Native CP/M-86 CMD and 8080 CP/M-80 2.2 COM programs on V20/V30; standard CP/M-86 kernel remains available. you can use the PCE derived emulator [PCE 286](https://github.com/tsupplis/pce-286) for v20/v30 emulation on development/unix host |
 | Development tools | DR development chain, DR & Microsoft BASIC, native ASM80/HEXCOM and a separate CP/M-80 tools disk |
 | **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
 | Usability and bug fixes | Enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
