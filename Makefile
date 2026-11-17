@@ -357,3 +357,9 @@ check-disk-live: all
 check-hd-capacity: cpm.sys cpmexp.sys
 	$(MAKE) -C commands/hdmaint check
 	python3 tools/hd_capacity_check.py
+
+# EXP-only 8080 bridge: bindings follow the assembled CCP; no runtime patches.
+cppexp.equ: ccpexp.h86 tools/expbind.py
+	python3 -B tools/expbind.py
+
+pcbioexp.h86: pc816.lib cppexp.equ

@@ -1,0 +1,54 @@
+EXP PC BIOS: CP/M-816 CONFIGURATION
+Local patch, 2026-11-17
+
+pcbioexp.a86 includes pc816.lib, derived from MBC816.A86 / Stephen Hunt's
+V20BIOS 1.3 (1988). Generated cppexp.equ binds the existing EXP CCP CMDHOOK,
+parser and stack from ccpexp.sym. No standard kernel, CCP or BDOS source changes.
+
+NEC V20/V30 detection enables 8080 CP/M-80 2.2 COM loading and the CP/M-816
+banner/hardware entry. Intel CPUs retain native CP/M-86 behavior. CMD wins
+when both extensions exist. This is NOT Z80 support or CP/M Plus support.
+A zeroed contiguous 64 KiB bank holds the COM, FCBs, tail and embedded BIOS.
+Normal exit restores DMA and vectors 80h-82h, retaining the allocated bank
+for SAVE. No runtime CCP instruction patching.
+
+Existing BIOS symbols stay fixed. Three-byte hooks at 2588h, 3BE9h and 3BF6h
+handle warm boot, initialization and banner selection. Code/data is appended
+at 4C90h; DPH_PTR (420Ah) starts dynamic disk allocation at END816 instead
+of 4C86h. The loader reads the recorded image length. 144FEAT signatures and
+the 32 KiB secondary-loader image limit must remain intact.
+
+Ctrl-C: BDOS abandons its caller on its internal stack. Reentering BDOS there
+corrupted cleanup return addresses. Resetting the stack alone also bypassed
+RETEM, leaving the NEC emulation session unfinished. EXIT816 now recovers the
+BRKEM frame and IRETs to the embedded RETEM before normal native cleanup.
+No allocation occurs between BDOS releasing the bank and that final RETEM.
+Native warm boot establishes the existing CCP stack before cleanup.
+
+Live checks: V20/320K, V20/720K, V30/1.44M passed banner/hardware entry, CMD
+precedence, COM return/repeat, Ctrl-C/native/COM recovery, FCB/tail arguments,
+SUBMIT parameter expansion and mixed COM/CMD execution, file writes verified
+by host readback, and empty/oversized rejection. 8088/320K and 8086/320K passed
+native launching, SUBMIT, DIR/TYPE and unsupported COM rejection.
+Tests use disposable media (tools/pc816chk.py). A prior argument failure was
+keyboard injection dropping ':'; shifted Semicolon fixes the harness. Feature
+fixtures are generated per test, and readiness permits the resident status line.
+
+SAVE port (2026-11-17): reuses the MBC816 check/save flow through the CCP hook.
+SAVE n filename writes n 256-byte pages from 0100h; n is decimal 0-250, so
+writes cannot reach the embedded bridge. Zero pages creates an empty file.
+The FCB stays resident. Invalid numbers, wildcard/missing names and trailing
+arguments are rejected. Unlike MBC816, an existing file is refused rather
+than deleted, and close/write failures are reported; partial new files are
+deleted on those failures (a failing disk can also prevent deletion).
+
+The bank remains owned across repeated SAVE and resident CCP commands.
+RELEASE816 frees it before loading another CMD/COM. Native warm boot and
+Ctrl-C invalidate it. CLEAN816 restores vectors/DMA without releasing a
+normally returned bank; FREE816 performs full cleanup after failed loads.
+A native command named SAVE.CMD retains normal CMD precedence.
+
+SAVE checks compare complete 256/512-byte outputs to the source COM plus
+zero padding, check repeated SAVE, overwrite refusal, the 250-page bound,
+and rejection after native execution and Ctrl-C. Physical disk failures
+are not covered by these live checks.

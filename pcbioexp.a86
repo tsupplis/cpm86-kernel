@@ -200,7 +200,7 @@ CCP:					; label only; no code emitted here
 WBOOT:
 	mov	byte ptr DSK_DIRTY,0	; clear write-pending flag
 	mov	byte ptr DSK_LAST,0FFh	; invalidate track cache
-	jmp	CCP+6			; enter CCP warm-boot entry point
+	jmp	EXIT816			; enter CCP warm-boot entry point
 
 ;----------------------------------------
 ; CP/M-86 character I/O interface
@@ -3383,13 +3383,13 @@ INIT:
 	mov	ax,cs
 	mov	ss,ax
 	mov	sp,offset LCLSTK
-	call	SETISR			; Setup interrupt vectors
+	call	INIT816			; Setup interrupt vectors
 	mov	ax,cs
 	mov	ds,ax
 	mov	es,ax
 	mov	byte ptr IPLDSK,dl	; Initial program load disk
 
-	mov	si,offset SIGNON	; 'cpm-86 for the PC..'
+	call	SIGN816	; 'cpm-86 for the PC..'
 	call	DISP_STR		; Display string
 
 	int	11h			; PC ROM BIOS - Get Equipment List
@@ -4146,7 +4146,7 @@ DEFDRV		db	0		; Default drive (for CCP)
 FDDCNT		db	0		; Number of diskette drives
 HDDCNT		db	0		; Number of Hard disk drives
 
-DPH_PTR		db	086h,04Ch	; Current DPH allocation pointer
+DPH_PTR		dw	offset END816	; Current DPH allocation pointer
 DPH_BASE	dw	offset DPBASE	; Base of DPH table
 BIOS_SEGSZ	dw	0		; Segment size offset (MRT base computation)
 
@@ -4383,4 +4383,6 @@ DSPCMP:
 	ret
 DSPEND:
 
+	include cppexp.equ
+	include pc816.lib
 	end

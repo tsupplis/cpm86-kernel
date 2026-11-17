@@ -1,14 +1,23 @@
-# CP/M-86 Kernel and Base Tools
+# CP/M-86 and CP/M-816 Kernel and Base Tools
 
-CP/M-86 1.1 kernel and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II. The project contains a full distribution of CP/M-86 1.1, patched, y2k compliant, enhanced and complete, for PC and PC XT built entirely from source.
+CP/M-86 and CP/M-816 1.1 kernels and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II. The project contains a full distribution of CP/M-86 1.1, patched, y2k compliant, enhanced and complete, for PC and PC XT built entirely from source.
 
-It is build with [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
+It is build using the cross development toolkit [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
 
-![CP/M-86](images/cpm86.png)
+<p align="center">
+<img src="./images/cpm86.png" alt="CP/M-86" width="48%">
+<img src="./images/cpm816.png" alt="CP/M-816" width="48%">
+<br><sub>CP/M-86 &nbsp;·&nbsp; CP/M-816 on V20/V30</sub><br>
+<img src="./images/msl80.png" alt="Microsoft LINK-80 (CP/M 2.2 program)" width="48%">
+<img src="./images/mbasic80.png" alt="Microsoft BASIC-80 (CP/M 2.2 program)" width="48%">
+<br><sub>Microsoft LINK-80 &nbsp;·&nbsp; Microsoft BASIC-80 (CP/M 2.2 programs)</sub>
+</p>
 
 ## Kernels
 
 ### Kernel source sets
+
+On NEC V20/V30 PCs, the `cpmexp` configuration becomes **CP/M-816**: native CP/M-86 `.CMD` applications and 8080 CP/M-80 2.2 `.COM` applications on the same system. **No Z80 instruction support.**. All credits to the MBC teams for the implementation of 8080 functionality ported to IBM-PC.
 
 The PC kernel was recovered by disassembly. Maintained and experimental builds have separate baselines; they intentionally differ from the frozen reference.
 
@@ -16,10 +25,32 @@ The PC kernel was recovered by disassembly. Maintained and experimental builds h
 | --- | --- | --- |
 | `cpm.sys` | `ccp.a86`, `bdos.a86`, `pcbios.a86` | Maintained PC kernel |
 | `cpmorg.sys` | `ccporg.a86`, `bdosorg.a86`, `pcbioorg.a86` | Frozen patched reference; do not edit |
-| `cpmexp.sys` | `ccpexp.a86`, `bdosexp.a86`, `pcbioexp.a86` | Experimental PC kernel |
+| `cpmexp.sys` | `ccpexp.a86`, `bdosexp.a86`, `pcbioexp.a86` | CP/M-816 on V20/V30; CP/M-86 on Intel |
 | `mbcv20.sys` | `ccp.a86`, `bdos.a86`, `mbcv20.a86` | V20 MBC, 8088 mode; segment `0040h`; ([source](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer)) |
 | `mbc816.sys` | `ccp.a86`, `bdos.a86`, `mbc816.a86` | V20 MBC, mixed 8080/8088 mode; segment `0040h`; ([source](https://hackaday.io/project/170924-v20-mbc-a-v20-8088-8080-cpu-homebrew-computer)) |
 | `ad88.sys` | `ccp.a86`, `bdos.a86`, `ad88bios.a86` | AD8088 / Apple II; segment `4000h`; ([source](https://github.com/ushicow/ad8088cpm)) |
+
+### CP/M-816 configuration
+
+Use `cpmexp.sys` (installed as `CPM.SYS`) or a `cpm86-exp-*` image. The BIOS
+automatically detects NEC V20/V30 support, displays **CP/M-816**, and adds
+`8080 Emulation : V20/V30` to the hardware list. Existing filenames and
+launchers retain `exp` for compatibility.
+
+| Capability | CP/M-816 |
+| --- | --- |
+| Native applications | Existing CP/M-86 `.CMD` programs; CMD takes precedence over a same-named COM |
+| 8-bit applications | CP/M-80 2.2 `.COM` programs using the Intel 8080 instruction set |
+| Z80 applications | **Not supported**; a CP/M-80 label alone does not imply 8080 compatibility |
+| Invocation | Bare program name at the CCP prompt or through SUBMIT; arguments and default FCBs supported |
+| Exit | Normal return retains the bank for SAVE; the next program, warm boot or Ctrl-C releases it |
+| Memory | One contiguous 64 KiB bank retained for the current/last COM, plus the resident BIOS extension |
+| Intel 8088/8086 | Remains CP/M-86; native commands work and COM fallback is disabled |
+| Limits | No CP/M Plus API or machine-specific hardware compatibility promised |
+
+The bridge reuses the MBC816 implementation through the existing EXP CCP hook.
+It does not change standard `cpm.sys` or the CCP/BDOS sources. Details and
+validation are in [the patch record](patching/pc816.txt).
 
 ### Kernel patches
 
@@ -59,6 +90,7 @@ Original/patched binaries live in `base/`; source builds live in `commands/`. Im
 
 | Tool | Binary (`base/`) | Source (`commands/`) |
 | --- | --- | --- |
+| `SAVE` (CP/M-816) | — | `SAVE n filename`: save 0–250 pages of 256 bytes from the last normally returned COM, starting at 0100h; existing files are refused |
 | `asm86` | Original | CCP/M-86 3.1 port |
 | `assign` | Original | Reconstructed CP/M-86 source |
 | `chkcpmfs` | — | New shared PL/M-86 CP/M checker with confirmed metadata repair |
@@ -156,7 +188,7 @@ Included in `dev/`.
 
 ## Disk images
 
-Images use source-built tools. Experimental images boot `cpmexp.sys`; other bootable images use `cpm.sys`.
+Images use source-built tools. CP/M-816 configuration images boot `cpmexp.sys` (CP/M-86 on Intel CPUs); other bootable images use `cpm.sys`.
 
 **320K double-sided**
 
@@ -174,11 +206,11 @@ Images use source-built tools. Experimental images boot `cpmexp.sys`; other boot
 | `cpm86-720-at.img` | Full command set including DCOPY/DCOMP/DFORM + dev toolchain, AT-compatible clock |
 | `cpm86-1440-at.img` | Same content on 1.44M media |
 
-**Experimental**
+**CP/M-816 configuration (V20/V30)**
 
 | Image | Contents |
 | --- | --- |
-| `cpm86-exp-720-at.img` | `cpmexp.sys` + full reconstruction + dev toolchain |
+| `cpm86-exp-720-at.img` | CP/M-816-capable `cpmexp.sys` + full command set + dev toolchain |
 | `cpm86-exp-1440-at.img` | Same content on 1.44M media |
 
 | Image constraint | Detail |

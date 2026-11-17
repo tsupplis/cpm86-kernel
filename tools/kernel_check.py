@@ -64,13 +64,20 @@ def check(root):
     if variants:
         standard = image_map(root / variants['standard'])
         expanded = image_map(root / variants['expanded'])
+        # Pin appended EXP bytes explicitly, as well as its full module hash.
+        for kind, start, data in variants.get('appended', []):
+            for offset, byte in enumerate(bytes.fromhex(data)):
+                key = kind, start + offset
+                if key in standard:
+                    raise ValueError('EXP appendix overlaps the standard BIOS')
+                standard[key] = byte
         differences = [[kind, address, standard.get((kind, address)),
                         expanded.get((kind, address))]
                        for kind, address in sorted(standard.keys() | expanded.keys())
                        if standard.get((kind, address)) != expanded.get((kind, address))]
         if differences != variants['bytes']:
             raise ValueError('unexpected standard/EXP BIOS differences')
-        print('PASS: standard/EXP BIOS differ only in status color and version digit')
+        print('PASS: standard/EXP BIOS match their pinned differences and appended bytes')
     for maintained, original in manifest['module_pairs']:
         left, right = image_map(root / maintained), image_map(root / original)
         if left != right:

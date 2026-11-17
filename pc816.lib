@@ -1,0 +1,789 @@
+; PC816.LIB - EXP PC BIOS 8080 bridge, derived from MBC816.A86.
+; Embedded 8080 BIOS: Stephen Hunt, V20BIOS 1.3, 08-Aug-1988.
+; The existing PC BIOS owns initialization, disks and native interrupts.
+; This extension owns its 64K bank and saves/restores IVT 80h..82h per run.
+; All code/data below is resident. Existing BIOS addresses remain fixed.
+
+C_RAWIO equ 6
+C_STAT equ 11
+DRV_ALLOCVEC equ 27
+DRV_DPB equ 31
+S_BIOS equ 50
+BIOS_SELDSK equ 9
+bdos_int equ 224
+tpa80 equ 0100h
+tpa80top equ 0fb80h
+bdos80 equ 0fbe6h
+init80 equ 0fc83h
+iobyte80 equ 3
+defdrv80 equ 4
+dmabuf80 equ 80h
+bios_pb equ 0fc83h
+biosfunc equ 0fc83h
+bioscx equ 0fc84h
+biosdx equ 0fc86h
+alloc_tbl equ 0fc88h
+param_tbl equ 0fe88h
+disk_parm_head equ 0fe98h
+disk_parm_block equ 0fea8h
+
+ cseg
+ org 04c90h
+; Replaces the original INIT call to SETISR, preserving its effects.
+INIT816:
+ call SETISR
+ push ds
+ push cs
+ pop ds
+ mov byte ptr cpu816,0
+ mov word ptr ccp_hook,0
+ mov ax,0f0fh
+ db 0d5h,10h             ; NEC ignores AAD radix; Intel uses radix 16
+ cmp al,0ffh
+ jz INIT816X
+ mov byte ptr cpu816,1
+ mov word ptr ccp_hook,offset RUN816
+INIT816X:
+ pop ds
+ ret
+
+; Replaces MOV SI,SIGNON without changing the caller's three-byte slot.
+SIGN816:
+ mov si,offset SIGNON
+ cmp byte ptr cpu816,0
+ jz SIGN816X
+ mov si,offset banner816
+SIGN816X:
+ ret
+
+; Preserve normal CMD precedence and all original missing-command handling.
+RUN816:
+ call ccp_open
+ jz FIND816
+ call RELEASE816
+ jmp ccp_cmd
+FIND816:
+ push ds
+ pop es
+ mov si,offset ccp_file+1
+ mov di,offset savecmd816
+ mov cx,11
+ cld
+ rep cmpsb
+ jnz FINDCOM816
+ jmp SAVE816
+FINDCOM816:
+ mov word ptr ccp_file+10,'MO'
+ mov dx,offset ccp_file
+ call ccp_open
+ jnz LOAD816
+ jmp ccp_error
+LOAD816:
+ call RELEASE816
+ mov byte ptr bank816,0
+ mov byte ptr vec816,0
+ mov dx,offset mem816
+ mov cl,55
+ int 224
+ or al,al
+ jz ZERO816
+ mov dx,offset nomem816
+ jmp FAIL816
+ZERO816:
+ mov byte ptr bank816,1
+ mov es,word ptr mem816
+ xor di,di
+ xor ax,ax
+ mov cx,8000h
+ cld
+ rep stosw
+ mov dx,word ptr mem816
+ mov cl,51
+ int 224
+ mov dx,100h
+READ816:
+ push dx
+ mov cl,26
+ int 224
+ mov dx,offset ccp_file
+ mov cl,20
+ int 224
+ pop dx
+ cmp al,1
+ jz EOF816
+ or al,al
+ jnz BAD816
+ add dx,80h
+ cmp dx,0fb80h
+ jb READ816
+ ; One additional record would collide with the 8080 compatibility area.
+ mov dx,offset large816
+ jmp FAIL816
+BAD816:
+ mov dx,offset readerr816
+ jmp FAIL816
+EOF816:
+ cmp dx,100h
+ ja PREP816
+ mov dx,offset empty816
+ jmp FAIL816
+PREP816:
+ ; Close before the CCP parser reuses its working FCB.
+ mov dx,offset ccp_file
+ mov cl,16
+ int 224
+ call ARGS816
+ mov es,word ptr mem816
+ mov es:byte ptr .iobyte80,0
+ mov al,byte ptr BDOSCURDRV
+ mov es:byte ptr .defdrv80,al
+ mov si,offset code80
+ mov di,0fbe6h
+ mov cx,code80_size
+ cld
+ rep movsb
+ mov dx,80h
+ mov cl,26
+ int 224
+ call VECT816
+ mov ax,word ptr mem816
+ mov ds,ax
+ mov cs:byte ptr keep816,1
+ mov cs:word ptr runsp816,sp
+ sti
+ db 0fh,0ffh,80h         ; NEC BRKEM 80h; RETEM returns here
+ push cs
+ pop ds
+ call CLEAN816
+ jmp ccp_exit
+FAIL816:
+ mov cl,9
+ int 224
+ mov dx,offset ccp_file
+ mov cl,16
+ int 224
+ call FREE816
+ jmp ccp_exit
+
+; Prepare default FCBs through existing CCP parser entries, without patching
+; its instructions. Save the tail pointer before the parser advances it.
+ARGS816:
+ mov ax,word ptr ccp_tail
+ mov word ptr argptr816,ax
+ push ds
+ pop es
+ call ccp_restore
+ call ccp_parse
+ mov al,byte ptr ccp_drive
+ mov byte ptr ccp_file,al
+ mov ax,16
+ call ccp_parse2
+ mov al,byte ptr ccp_drive
+ mov byte ptr ccp_file+16,al
+ mov byte ptr ccp_file+32,0
+ mov es,word ptr mem816
+ mov si,offset ccp_file
+ mov di,5ch
+ mov cx,33
+ cld
+ rep movsb
+ mov si,word ptr argptr816
+SKIP816:
+ cmp byte ptr [si],' '
+ jne TAIL816
+ inc si
+ jmps SKIP816
+TAIL816:
+ mov di,81h
+ xor cx,cx
+TAIL816L:
+ lodsb
+ or al,al
+ jz TAIL816X
+ cmp cx,126
+ jae TAIL816X
+ stosb
+ inc cx
+ jmps TAIL816L
+TAIL816X:
+ mov al,0dh
+ stosb
+ mov es:byte ptr .80h,cl
+ mov byte ptr ccp_buffer+1,0
+ ret
+
+; IVT writes are atomic with respect to maskable interrupts. Restore the
+; previous owners, not an invented trap handler. NMI is not intercepted.
+VECT816:
+ pushf
+ cli
+ push ds
+ push es
+ xor ax,ax
+ mov ds,ax
+ push cs
+ pop es
+ mov si,200h
+ mov di,offset oldvec816
+ mov cx,6
+ cld
+ rep movsw
+ mov word ptr .200h,0fc83h
+ mov ax,es:word ptr mem816
+ mov word ptr .202h,ax
+ mov word ptr .204h,offset bdostrap
+ mov ax,cs
+ mov word ptr .206h,ax
+ mov word ptr .208h,offset biostrap
+ mov word ptr .20ah,ax
+ pop es
+ pop ds
+ mov byte ptr vec816,1
+ popf
+ ret
+
+; Also reached through WBOOT when native BDOS aborts an 8080 operation.
+; BDOS abandons its own stack on abort. An active 8080 session must still
+; execute RETEM: jumping straight to the CCP leaves NEC emulation active.
+; Recover the BRKEM frame on the CCP stack, then IRET to the embedded RETEM.
+; BDOS may have released the bank, but no allocation occurs before RETEM.
+EXIT816:
+ mov ax,cs
+ mov ss,ax
+ mov ds,ax
+ cmp byte ptr vec816,0
+ jz WARM816
+ mov byte ptr keep816,0
+ mov sp,word ptr runsp816
+ sub sp,6                       ; FLAGS, CS, IP pushed by BRKEM
+ mov ax,word ptr mem816
+ mov ds,ax
+ pushf
+ pop ax
+ and ax,07effh                  ; emulation mode, single-step disabled
+ push ax
+ push ds
+ mov ax,0fc33h                  ; embedded 8080 warm boot: RETEM
+ push ax
+ iret
+WARM816:
+ mov sp,offset ccp_stack
+ cld
+ call FREE816
+ jmp CCP+6
+FREE816:
+ mov byte ptr keep816,0
+CLEAN816:
+ cmp byte ptr vec816,0
+ jz FREE816B
+ pushf
+ cli
+ xor ax,ax
+ mov es,ax
+ mov si,offset oldvec816
+ mov di,200h
+ mov cx,6
+ cld
+ rep movsw
+ mov byte ptr vec816,0
+ popf
+FREE816B:
+ cmp byte ptr keep816,0
+ jnz DMA816
+ call RELEASE816
+DMA816:
+ mov dx,cs
+ mov cl,51
+ int 224
+ mov dx,80h
+ mov cl,26
+ int 224
+ call ccp_restore
+ push ds
+ pop es
+ ret
+
+; Release only ownership; callers may already have an open command FCB.
+RELEASE816:
+ mov byte ptr keep816,0
+ cmp byte ptr bank816,0
+ jz RELEASE816X
+ mov byte ptr bank816,0
+ mov dx,offset mem816
+ mov cl,57
+ int 224
+RELEASE816X:
+ ret
+
+; MBC816 SAVE flow: parse pages, create a file, write two records/page.
+; Keep the FCB resident so parsing never changes the saved program bytes.
+; Unlike the historical routine, refuse overwrite and validate all arguments.
+SAVE816:
+ cmp byte ptr bank816,0
+ jne SAVEPARSE816
+ mov dx,offset nosave816
+ jmp SAVEMSG816
+SAVEPARSE816:
+ call ccp_restore
+ push ds
+ pop es
+ call ccp_parse
+ or ah,ah
+ jz $+5
+ jmp SAVEERR816
+ cmp byte ptr ccp_drive,0
+ je $+5
+ jmp SAVEERR816
+ mov si,offset ccp_file+1
+ xor bx,bx
+ xor dx,dx
+ mov cx,8
+SAVENUM816:
+ lodsb
+ cmp al,' '
+ je SAVEPAD816
+ cmp al,'0'
+ jae $+5
+ jmp SAVEERR816
+ cmp al,'9'
+ jbe $+5
+ jmp SAVEERR816
+ cmp bx,25
+ jbe $+5
+ jmp SAVEERR816
+ sub al,'0'
+ xor ah,ah
+ push ax
+ mov ax,bx
+ mov bx,10
+ mul bx
+ mov bx,ax
+ pop ax
+ add bx,ax
+ cmp bx,250
+ jbe $+5
+ jmp SAVEERR816
+ inc dx
+ loop SAVENUM816
+ jmps SAVEEXT816
+SAVEPAD816:
+ dec cx
+ jz SAVEEXT816
+SAVEPADLOOP816:
+ lodsb
+ cmp al,' '
+ je $+5
+ jmp SAVEERR816
+ loop SAVEPADLOOP816
+SAVEEXT816:
+ or dx,dx
+ jnz $+5
+ jmp SAVEERR816
+ mov cx,3
+SAVEEXTLOOP816:
+ lodsb
+ cmp al,' '
+ je $+5
+ jmp SAVEERR816
+ loop SAVEEXTLOOP816
+ shl bx,1
+ mov word ptr saverecs816,bx
+ call ccp_parse
+ or ah,ah
+ jz $+5
+ jmp SAVEERR816
+ cmp byte ptr ccp_file+1,' '
+ jne $+5
+ jmp SAVEERR816
+ mov al,byte ptr ccp_drive
+ mov byte ptr ccp_file,al
+ mov si,word ptr ccp_tail
+SAVETAIL816:
+ lodsb
+ cmp al,' '
+ je SAVETAIL816
+ or al,al
+ jz $+5
+ jmp SAVEERR816
+ mov di,offset savefcb816
+ xor ax,ax
+ mov cx,18
+ rep stosw
+ mov si,offset ccp_file
+ mov di,offset savefcb816
+ mov cx,12
+ rep movsb
+ mov dx,offset savefcb816
+ mov cl,17
+ int 224
+ cmp al,0ffh
+ jne SAVEEXISTS816
+ mov dx,offset savefcb816
+ mov cl,22
+ int 224
+ cmp al,0ffh
+ jne $+5
+ jmp SAVEERR816
+ mov dx,word ptr mem816
+ mov cl,51
+ int 224
+ mov word ptr saveoff816,100h
+SAVEWRITE816:
+ cmp word ptr saverecs816,0
+ je SAVECLOSE816
+ mov dx,word ptr saveoff816
+ mov cl,26
+ int 224
+ mov dx,offset savefcb816
+ mov cl,21
+ int 224
+ or al,al
+ jnz SAVEBADWRITE816
+ add word ptr saveoff816,80h
+ dec word ptr saverecs816
+ jmps SAVEWRITE816
+SAVECLOSE816:
+ mov dx,offset savefcb816
+ mov cl,16
+ int 224
+ cmp al,0ffh
+ je SAVEDELETE816
+ mov dx,offset saved816
+ jmps SAVERESET816
+SAVEBADWRITE816:
+ mov dx,offset savefcb816
+ mov cl,16
+ int 224
+SAVEDELETE816:
+ mov dx,offset savefcb816
+ mov cl,19
+ int 224
+SAVEERR816:
+ mov dx,offset savemsgerr816
+ jmps SAVERESET816
+SAVEEXISTS816:
+ mov dx,offset exists816
+SAVERESET816:
+ push dx
+ call CLEAN816
+ pop dx
+SAVEMSG816:
+ mov cl,9
+ int 224
+ jmp ccp_exit
+
+bdostrap:
+	sti				; re-enable interrupts
+	push	bp
+	push	es
+	push	ds
+	cmp	cl,C_RAWIO		; direct console i/o?
+	jz	bdostrap_rawio
+	cmp	cl,C_STAT		; get console status?
+	jz	bdostrap_constat
+	cmp	cl,DRV_ALLOCVEC		; get allocation vector address?
+	jz	bdostrap_allocvec
+	cmp	cl,DRV_DPB		; get disk parm block address?
+	jz	bdostrap_dpb
+
+bdos_8086:
+	int	bdos_int		; perform bdos interrupt
+
+bdosret:
+	pop	ds
+	pop	es
+	pop	bp
+	iret
+
+bdostrap_rawio:
+	cmp	dl,0fdh			; wait for key press?
+	jnz	bdos_8086		; no, perform raw io
+
+bdostrap_rawio_wait:			; MPM-II style!
+	mov	cl,C_RAWIO
+	mov	dl,0ffh			; console input
+	int	bdos_int
+	or	al,al			; anything entered?
+	jz	bdostrap_rawio_wait	; no - try again
+	jmps	bdosret
+
+bdostrap_constat:
+	int	bdos_int		; get console status
+	or	al,al
+	jz	bdosret			; 0 = no chr ready
+	mov	al,0ffh			; cpm-86 returns 01 for ready
+					; change to 0ffh for cpm-80
+	jmps	bdosret
+
+bdostrap_allocvec:			; get allocation vector address
+	mov	di,offset alloc_tbl	; allocation table
+	mov	ax,0100h		; max length 200h bytes
+	jmps	bdostrap_copy_table
+
+bdostrap_dpb:				; get disk parm block address
+	mov	di,offset param_tbl	; parameter table
+	mov	ax,08h			; max length 10h bytes
+
+bdostrap_copy_table:
+	push	di			; save destination offset
+	push	ax			; save count
+	push	es			; save destination segment
+	int	bdos_int
+	mov	ax,es
+	mov	ds,ax			; ds = table source seg
+	pop	es			; es = table dest seg
+	pop	cx			; cx = table length
+	pop	di			; di = dest offset
+	mov	si,bx			; si = source offset
+	mov	bx,di			; bx = dest offset (hl register return value)
+	cld
+	rep	movsw
+	xor	al,al			; al = 0 (for return)
+	jmps	bdosret
+
+;---------------------------------------------
+; bios trap
+;---------------------------------------------
+biostrap:
+	sti				; re-enable interrupts
+	mov	byte ptr .biosfunc,al
+	mov	word ptr .bioscx,cx
+	mov	word ptr .biosdx,dx
+	mov	dx,offset bios_pb
+	mov	cl,S_BIOS
+
+	cmp	al,BIOS_SELDSK		; disk select?
+	jz	biostrap_seldsk
+
+biostrap_int:
+	push	bp
+	push	es
+	int	bdos_int
+	pop	es
+	pop	bp
+
+biostrap_iret:
+	iret				; ret far from interrupt
+
+biostrap_seldsk:
+	push	ds
+	push	bp
+	push	es
+	int	bdos_int
+	or	bx,bx			; invalid disk select?
+	jnz	biostrap_seldsk1
+
+	pop	es
+	pop	bp
+	pop	ds
+	jmps	biostrap_iret		; yes, return
+
+biostrap_seldsk1:
+	mov	ax,es
+	mov	ds,ax			; ds = dph + dpb source seg
+	pop	es			; es = dph + dpb dest seg
+
+	mov	si,bx			; si = dph source offset
+	mov	di,offset disk_parm_head ; di = dph dest offset
+	mov	cx,08h
+	cld
+	rep	movsw			; copy dph to 8080 dph
+
+	mov	si,0ah[bx]		; si = dpb source offset
+	mov	di,offset disk_parm_block ; di = dpb dest offset
+	mov	cx,0fh
+	cld
+	rep	movsb			; copy dpb to 8080 dpb
+
+	mov	bx,offset disk_parm_head ; bx = dph offset for return (in hl)
+
+	pop	bp			; restore 8080 stack pointer
+	pop	ds
+
+	mov	0ah[bx],offset disk_parm_block	; amend dph to point to 8080 dpb
+
+	jmps	biostrap_iret		; return
+
+
+code80:
+code80_start		equ	offset $
+;---------------------------------------------------------------------
+;	8080 bdos trap routine
+;---------------------------------------------------------------------
+
+;org	0fbe6h			; so that BIOS starts at 0fc00h
+;bdos80:
+db	0C3h,0EDh,0FBh	;jmp	callbdos
+db	00h		;nop
+db	00h		;nop
+db	00h		;nop
+db	00h		;nop
+
+;callbdos:
+db	079h		;mov	a,c
+db	0B7h		;ora	a
+db	0CAh,03h,0FCh	;jz	wboote	; terminate if bdos function 0
+db	0EDh,0EDh,081h	;calln	intbdos	; call native 8086 bdos
+
+;teststat:
+db	0F5h		;push	psw	; save register a and flags
+db	03Ah,0FFh,0FBh	;lda	statcode ; get 8086 return code in register a
+db	0B7h		;ora	a	; return code 0?
+db	0C2h,03h,0FCh	;jnz	wboote	; no - terminate emulation
+db	0F1h		;pop	psw	; restore register a and flags
+
+db	0C9h		;ret
+
+;statcode				; return status code (at FBFF)
+db	0				; zero     = ok
+					; non zero = terminate emulation
+;---------------------------------------------------------------------
+;	8080 bios jump vector for individual subroutines
+;---------------------------------------------------------------------
+db	0C3h,033h,0FCh 	;jmp	boot80	; 00 cold start
+;wboote80:
+db	0C3h,033h,0FCh 	;jmp	wboot80	; 01 warm start
+db	0C3h,035h,0FCh 	;jmp	const80	; 02 console status
+db	0C3h,03Ah,0FCh 	;jmp	conin80	; 03 console character in
+db	0C3h,03Fh,0FCh 	;jmp	conout80; 04 console character out
+db	0C3h,044h,0FCh 	;jmp	llist80	; 05 list character out
+db	0C3h,049h,0FCh 	;jmp	punch80	; 06 punch character out
+db	0C3h,04Eh,0FCh 	;jmp	reader80; 07 reader character out
+db	0C3h,053h,0FCh 	;jmp	home80	; 08 move head to home position
+db	0C3h,058h,0FCh 	;jmp	seldsk80; 09 select disk
+db	0C3h,05Dh,0FCh 	;jmp	settrk80; 0a set track number
+db	0C3h,062h,0FCh 	;jmp	setsec80; 0b set sector number
+db	0C3h,067h,0FCh 	;jmp	setdma80; 0c set dma address
+db	0C3h,06Ch,0FCh 	;jmp	read80	; 0d read disk
+db	0C3h,071h,0FCh 	;jmp	write80	; 0e write disk
+db	0C3h,076h,0FCh 	;jmp	listst80; 0f return list status
+db	0C3h,07Bh,0FCh 	;jmp	sectran80; 10 sector translate
+
+;---------------------------------------------------------------------
+;	individual subroutines to perform each bios function
+;---------------------------------------------------------------------
+boot80:	; boot80 & wboot80 both perform the same function
+;
+;wboot80:
+db	0EDh,0FDh	;retem
+
+;const80: ; console status, return 0ffh if character ready, 00h if not
+db	03Eh,02h      	;mvi	a,02h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;conin80: ; console character into register a
+db	03Eh,03h      	;mvi	a,03h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;conout80: ; console character output from register c
+db	03Eh,04h      	;mvi	a,04h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;llist80: ; list character from register c
+db	03Eh,05h      	;mvi	a,05h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;punch80: ; punch character from register c
+db	03Eh,06h      	;mvi	a,06h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;reader80: ; read character into register a from reader device
+db	03Eh,07h      	;mvi	a,07h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;home80:	; move to the track 00 position of current drive
+db	03Eh,08h      	;mvi	a,08h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;seldsk80: ; select disk given by register C
+db	03Eh,09h      	;mvi	a,09h
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;settrk80: ; set track given by register c
+db	03Eh,0Ah      	;mvi	a,0ah
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;setsec80: ; set sector given by register c
+db	03Eh,0Bh      	;mvi	a,0bh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;setdma80: ; set dma address given by registers b and c
+db	03Eh,0Ch      	;mvi	a,0ch
+db	0C3h,07Dh,0FCh	;jmp	callbios
+
+;read80:	; perform read operation
+db	03Eh,0Dh      	;mvi	a,0dh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;write80: ; perform a write operation
+db	03Eh,0Eh      	;mvi	a,0eh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;listst80: ; return list status (0 if not ready, 1 if ready)
+db	03Eh,0Fh      	;mvi	a,0fh
+db	0C3h,07Dh,0FCh 	;jmp	callbios
+
+;sectran80:
+	; translate the sector given by BC using the
+	; translate table given by DE
+;
+db	03Eh,010h      	;mvi	a,010h
+;			;jmp	callbios
+
+;callbios:
+; execute 8086 bios routines
+;
+db	0EDh,0EDh,082h	;calln	intbios
+db	0C3h,0F5h,0FBh	;jmp	teststat	; test return status and
+						; return if ok
+
+;---------------------------------------------------------------------
+;	8080 bios initialisation routine
+;---------------------------------------------------------------------
+;	initialisation cpm80 and jump to start of tpa
+;	run once-only code later overwritten by bios data + tables
+;init80:
+db	03Eh,0C3h	;mvi	a,0c3h		; c3 is a jmp instruction
+db	032h,00h,00h	;sta	0		; for jmp to wboot80
+db	021h,03h,0FCh	;lxi	h,wboote80	; wboot80 entry point
+db	022h,01h,00h	;shld	1		; set address field for jmp at 0
+
+db	032h,05h,00h	;sta	5		; for jmp to bdos
+db	021h,0E6h,0FBh	;lxi	h,bdos80	; bdos entry point
+db	022h,06h,00h	;shld	6		; address field of jump at 5 to bdos
+
+db	031h,0FFh,0FFh	;lxi	sp,0ffffh	; set stack to top of 64k
+
+db	021h,03h,0FCh	;lxi	h,wboote80	; hl points to wboote80 offset
+db	0E5h		;push	h		; push return address onto stack
+
+db	0C3h,00h,01h	;jmp	0100h		; go to 0100h
+
+code80_size equ offset $ - code80_start
+
+savecmd816 db 'SAVE    CMD'
+keep816 db 0
+saverecs816 dw 0
+saveoff816 dw 0
+savefcb816 rw 18
+nosave816 db 13,10,'SAVE: no retained 8080 program',13,10,'$'
+saved816 db 13,10,'SAVE complete',13,10,'$'
+exists816 db 13,10,'SAVE: file exists',13,10,'$'
+savemsgerr816 db 13,10,'SAVE: invalid arguments or disk error',13,10,'$'
+cpu816 db 0
+runsp816 dw 0
+bank816 db 0
+vec816 db 0
+mem816 dw 0,1000h
+ db 0
+argptr816 dw 0
+oldvec816 rw 6
+banner816 db 13,10,10,'CP/M-816 for the IBM PC and IBM PC XT  Version 1.1',13,10
+ db 'Copyright (C) 1983, Digital Research',13,10,10,10
+ db 'Hardware Supported :',13,10,10
+ db '             8080 Emulation : V20/V30',13,10,0
+nomem816 db 13,10,'CP/M-816: 64K memory unavailable',13,10,'$'
+large816 db 13,10,'CP/M-816: COM file too large',13,10,'$'
+empty816 db 13,10,'CP/M-816: empty COM file',13,10,'$'
+readerr816 db 13,10,'CP/M-816: COM read failed',13,10,'$'
+END816 equ offset $

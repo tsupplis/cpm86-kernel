@@ -61,7 +61,9 @@ Evidence: [BDOS shared definitions](bdos.a86), [PC BIOS aliases and vectors](pcb
 [ASSIGN](commands/assign/assign.a86), [HDMAINT](commands/hdmaint/hdmaint.a86),
 [DDT86](commands/ddt86/ddt86.a86), [MBC](mbcv20.a86),
 [mixed-mode MBC](mbc816.a86), and [AD8088](ad88bios.a86).
-The corresponding EXP sources retain these shared contracts.
+The corresponding EXP sources retain these shared contracts. The
+[CP/M-816 configuration](patching/pc816.txt) adds 8080 CP/M-80 2.2 execution
+on V20/V30 through the BIOS; it adds no BDOS function or Z80 support.
 SETUP copies the key, serial and assignment tables through their pointers;
 its other saved options come from a configuration sector, not from `2550h`.
 DDT86 reads console width at `S+64` decimal after `GETDATAPAGEADDR`.
