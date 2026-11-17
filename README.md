@@ -2,7 +2,7 @@
 
 CP/M-86 and CP/M-816 1.1 kernels and commands for IBM PC/XT, emulators, V20 MBC and the AD8088 Card for Apple II. The project contains a full distribution of CP/M-86 1.1, patched, y2k compliant, enhanced and complete, for PC and PC XT built entirely from source.
 
-It is build using the cross development toolkit [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev).
+The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsupplis/cpm86-crossdev) is used for building kernel, tools and distribution.
 
 | Goal | Distribution |
 | --- | --- |
