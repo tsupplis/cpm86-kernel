@@ -12,7 +12,7 @@ The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsuppl
 | **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
 | Usability and bug fixes | Enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
 | Storage | 320K distributions, 720K/1.44M support through **144FEAT**, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
-| Other 8-bit options | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu) |
+| Coherent Ecosystem | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu). See for other sister projects at the end of this document |
 
 <p align="center">
 <img src="./images/cpm86.png" alt="CP/M-86" width="48%">
