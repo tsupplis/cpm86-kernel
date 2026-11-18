@@ -86,6 +86,26 @@ raw input and SUBMIT behaviour are unchanged. See [patch details](patching/linee
 
 Patch history is in `patching/`; addresses and reserved-space use are in [mapping.md](mapping.md). Fixed interfaces and external consumers are listed in [api.md](api.md). Local edits are marked `Ts:`. Public entry points and existing system-data addresses are preserved.
 
+#### Patching methods
+
+**Core stability takes priority over new features.** Preserve working behaviour,
+public interfaces and the established kernel layout. Keep extensions isolated
+and changes to the core minimal, explicit and regression-tested.
+
+Existing code/data addresses and external patch signatures must remain fixed.
+A replacement must fit its original instruction space; larger changes use:
+
+| Method | Use and constraints |
+| --- | --- |
+| Reserved patch areas | Small fixes within verified free space. A same-size jump/call redirects execution; existing symbols do not move. |
+| BIOS delegation | Larger extensions appended to the BIOS, reached through fixed-size hooks. Generated symbol bindings expose only the required routines/data to the extension—not the full BDOS namespace or a new public API. |
+
+Delegation must preserve registers, stack and cleanup contracts without
+recursively entering BDOS. Include appended code/data in the resident-memory
+and loader budget, and move dynamic allocation past it. Verify byte changes,
+fixed addresses and module boundaries. The [EXP editor](patching/lineedit.txt)
+uses this method: 1,466 resident bytes, including 128 bytes of recall storage.
+
 | DR patch | Area | Fix |
 | --- | --- | --- |
 | 01 | Chain (`MCHAIN`) | Stop at the terminating zero; store the command length correctly |
