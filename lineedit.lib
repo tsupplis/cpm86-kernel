@@ -1,0 +1,530 @@
+; LINEEDIT.LIB - EXP buffered-input editor, ported from CCP/M CHARIO.CIO.
+; BDOS Function 10 owns the caller buffer (length, count, bytes). DS is the
+; kernel segment and ES is the caller segment on entry. Return restores ES
+; to DS, as the historical editor does. No INT E0h or recursive BDOS calls.
+; Cursor state uses ten stack bytes; recall is one length + 127-byte slot.
+; Private fixed gateways preserve BDOS and BIOS addresses. Generated BDOS
+; bindings below refer only to console primitives and their existing state.
+;
+; Unsupported routing retains the historical editor. PC key translation is
+; enabled only during enhanced input, and cleared by acceptance or abort.
+
+    cseg
+    org 053b0h
+LE_ENTRY:
+    jmp le_start
+LE_ABORT_GATE:
+    jmp le_reset
+LE_KEY_GATE:
+    jmp le_key
+
+ctlh equ 8
+rubout equ 07fh
+bell equ 7
+ctlx equ 018h
+ctlu equ 015h
+ctlr equ 012h
+ctle equ 5
+tab equ 9
+
+le_start:
+    cmp word ptr SYS_CONI,1 ! jne le_fallback
+    mov ax,word ptr SYS_CONO
+    cmp ax,1 ! je le_video
+    cmp ax,2 ! je le_video
+    cmp ax,3 ! jne le_fallback
+le_video:
+    test byte ptr WRAPFLAG,TRUE ! jz le_fallback
+    cmp word ptr STATE,offset VIDNORM ! jne le_fallback
+    jmp le_edit
+le_fallback:
+    jmp le_original
+
+; Called in place of CONSTA's MRSDSY call. Preserve that call's semantics.
+le_reset:
+    mov byte ptr le_active,0
+    jmp le_diskreset
+
+; Replaces SUB AH,AH / INT 16h in KEYIN, including its AL/AH result.
+; Outside editing, scan codes retain the existing programmable-key path.
+le_key:
+    xor ah,ah
+    int 16h
+    and al,07fh
+    cmp byte ptr le_active,0 ! je le_keydone
+    or al,al ! jne le_keydone
+    cmp ah,4bh ! jne le_keyright
+    mov al,1 ! ret
+le_keyright:
+    cmp ah,4dh ! jne le_keyhome
+    mov al,6 ! ret
+le_keyhome:
+    cmp ah,47h ! jne le_keyend
+    mov al,080h ! ret
+le_keyend:
+    cmp ah,4fh ! jne le_keyup
+    mov al,081h ! ret
+le_keyup:
+    cmp ah,48h ! jne le_keydel
+    mov al,017h ! ret
+le_keydel:
+    cmp ah,53h ! jne le_keydone
+    mov al,7
+le_keydone:
+    ret
+
+; Console primitives may clobber registers. Adapters isolate those effects
+; from the unchanged CCP/M editing algorithm. SI/DI/BP and ES remain owned
+; by the editor; AX is returned only by input.
+le_input:
+    push bx ! push cx ! push dx ! push si ! push di ! push bp ! push es
+    call le_getchar
+    xor ah,ah
+    cmp al,080h ! je le_extended
+    cmp al,081h ! jne le_inputdone
+le_extended:
+    mov ah,1
+le_inputdone:
+    pop es ! pop bp ! pop di ! pop si ! pop dx ! pop cx ! pop bx
+    ret
+
+le_echo:
+    push ax ! push bx ! push cx ! push dx ! push si ! push di ! push bp ! push es
+    mov cl,dl
+    call le_putvisible
+    pop es ! pop bp ! pop di ! pop si ! pop dx ! pop cx ! pop bx ! pop ax
+    ret
+
+le_raw:
+    push ax ! push bx ! push cx ! push dx ! push si ! push di ! push bp ! push es
+    mov cl,dl
+    call le_putraw
+    pop es ! pop bp ! pop di ! pop si ! pop dx ! pop cx ! pop bx ! pop ax
+    ret
+
+le_edit:
+ed_buf    equ word ptr 0fffeh
+ed_pos    equ word ptr 0fffch
+ed_col    equ word ptr 0fffah
+ed_end    equ word ptr 0fff8h
+ed_origin equ word ptr 0fff6h
+
+    mov di,le_arg
+    push bp
+    mov bp,sp
+    sub sp,10
+    mov ed_buf[bp],di
+    mov ed_pos[bp],0
+    mov ed_col[bp],0
+    mov ed_end[bp],0
+    xor ax,ax ! mov al,le_column
+    mov ed_origin[bp],ax
+    mov le_prompt,al
+    mov byte ptr le_active,1
+    xor bx,bx
+    cmp es:byte ptr [di],0
+    jne ed_read
+    jmp ed_finish
+ed_read:
+    push bx ! push bp
+    call le_input
+    pop bp ! pop bx
+    mov dl,al
+    cmp ah,1 ! jne ed_ascii
+    cmp dl,080h ! jne ed_keyend
+    jmp ed_home
+ed_keyend:
+    cmp dl,081h ! jne ed_ascii
+    jmp ed_toend
+ed_ascii:
+    cmp dl,cr ! jne ed_notcr
+    jmp ed_accept
+ed_notcr:
+    cmp dl,lf ! jne ed_notlf
+    jmp ed_accept
+ed_notlf:
+    cmp dl,001h ! jne ed_nota
+    jmp ed_left
+ed_nota:
+    cmp dl,006h ! jne ed_notf
+    jmp ed_right
+ed_notf:
+    cmp dl,002h ! jne ed_notb
+    cmp ed_pos[bp],0 ! je ed_bend
+    jmp ed_home
+ed_bend:
+    jmp ed_toend
+ed_notb:
+    cmp dl,017h ! jne ed_notw
+    or bx,bx ! jz ed_recall
+    jmp ed_toend
+ed_recall:
+    mov di,ed_buf[bp]
+    call recall_line
+    mov ed_pos[bp],bx
+    mov cx,bx ! call ed_width
+    mov ed_col[bp],ax ! mov ed_end[bp],ax
+    jmp ed_read
+ed_notw:
+    cmp dl,ctlh ! jne ed_noth
+    jmp ed_backspace
+ed_noth:
+    cmp dl,rubout ! jne ed_notrub
+    jmp ed_backspace
+ed_notrub:
+    cmp dl,bell ! jne ed_notg
+    jmp ed_delete
+ed_notg:
+    cmp dl,00bh ! jne ed_notk
+    mov bx,ed_pos[bp]
+    jmp ed_changed
+ed_notk:
+    cmp dl,ctlx ! jne ed_notx
+    jmp ed_killleft
+ed_notx:
+    cmp dl,ctlu ! jne ed_notu
+    call ed_newline
+    xor bx,bx
+    mov ed_pos[bp],0
+    jmp ed_read
+ed_notu:
+    cmp dl,ctlr ! jne ed_notr
+    call ed_newline
+    jmp ed_changed
+ed_notr:
+    cmp dl,ctle ! jne ed_insert
+    mov dl,cr ! call ed_raw
+    mov dl,lf ! call ed_raw
+    mov ed_origin[bp],0
+    mov ed_col[bp],0 ! mov ed_end[bp],0
+    mov le_column,0
+    mov le_prompt,0
+    jmp ed_changed
+
+ed_insert:
+    cmp dl,10h ! jne ed_notp
+    not le_list
+    jmp ed_read
+ed_notp:
+    cmp dl,3 ! jne ed_store
+    or bx,bx ! jne ed_store
+    mov byte ptr le_active,0
+    mov sp,bp ! pop bp
+    push ds ! pop es
+    jmp le_abort
+ed_store:
+    mov di,ed_buf[bp]
+    push ds ! mov ds,le_segment
+    cmp bl,[di]
+    pop ds
+    jb ed_room
+    mov dl,bell ! call ed_raw
+    jmp ed_read
+ed_room:
+    ; Shift the suffix backwards; never store beyond the caller's maximum.
+    push ds ! mov ds,le_segment
+    push bx
+ed_shiftup:
+    cmp bx,ed_pos[bp] ! je ed_put
+    mov al,1[di+bx]
+    mov 2[di+bx],al
+    dec bx
+    jmps ed_shiftup
+ed_put:
+    mov 2[di+bx],dl
+    pop bx ! pop ds
+    inc bx
+    inc ed_pos[bp]
+    cmp bx,ed_pos[bp] ! je ed_append
+    jmp ed_changed
+ed_append:
+    ; Appending is the common case: no whole-line repaint is needed.
+    call ed_echo
+    mov ax,ed_col[bp] ! mov ed_end[bp],ax
+    mov di,ed_buf[bp]
+    push ds ! mov ds,le_segment
+    cmp bl,[di]
+    pop ds
+    jb ed_again
+    jmp ed_accept            ; retain typed-at-end auto-accept convention
+ed_again:
+    jmp ed_read
+
+ed_backspace:
+    cmp ed_pos[bp],0 ! jne ed_bksp_ok
+    jmp ed_again
+ed_bksp_ok:
+    dec ed_pos[bp]
+ed_delete:
+    cmp bx,ed_pos[bp] ! jne ed_delete_ok
+    jmp ed_again
+ed_delete_ok:
+    mov di,ed_buf[bp]
+    push ds ! mov ds,le_segment
+    push bx
+    mov cx,bx
+    mov bx,ed_pos[bp]
+ed_shiftdown:
+    inc bx
+    cmp bx,cx
+    jae ed_deldone
+    mov al,2[di+bx]
+    mov 1[di+bx],al
+    jmps ed_shiftdown
+ed_deldone:
+    pop bx ! pop ds
+    dec bx
+    jmp ed_changed
+
+ed_killleft:
+    mov cx,ed_pos[bp]
+    or cx,cx ! jnz ed_kill_ok
+    jmp ed_again
+ed_kill_ok:
+    sub bx,cx
+    push ds ! mov ds,le_segment
+    mov di,ed_buf[bp]
+    push si ! push bx
+    mov si,cx
+    add si,di ! add si,2
+    mov cx,bx
+    xor bx,bx
+ed_killcopy:
+    cmp bx,cx
+    jae ed_killdone
+    mov al,[si]
+    mov 2[di+bx],al
+    inc si ! inc bx
+    jmps ed_killcopy
+ed_killdone:
+    pop bx ! pop si ! pop ds
+    mov ed_pos[bp],0
+ed_changed:
+    call ed_redraw
+    jmp ed_read
+
+ed_home:
+    mov ed_pos[bp],0
+    call ed_moveleft
+    jmp ed_read
+ed_left:
+    cmp ed_pos[bp],0 ! jne ed_left_ok
+    jmp ed_again
+ed_left_ok:
+    dec ed_pos[bp]
+    call ed_moveleft
+    jmp ed_read
+ed_right:
+    cmp bx,ed_pos[bp] ! jne ed_right_ok
+    jmp ed_again
+ed_right_ok:
+    call ed_step
+    jmp ed_read
+ed_toend:
+    cmp bx,ed_pos[bp] ! jne ed_end_step
+    jmp ed_again
+ed_end_step:
+    call ed_step
+    jmps ed_toend
+
+ed_accept:
+    ; Return accepts the whole buffer, including text to the cursor's right.
+    cmp bx,ed_pos[bp] ! je ed_finish
+    call ed_step
+    jmps ed_accept
+ed_finish:
+    mov byte ptr le_active,0
+    mov di,ed_buf[bp]
+    call recall_save
+    push ds ! mov ds,le_segment
+    mov 1[di],bl
+    pop ds
+    mov dl,cr ! call ed_raw
+    mov le_column,0
+    mov sp,bp ! pop bp
+    push ds ! pop es
+    ret
+
+ed_step: ; Replay one existing character to move right without changing it.
+    push bx
+    mov di,ed_buf[bp]
+    mov bx,ed_pos[bp]
+    push ds ! mov ds,le_segment
+    mov dl,2[di+bx]
+    pop ds ! pop bx
+    call ed_echo
+    inc ed_pos[bp]
+    ret
+
+ed_moveleft:
+    mov cx,ed_pos[bp] ! call ed_width
+    mov cx,ed_col[bp]
+    sub cx,ax
+    mov ed_col[bp],ax
+    call ed_backcols
+    add ax,ed_origin[bp]
+    mov le_column,al
+    ret
+
+ed_width: ; CX=prefix length; AX=display width (tabs and ^X notation).
+    push bx ! push cx ! push dx ! push di ! push ds
+    xor ax,ax ! xor bx,bx
+    mov di,ed_buf[bp]
+    mov ds,le_segment
+ed_wloop:
+    jcxz ed_wdone
+    mov dl,2[di+bx]
+    call ed_measure
+    inc bx
+    loop ed_wloop
+ed_wdone:
+    pop ds ! pop di ! pop dx ! pop cx ! pop bx
+    ret
+
+ed_measure: ; AX=display offset, DL=character; return next offset.
+    cmp dl,tab ! je ed_wtab
+    inc ax
+    cmp dl,' ' ! jae ed_wret
+    inc ax
+ed_wret:
+    ret
+ed_wtab:
+    push cx
+    mov cx,ax
+    add cx,ed_origin[bp]
+    and cx,7
+    add ax,8
+    sub ax,cx
+    pop cx
+    ret
+
+ed_echo: ; Echo a buffer character, preserving editor registers.
+    push ax ! push bx ! push cx ! push dx ! push di ! push bp
+    mov ax,ed_col[bp]
+    call ed_measure
+    mov ed_col[bp],ax
+    call le_echo
+    pop bp ! pop di ! pop dx ! pop cx ! pop bx ! pop ax
+    ret
+
+ed_raw: ; Cursor/erase output without printer echo or logical column counting.
+    push ax ! push bx ! push cx ! push dx ! push di ! push bp
+    call le_raw
+    pop bp ! pop di ! pop dx ! pop cx ! pop bx ! pop ax
+    ret
+
+ed_backcols: ; Backspace CX screen cells, preserving AX.
+    jcxz ed_bret
+    mov dl,ctlh
+ed_bloop:
+    call ed_raw
+    loop ed_bloop
+ed_bret:
+    ret
+
+ed_redraw:
+    ; Repaint from the input origin, erase the former tail, restore cursor.
+    mov cx,ed_col[bp] ! call ed_backcols
+    mov ed_col[bp],0
+    mov ax,ed_origin[bp] ! mov le_column,al
+    push bx
+    xor cx,cx
+ed_paint:
+    cmp cx,bx ! jae ed_painted
+    push bx
+    mov bx,cx
+    mov di,ed_buf[bp]
+    push ds ! mov ds,le_segment
+    mov dl,2[di+bx]
+    pop ds ! pop bx
+    call ed_echo
+    inc cx
+    jmps ed_paint
+ed_painted:
+    pop bx
+    mov ax,ed_col[bp]
+    mov cx,ed_end[bp]
+    mov ed_end[bp],ax
+    sub cx,ax ! jbe ed_erased
+    mov dl,' '
+ed_erase:
+    call ed_raw
+    inc ed_col[bp]
+    loop ed_erase
+ed_erased:
+    call ed_moveleft
+    ret
+
+ed_newline:
+    ; Preserve the historical #/newline retype convention and prompt indent.
+    mov dl,'#' ! call ed_raw
+    mov dl,cr ! call ed_raw
+    mov dl,lf ! call ed_raw
+    mov cx,ed_origin[bp]
+    jcxz ed_nldone
+    mov dl,' '
+ed_indent:
+    call ed_raw
+    loop ed_indent
+ed_nldone:
+    mov ax,ed_origin[bp] ! mov le_column,al
+    mov ed_col[bp],0 ! mov ed_end[bp],0
+    ret
+
+
+
+recall_save:	; BX=line length, DI=caller buffer; preserve all registers
+	push ax ! push cx ! push si ! push di ! push ds
+	or bx,bx ! jz rs_done		; blank input keeps previous line
+	mov si,di
+	mov di,offset recall_linebuf
+	mov cx,bx
+	cmp cx,127 ! jbe rs_length
+	mov cx,127
+rs_length:
+	mov cs:byte ptr [di],cl
+	inc di
+	add si,2
+	mov ds,le_segment
+rs_copy:
+	mov al,[si] ! mov cs:byte ptr [di],al
+	inc si ! inc di
+	loop rs_copy
+rs_done:
+	pop ds ! pop di ! pop si ! pop cx ! pop ax
+	ret
+
+recall_line:	; empty line, DI=caller buffer; return BX=recalled length
+	push ax ! push cx ! push dx ! push di ! push bp
+	mov bp,di
+	mov di,offset recall_linebuf
+	xor cx,cx ! mov cl,cs:byte ptr [di]
+	push ds ! mov ds,le_segment
+	cmp cl,ds:byte ptr [bp] ! jbe rl_size
+	mov cl,ds:byte ptr [bp]		; truncate to destination capacity
+rl_size:
+	pop ds
+	or cx,cx ! jz rl_done
+	inc di
+rl_copy:
+	mov dl,cs:byte ptr [di]
+	push ds ! mov ds,le_segment
+	push di ! mov di,bp
+	mov 2[di+bx],dl
+	pop di
+	pop ds
+	inc bx
+	push bx ! push cx ! push di ! push bp
+	call le_echo			; same tab/control echo as typed input
+	pop bp ! pop di ! pop cx ! pop bx
+	inc di
+	loop rl_copy
+rl_done:
+	pop bp ! pop di ! pop dx ! pop cx ! pop ax
+	ret
+
+
+le_active db 0
+recall_linebuf db 0
+    rb 127
+END_EDIT equ offset $

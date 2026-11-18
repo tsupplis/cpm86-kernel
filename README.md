@@ -62,6 +62,26 @@ The bridge reuses the MBC816 implementation through the existing EXP CCP hook.
 It does not change standard `cpm.sys` or the CCP/BDOS sources. Details and
 validation are in [the patch record](patching/pc816.txt).
 
+### EXP line editing
+
+EXP supports cursor editing and one-line recall on the PC console, on both
+Intel and V20/V30 CPUs. Standard kernels retain their existing input behaviour.
+
+| Key | Action |
+| --- | --- |
+| Left / Ctrl-A; Right / Ctrl-F | Move left; move right |
+| Home; End; Ctrl-B | Beginning; end; toggle beginning/end |
+| Backspace / Rubout; Delete / Ctrl-G | Delete left; delete at cursor |
+| Ctrl-K; Ctrl-X | Delete to end; delete to beginning |
+| Up / Ctrl-W | Recall when empty; otherwise move to end |
+| Ctrl-U; Ctrl-R; Ctrl-E | Clear; retype; continue on a new row |
+| Ctrl-P | Toggle printer echo |
+
+Recall retains up to 127 characters (128 bytes including its length).
+Application Function 10 buffers retain their own limits. Blank/cancelled
+lines preserve recall. Non-PC console routing uses the original editor;
+raw input and SUBMIT behaviour are unchanged. See [patch details](patching/lineedit.txt).
+
 ### Kernel patches
 
 Patch history is in `patching/`; addresses and reserved-space use are in [mapping.md](mapping.md). Fixed interfaces and external consumers are listed in [api.md](api.md). Local edits are marked `Ts:`. Public entry points and existing system-data addresses are preserved.
@@ -90,6 +110,7 @@ These patches are present in the frozen and maintained BDOS sets. The original P
 | PC BIOS RTC date | Standard and EXP read the initial date via `INT 1Ah/AH=04h` when supported. Stock XT or invalid replies retain the default; time initialization and fixed addresses are unchanged. See [mapping](mapping.md#optional-bios-rtc-date). |
 | [PC BIOS Y2K leap-year patch](patching/y2kleap.txt) | Standard and EXP recognize year 00 as leap (2000); four-byte in-place fix preserves addresses. The existing four-year rule is not Gregorian century handling for 2100. |
 | [PC BIOS displayed century](patching/century.txt) | Display `00–79` as 2000–2079 and `80–99` as 1980–1999. Clock storage and tools are unchanged; all existing addresses are preserved. |
+| [EXP line editor](patching/lineedit.txt) | CCP/M-style editing and 127-character recall through Function 10; standard kernel unchanged |
 | Maintained PC hard disks | Support partitions up to 31.5 MiB; see [HDMAINT compatibility notes](commands/hdmaint/README.md) |
 
 Tool patches: 03 GENDEF, 04–05 ED, 09 PIP and 12 SUBMIT. Patches 02 (LDCOPY) and 14 (sample BIOS TRACK.A86) are outside this kernel.
@@ -237,6 +258,8 @@ Images use source-built tools. CP/M-816 configuration images boot `cpmexp.sys` (
 | --- | --- |
 | `cpm86-320.img` | Bootable core + assembler tools + DCOPY/DCOMP/DFORM |
 | `cpm86-320-at.img` | Same commands, AT-compatible clock |
+| `cpm86-exp-320.img` | Core + assembler tools + DCOPY/DCOMP/DFORM, EXP editor and CP/M-816 on V20/V30 |
+| `cpm86-exp-320-at.img` | Same commands and AT clock, EXP editor and CP/M-816 on V20/V30 |
 | `cpm86-320-dev.img` | Digital Research dev tools + BASIC development |
 | `cpm86-8080.img` | Data-only CP/M-80 tools, libraries and examples from `cpm80/` |
 | `cpm86-chkcpmfs.img` | Bootable CP/M-86 checker disk with PIP, STAT and CHKCPMFS |

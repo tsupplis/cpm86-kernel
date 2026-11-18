@@ -1088,3 +1088,19 @@
     C includes comments; O selects offset-relative labels;
     Z selects Z80/8080/8085 rather than 8086/8088 output.
     Options can be combined, for example GENDEF PCDISKS $COZ.
+
+///1LINEEDIT
+    EXP line editing (PC console only):
+
+    Left/Ctrl-A, Right/Ctrl-F    Move cursor
+    Home, End, Ctrl-B           Beginning, end, toggle
+    Backspace/Rubout            Delete left
+    Delete/Ctrl-G               Delete at cursor
+    Ctrl-K, Ctrl-X              Delete to end, beginning
+    Up/Ctrl-W                   Recall if empty; otherwise end
+    Ctrl-U, Ctrl-R, Ctrl-E      Clear, retype, continue on new row
+    Ctrl-P                     Toggle printer echo
+
+    Recall retains one nonempty line, up to 127 characters. Blank or
+    cancelled input preserves it. Application buffers keep their own
+    limits. Serial/other routing and standard kernels are unchanged.

@@ -42,7 +42,7 @@ EXTTOOLS   = $(DFORM) $(DCOPY) $(DCOMP)
 CHKCPMFS   = $(CMDDIR)/chkcpmfs/chkcpmfs.cmd
 CPM80FILES = $(wildcard cpm80/*)
 
-DIST_DISKS = cpm86-8080.img cpm86-320.img cpm86-320-at.img cpm86-320-dev.img \
+DIST_DISKS = cpm86-8080.img cpm86-320.img cpm86-320-at.img cpm86-exp-320-at.img cpm86-exp-320.img cpm86-320-dev.img \
     cpm86-chkcpmfs.img cpm86-1440-at.img cpm86-exp-1440-at.img \
     cpm86-720-at.img cpm86-exp-720-at.img
 
@@ -181,11 +181,26 @@ cpm86-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
 cpm86-320-at.img: cpm.sys base-320-at.img | commands
 	$(twist_image)
 
+cpm86-exp-320-at.img: FEAT = cpm86-320
+cpm86-exp-320-at.img: BASE = base-320-at.img
+cpm86-exp-320-at.img: KRNL = cpmexp.sys
+cpm86-exp-320-at.img: ATSTART = 1
+cpm86-exp-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
+cpm86-exp-320-at.img: cpmexp.sys base-320-at.img | commands
+	$(twist_image)
+
 cpm86-320.img: FEAT = cpm86-320
 cpm86-320.img: BASE = base-320.img
 cpm86-320.img: KRNL = cpm.sys
 cpm86-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
 cpm86-320.img: cpm.sys base-320.img | commands
+	$(twist_image)
+
+cpm86-exp-320.img: FEAT = cpm86-320
+cpm86-exp-320.img: BASE = base-320.img
+cpm86-exp-320.img: KRNL = cpmexp.sys
+cpm86-exp-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
+cpm86-exp-320.img: cpmexp.sys base-320.img | commands
 	$(twist_image)
 
 cpm86-320-dev.img: FEAT = cpm86-320
@@ -300,6 +315,7 @@ clean:
 	$(MAKE) -C $(CMDDIR) clean
 	$(MAKE) -C extra clean
 	rm -rf *.h86 *.lst *.sym *.log
+	rm -f bdosbind.equ
 	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86exp.cmd cpmexp.sys 
 	rm -rf cpm86org.cmd cpmorg.sys
@@ -308,7 +324,7 @@ clean:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
+	rm -rf cpm86-exp-320.img cpm86-exp-320-at.img cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 	rm -rf *.img.wrk
 	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisk.lib
 	rm -f mbc816k.cmd mbcv20k.cmd ad88.cmd
@@ -322,7 +338,7 @@ clean-images:
 	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
 	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
-	rm -rf cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
+	rm -rf cpm86-exp-320.img cpm86-exp-320-at.img cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 
 dist: disks.zip
 
@@ -340,6 +356,7 @@ check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/ker
 	python3 tools/feature_compat_check.py
 	python3 tools/rtc_check.py
 	python3 -B tools/century_check.py
+	python3 -B tools/edittest.py
 	python3 tools/kernel_check_test.py
 	$(MAKE) -C commands/chkcpmfs check-bdos
 
@@ -370,4 +387,7 @@ check-hd-capacity: cpm.sys cpmexp.sys
 cppexp.equ: ccpexp.h86 tools/expbind.py
 	python3 -B tools/expbind.py
 
-pcbioexp.h86: pc816.lib cppexp.equ
+bdosbind.equ: bdosexp.h86 tools/editbind.py
+	python3 -B tools/editbind.py
+
+pcbioexp.h86: pc816.lib cppexp.equ bdosbind.equ lineedit.lib

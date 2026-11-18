@@ -157,3 +157,14 @@ The maintained PC BIOS renders the century using a fixed 80 cutoff:
 `00–79` displays as 20xx; `80–99` as 19xx. This changes display only;
 `BCENT`, the 17-byte clock and all existing addresses remain unchanged.
 See [the display patch](patching/century.txt).
+
+## EXP buffered console input
+
+Function 10 retains its buffer layout and caller-supplied maximum. EXP delegates
+PC-console input to `lineedit.lib`; other console routing retains the original
+editor. Recall stores at most 127 characters. This is an EXP enhancement,
+not an additional BDOS function or a CP/M Plus API claim.
+
+Private gateways at `K:53B0h` (editor), `53B3h` (abort cleanup), and `53B6h`
+(keyboard mapping) serve the EXP build only. Existing public addresses stay
+fixed. Dynamic BIOS allocation starts at `END_EDIT`, after editor storage.

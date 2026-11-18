@@ -1,0 +1,44 @@
+EXP BUFFERED LINE EDITOR
+Local patch, 2026-11-18; issue cpm86-kernel#16.
+
+Origin: CCP/M-86 kernel/con/chario.cio. The editing, width calculation,
+suffix shifting, redraw and recall algorithms are adapted for one console.
+No runtime dependency on the CCP/M repository exists.
+
+BDOSEXP retains all original addresses. MRDCBF's three-byte JMP delegates
+at 53B0h; CONSTA's three-byte CALL delegates at 53B3h, clears editor mode,
+and invokes the original MRSDSY. Standard sources and images are unchanged.
+PCBIOEXP's eight-byte keyboard-read sequence delegates to 53B6h without
+moving subsequent instructions. Non-editing keys keep original PFK handling.
+
+The appended LINEEDIT module calls generated, typed BDOS console bindings
+from BDOSBIND.EQU (tools/editbind.py). It never invokes INT E0h recursively.
+The original buffered input is retained for non-PC console routing, disabled
+wrapping, or an incomplete video escape sequence. Input preserves pending
+BDOS characters; output retains tab/control echo, Ctrl-S/C and printer echo.
+
+The caller owns its max/count/data buffer. Acceptance returns the full line;
+ordinary append at capacity retains automatic acceptance. Full recalled or
+middle-inserted lines wait for Return and reject additional input. Zero-size
+buffers return empty without writing data. Recall is length + 127 bytes,
+truncated first at storage and then at the receiving buffer's capacity.
+Blank input and Ctrl-U preserve recall. Ctrl-C retains historical empty-line
+abort semantics and the existing 8080 bridge recovery path.
+
+Ten stack bytes hold cursor state. END_EDIT, rather than END816, is the
+start of dynamic DPH allocation. No existing BIOS data is relocated.
+The private editor gateways must remain after END816 and before END_EDIT.
+
+Validation: tools/edittest.py executes built machine code with scripted
+console boundaries. tools/pc816chk.py --editor checks real PCE keyboard,
+recall, wrapped display, SUBMIT, and native/8080 execution and abort recovery.
+Harness-only adapters replace console boundaries; production binaries are
+used for PCE. Fixed-address, module-overlap and baseline guards remain active.
+
+Distribution: cpm86-exp-320.img and cpm86-exp-320-at.img use the established
+320K recipes with cpmexp.sys. Both are included in disks.zip alongside the
+larger EXP images. The AT variant includes automatic ATINIT startup.
+
+Results: 28 built-editor cases and full make check passed. PCE editor and
+bridge regressions passed on V20/320 and 8088/320. Resident growth is 1366
+bytes, including the 128-byte recall slot. Standard kernel remains pinned.

@@ -63,6 +63,10 @@ VGTIOB	equ	VBIOS+39h	; get I/O byte
 VSTIOB	equ	VBIOS+3Ch	; Set I/O byte
 
 	cseg
+	org 053b0h
+LE_ENTRY:
+	org 053b3h
+LE_ABORT_GATE:
 	org	0
 TOP:				; dummy for tagged label
     ; Digital Research patch 13.
@@ -1661,7 +1665,7 @@ CONSTS:
 CONSTA:				; abort
 	mov	PCARIG,0		; clear carriage position
     ; inline with order in orig CP/M-86 for XT;
-	call	MRSDSY			; reset system disk
+	call	LE_ABORT_GATE			; EXP editor cleanup, then MRSDSY
 	cmp	CNUMCB,0
 	jne	CONSTM			; some memory used
 	mov	al,OTPARB		; get submit file mode
@@ -2028,7 +2032,7 @@ MBUFPR:
 
 MRDCBF:
 	mov	es,INDSEG
-	jmp	RDCNBF
+	jmp	LE_ENTRY			; EXP line-editor gateway
 
 ; 11:get console status
 

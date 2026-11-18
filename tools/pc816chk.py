@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE_CPUS = ('8088', '8086')
 
 
-def check(cpu, media):
+def check(cpu, media, editor=False):
     folder = Path(tempfile.mkdtemp(prefix='pc816-'))
     print(f'{cpu}/{media}: {folder}', flush=True)
 
@@ -211,6 +211,10 @@ message db 'NATIVE PASS',13,10,'$'
             boot = wait('A>')
             assert ('CP/M-816' in boot) == (cpu not in NATIVE_CPUS), boot
             assert ('8080 Emulation : V20/V30' in boot) == (cpu not in NATIVE_CPUS), boot
+            if editor:
+                from editlive import check as check_editor
+                check_editor(send, screen)
+                editor = False
             command('native')
             wait('NATIVE PASS')
             if cpu in NATIVE_CPUS:
@@ -285,5 +289,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cpu', choices=['8088', '8086', 'v20', 'v30'], default='v20')
     parser.add_argument('--media', choices=['320', '720', '1440'], default='320')
+    parser.add_argument('--editor', action='store_true')
     args = parser.parse_args()
-    check(args.cpu, args.media)
+    check(args.cpu, args.media, args.editor)

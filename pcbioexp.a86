@@ -383,10 +383,10 @@ KEYIN2:
 	ret
 
 KEYIN3:
-	sub	ah,ah			; int 16h: read key
-	int	16h			; PC ROM BIOS Keyboard Service
-	and	al,7Fh			; strip high bit
-	jnz	KEYIN2			; printable ASCII: return it
+	call	LE_KEY_GATE		; EXP editor-only navigation mapping
+	or	al,al			; gateway already strips ASCII parity
+	jnz	KEYIN2			; mapped navigation or ASCII
+	nop				; preserve subsequent addresses
 
 ; Scan code only (AL=0, AH=scan code) — check PFK table
 
@@ -4146,7 +4146,7 @@ DEFDRV		db	0		; Default drive (for CCP)
 FDDCNT		db	0		; Number of diskette drives
 HDDCNT		db	0		; Number of Hard disk drives
 
-DPH_PTR		dw	offset END816	; Current DPH allocation pointer
+DPH_PTR		dw	offset END_EDIT	; Current DPH allocation pointer
 DPH_BASE	dw	offset DPBASE	; Base of DPH table
 BIOS_SEGSZ	dw	0		; Segment size offset (MRT base computation)
 
@@ -4385,4 +4385,6 @@ DSPEND:
 
 	include cppexp.equ
 	include pc816.lib
+	include bdosbind.equ
+	include lineedit.lib
 	end
