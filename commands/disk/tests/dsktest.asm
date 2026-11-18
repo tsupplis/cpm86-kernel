@@ -105,6 +105,9 @@ cpu 8086
 %ifndef SECOND_SECTORS
 %define SECOND_SECTORS SECTORS
 %endif
+%ifndef CPM_MARKER
+%define CPM_MARKER 0
+%endif
 %ifndef BPB
 %define BPB 1
 %endif
@@ -723,6 +726,10 @@ disk_model:
 %if BAD_BPB
     mov word [es:bx+22],0
 %endif
+%endif
+%if CPM_MARKER
+    mov byte [es:bx+510],1
+    mov byte [es:bx+511],CPM_MARKER
 %endif
     pop ax
     pop di

@@ -12,7 +12,7 @@ count = 0
 def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
          repeat=0, retry=0, formatting=0, memfail=0, error=None, native=False, version=None, full_version=0x1431,
          console_state=0, console_number=0, open_files=0, open_after_lock=0,
-         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0, corrupt_verify=False, source_fail=False, relocation=0, poison_padding=False, repeat_sectors=None, expected_prompts=None):
+         queue_fail=0, initial_keep=0, floppy_count=2, abort=-1, abort_write=-1, fail_native=0, fail_times=1, native_status=1, fail_probe=False, probe_drive=-1, sectors=8, second_sectors=None, bpb=1, extended=0, bad_ninth=0, cylinders=40, bad_bpb=0, corrupt_verify=False, source_fail=False, relocation=0, poison_padding=False, repeat_sectors=None, expected_prompts=None, cpm_marker=0):
     global count
     slot_paragraphs = 0x100 if sectors == 8 else 0x200 if sectors <= 16 else 0x400
     probe_error = native and '[1' not in tail and (
@@ -54,7 +54,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
     if source_fail and native:
         touched=1
     reset = int((not native and version in (None, 0x22)) or (native and bool(reads or writes or geometry_error)))
-    options = dict(BAD_BPB=bad_bpb, CYLINDERS=cylinders, SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
+    options = dict(CPM_MARKER=cpm_marker, BAD_BPB=bad_bpb, CYLINDERS=cylinders, SECTORS=sectors, SECOND_SECTORS=second_sectors or sectors, BPB=bpb, EXTENDED=extended, BAD_NINTH=bad_ninth, NATIVE=int(native), OSVER=version if version is not None else (0x1431 if native else 0x22),
                    NATIVE_STATUS=native_status, EXPECT_TOUCHED=touched,
                    FAIL_PROBE=int(fail_probe), PROBE_DRIVE=probe_drive,
                    FULL_VERSION=full_version, CONSOLE_STATE=console_state,
@@ -116,6 +116,18 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
         assert output.count('Insert ') == expected_prompts, output
     count += 1
 
+
+# Native CP/M geometry must never be mistaken for a 40-cylinder DOS disk.
+for tool in ('dcopy', 'dcomp'):
+    for sectors, marker in ((9, 72), (18, 144)):
+        for memory in (0x5100, 0x1401):
+            case(tool, sectors=sectors, cylinders=80, bpb=0,
+                 cpm_marker=marker, memory=memory)
+        case(tool, sectors=sectors, cylinders=80, bpb=0,
+             cpm_marker=marker, tail='A: A:', repeat=1)
+        case(tool, sectors=sectors, cylinders=80, bpb=0,
+             cpm_marker=marker, tail='A: B: [8]',
+             error='Incompatible or conflicting')
 
 for tool in ('dcopy', 'dcomp'):
     for sides in (1, 2):

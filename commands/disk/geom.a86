@@ -19,6 +19,25 @@ geometry_detect:
         mov dx,offset msg_geometry_read
         jmp geometry_stop
 geometry_boot_read:
+; Native CP/M markers identify 80-cylinder, double-sided media; their
+; geometry is independent of the operating-system I/O backend.
+        cmp es:byte ptr .510,1
+        jne geometry_dos_bpb
+        mov al,es:byte ptr .511
+        cmp al,72
+        je geometry_cpm_720
+        cmp al,144
+        jne geometry_dos_bpb
+        mov al,18
+        jmps geometry_cpm_large
+geometry_cpm_720:
+        mov al,9
+geometry_cpm_large:
+        mov geometry_cylinders,80
+        mov geometry_candidate_cylinders,80
+        mov geometry_hint,al
+        jmp geometry_try_nine
+geometry_dos_bpb:
         cmp es:word ptr .11,512
         je geometry_sector_size_valid
         jmp geometry_try_nine
@@ -167,10 +186,6 @@ geometry_large_cylinders_valid:
         je geometry_large_no_override
         jmp geometry_conflict
 geometry_large_no_override:
-        cmp os_mode,2
-        je geometry_large_driver_ready
-        jmp geometry_unsupported
-geometry_large_driver_ready:
         mov al,geometry_hint
         jmp geometry_selected
 geometry_old_probe:
@@ -218,12 +233,6 @@ geometry_selected:
         jmp geometry_conflict
 geometry_override_matches:
 geometry_compare:
-        cmp geometry_cylinders,80
-        jne geometry_compare_known
-        cmp os_mode,2
-        je geometry_80_driver_ready
-        jmp geometry_unsupported
-geometry_80_driver_ready:
 geometry_compare_known:
         cmp geometry_known,0
         je geometry_first
@@ -269,9 +278,6 @@ geometry_return:
         pop es ! pop bp ! pop di ! pop si
         pop dx ! pop cx ! pop bx ! pop ax
         ret
-geometry_unsupported:
-        mov dx,offset msg_large_unsupported
-        jmp geometry_stop
 geometry_ambiguous:
         mov dx,offset msg_geometry_unknown
         jmps geometry_stop
@@ -417,8 +423,7 @@ geometry_retry db 0
 disk_table_held db 0
 old_disk_table dw 0,0
 disk_table db 0cfh,2,25h,2,18,2ah,0ffh,50h,0f6h,19h,4
-msg_large db '80-cylinder DOS FAT12 media.',13,10,'$'
-msg_large_unsupported db '80-cylinder media requires the extended CDOS floppy driver.',13,10,'$'
+msg_large db '80-cylinder media.',13,10,'$'
 msg_eight db '8 sectors per track.',13,10,'$'
 msg_nine db '9 sectors per track.',13,10,'$'
 msg_geometry_unknown db 'Cannot determine 8/9-sector geometry; use [8] for known eight-sector media or [9] for nine.',13,10,'$'
