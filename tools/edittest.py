@@ -27,6 +27,7 @@ def check():
         'CONSTS': 'xor ax,ax\nret',
         'BCONOT': 'ret',
         'BLIST': 'ret',
+        'VSETCUR2': 'ret',
     }
     cases = [
         ('append', b'hello\r', b'hello', 20),
@@ -56,6 +57,7 @@ def check():
 mov word [{s('SYS_CONO')}],2
 mov byte [{s('WRAPFLAG')}],255
 mov word [{s('STATE')}],{s('VIDNORM')}
+mov word [{s('CURCUR')}],0607h
 mov word [{s('INPARA')}],{buf}
 mov [{s('INDSEG')}],ds
 mov byte [{buf}],{maximum}
@@ -65,6 +67,7 @@ mov word [{cursor}],{seq}
         for offset, value in enumerate(keys):
             setup += f'mov byte [{seq+offset}],{value}\n'
         checks = f'cmp byte [{buf+1}],{len(expected)}\njne failed\n'
+        checks += f'cmp word [{s("CURCUR")}],0607h\njne failed\n'
         checks += f'cmp byte [{buf+maximum+2}],0a5h\njne failed\n'
         checks += f'push es\nmov ax,[cs:target+2]\nmov es,ax\ncmp byte [es:{s("le_active")}],0\njne failed\npop es\n'
         for offset, value in enumerate(expected):
@@ -83,6 +86,7 @@ mov word [{cursor}],{seq}
 mov word [{s('SYS_CONO')}],2
 mov byte [{s('WRAPFLAG')}],255
 mov word [{s('STATE')}],{s('VIDNORM')}
+mov word [{s('CURCUR')}],0607h
 mov word [{s('INPARA')}],{buf}
 mov [{s('INDSEG')}],ds
 mov byte [{buf}],{200 if name == 'recall cap' else 20}
@@ -107,6 +111,26 @@ call {s('LE_ABORT_GATE')}
 cmp byte [cs:{s('le_active')}],0
 jne bad
 cmp ax,1234h
+jne bad
+retf
+bad: mov ax,4c01h
+int 21h
+""")
+    # Cursor shape and visibility survive repaint and interrupted repaint.
+    for shape in (0x0607, 0x2000):
+        for abort in (False, True):
+            m.run('LE_HIDE', f'mov word [{s("CURCUR")}],{shape}',
+                  patches={'VSETCUR2': 'ret', 'MRSDSY': 'ret'},
+                  bridge=f"""call {s('LE_HIDE')}
+cmp byte [cs:{s('le_hidden')}],1
+jne bad
+mov ax,[{s('CURLOFF')}]
+cmp [{s('CURCUR')}],ax
+jne bad
+call {s('LE_ABORT_GATE') if abort else s('LE_SHOW')}
+cmp byte [cs:{s('le_hidden')}],0
+jne bad
+cmp word [{s('CURCUR')}],{shape}
 jne bad
 retf
 bad: mov ax,4c01h
