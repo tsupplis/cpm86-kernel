@@ -19,22 +19,24 @@ def check(cpu, media, editor=False):
         return subprocess.run(args, cwd=folder, check=True, capture_output=True)
 
     (folder / 'diskdefs').write_bytes((ROOT / 'diskdefs').read_bytes())
-    fmt = {'320': 'cpm86-320', '720': 'cpm86-720feat', '1440': 'cpm86-144feat'}[media]
+    fmt = {'320': 'cpm86-320', '720': 'cpm86-720', '1440': 'cpm86-1440'}[media]
     if media == '320':
         run('python3', str(ROOT/'tools/mk320.py'), 'work.img', '--format', 'cpm86-320', '--boot',
             str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
             str(ROOT/'commands/dskmaint/loader.bin'))
     else:
         # Same blank-media recipe as Makefile, isolated from repository clean.
-        boot = bytearray((ROOT / 'extra/144boot2.bin').read_bytes())
-        boot[511] = {'720': 72, '1440': 144}[media]
-        (folder / 'bootsect.bin').write_bytes(boot)
-        (folder / 'work.img').write_bytes(bytes([0xe5]) * int(media) * 1024)
-        run('mkfs.cpm', '-f', fmt, '-b', 'bootsect.bin', 'work.img')
-        run('python3', str(ROOT / 'tools/cpm86cfgsec.py'), 'work.img', 'atinit')
-        for name in ('144bldr2', '144pat2'):
-            run('cpmcp', '-f', fmt, 'work.img', str(ROOT / 'extra' / (name + '.cmd')), f'0:{name.upper()}.CMD')
-    run('cpmcp', '-f', fmt, 'work.img', str(ROOT / 'cpmexp.sys'), '0:CPM.SYS')
+        image = folder / 'work.img'
+        image.write_bytes(bytes([0xe5]) * int(media) * 1024)
+        run('mkfs.cpm', '-f', fmt, 'work.img')
+        data = bytearray(image.read_bytes())
+        boot = (ROOT/'commands/dskmaint/bootsect.bin').read_bytes()
+        loader = (ROOT/'commands/dskmaint/loader.bin').read_bytes()
+        data[:len(boot)] = boot
+        data[510:512] = bytes([1, int(media)//10])
+        data[0x900:0x900+len(loader)] = loader
+        image.write_bytes(data)
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', str(ROOT / 'cpmexp.sys'), '0:CPM.SYS')
     # 8080: print through BDOS, then RET through the bridge's return address.
     hello = bytes.fromhex('11 09 01 0e 09 cd 05 00 c9') + b'CPM816 HELLO PASS\r\n$'
     (folder / 'hello.com').write_bytes(hello)
@@ -94,7 +96,7 @@ def check(cpu, media, editor=False):
 
     for name in ('args', 'write'):
         (folder / (name + '.com')).write_bytes(probe(name))
-        run('cpmcp', '-f', fmt, 'work.img', name + '.com', '0:' + name.upper() + '.COM')
+        run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', name + '.com', '0:' + name.upper() + '.COM')
     # Native 8086 command verifies that normal launching still works afterwards.
     (folder / 'native.asm').write_text('''bits 16
 cpu 8086
@@ -136,30 +138,30 @@ message db 'NATIVE PASS',13,10,'$'
     abort.extend(bytes([20,0])+bytes(22))
     (folder / 'abort.com').write_bytes(abort)
     for name in ('hello.com', 'native.cmd', 'clear.cmd', 'abort.com'):
-        run('cpmcp', '-f', fmt, 'work.img', name, '0:' + name.upper())
+        run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', name, '0:' + name.upper())
     # End marker is a native command, reached only after the submitted sequence.
     done = (folder / 'native.cmd').read_bytes().replace(b'NATIVE PASS', b'SUBMIT PASS')
     (folder / 'done.cmd').write_bytes(done)
-    run('cpmcp', '-f', fmt, 'work.img', 'done.cmd', '0:DONE.CMD')
-    run('cpmcp', '-f', fmt, 'work.img', str(ROOT / 'commands/submit/submit.cmd'), '0:SUBMIT.CMD')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'done.cmd', '0:DONE.CMD')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', str(ROOT / 'commands/submit/submit.cmd'), '0:SUBMIT.CMD')
     (folder / 'check.txt').write_bytes(b'NATIVE TYPE PASS\r\n\x1a')
-    run('cpmcp', '-f', fmt, 'work.img', 'check.txt', '0:CHECK.TXT')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'check.txt', '0:CHECK.TXT')
     script = ('DIR\r\nTYPE CHECK.TXT\r\nNATIVE\r\nDONE\r\n'
               if cpu in NATIVE_CPUS else
               'WRITE\r\nHELLO\r\nSAVE 1 FIRST.COM\r\nSAVE 2 SECOND.COM\r\nSAVE 2 FIRST.COM\r\nSAVE 251 BAD.COM\r\nARGS $1 $2\r\nDONE\r\n')
     (folder / 'bridge.sub').write_bytes(script.encode() + b'\x1a')
-    run('cpmcp', '-f', fmt, 'work.img', 'bridge.sub', '0:BRIDGE.SUB')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'bridge.sub', '0:BRIDGE.SUB')
     # Same basename proves CMD takes precedence over COM.
-    run('cpmcp', '-f', fmt, 'work.img', 'hello.com', '0:NATIVE.COM')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'hello.com', '0:NATIVE.COM')
     (folder / 'empty.com').write_bytes(b'')
-    run('cpmcp', '-f', fmt, 'work.img', 'empty.com', '0:EMPTY.COM')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'empty.com', '0:EMPTY.COM')
     (folder / 'large.com').write_bytes(bytes(0xfc00))
-    run('cpmcp', '-f', fmt, 'work.img', 'large.com', '0:LARGE.COM')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'large.com', '0:LARGE.COM')
     if media == '320':
         run('python3', str(ROOT / 'tools/cpm86twist.py'), 'twist', 'work.img', 'boot.img')
     else:
-        (folder / 'boot.img').write_bytes((folder / 'work.img').read_bytes())
-    cfg = (ROOT / 'cpm86-exp.cfg').read_text()
+        (folder/'boot.img').write_bytes((folder/'work.img').read_bytes())
+    cfg = (ROOT / 'cpm86-exp-320.cfg').read_text()
     cfg = re.sub(r'(?m)^path\s*=.*', 'path = "' + str(ROOT / 'rom') + '"', cfg)
     cfg = re.sub(r'disk\s*\{.*?\}', '', cfg, flags=re.S)
     cfg = cfg.replace('model = "8088"', f'model = "{cpu}"')
@@ -277,10 +279,10 @@ message db 'NATIVE PASS',13,10,'$'
             run('python3', str(ROOT / 'tools/cpm86twist.py'), 'untwist', 'boot.img', 'result.img')
         else:
             (folder / 'result.img').write_bytes((folder / 'boot.img').read_bytes())
-        run('cpmcp', '-f', fmt, 'result.img', '0:BRIDGE.DAT', 'readback.dat')
+        run('cpmcp', '-T', 'raw', '-f', fmt, 'result.img', '0:BRIDGE.DAT', 'readback.dat')
         assert (folder / 'readback.dat').read_bytes() == b'8080 FILE WRITE VERIFIED'.ljust(128, b'.')
         for filename, size in (('FIRST.COM', 256), ('SECOND.COM', 512)):
-            run('cpmcp', '-f', fmt, 'result.img', '0:' + filename, filename)
+            run('cpmcp', '-T', 'raw', '-f', fmt, 'result.img', '0:' + filename, filename)
             assert (folder / filename).read_bytes() == hello.ljust(size, b'\0'), filename
         listing = run('cpmls', '-f', fmt, 'result.img').stdout.upper()
         assert b'BAD.COM' not in listing

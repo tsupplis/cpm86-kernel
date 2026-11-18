@@ -19,8 +19,8 @@ its terminating CR.
 The whole 512-byte sector is cleared first when no valid sector is present. It
 also carries CFG_FIDDSMEM, CFG_SNDFLG, the CFG_SERFLG/CFG_IOFLAG/CFG_PFKFLAG
 switches and CFG_PFKTBL, and mkfs.cpm leaves the system tracks filled with 0E5h.
-Left alone, CFG_FIDDSMEM would read 0E5E5h and the 1.44 MB Feature aborts the
-boot with "FIDDS memory request is too large".
+Initialize those fields together so erased media cannot request arbitrary
+FIDD memory or enable unintended configuration switches.
 
 When the image already carries a valid sector its settings are kept and only
 the startup command is written, so an "-at" image can be derived from its plain

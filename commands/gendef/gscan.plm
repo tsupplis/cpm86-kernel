@@ -208,6 +208,8 @@ setup: procedure public;
                      cr,lf,
                      'With Optional Parameters <parameters>:',
                      cr,lf,
+                     'B:  Generate Disk Parameter Blocks Only',
+                     cr,lf,
                      'C:  Create Diskdef Comment',
                      cr,lf,
                      'O:  Generate Offset-Relative Labels',

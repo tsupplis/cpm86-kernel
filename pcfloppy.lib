@@ -1,0 +1,139 @@
+;-----------------------------------------------------------------------------
+; PCFLOPPY.LIB - PC BIOS native floppy support
+;
+; Purpose: select floppy geometry and map logical records onto the existing
+; 4K cache. Supports 160K, 320K, 720K and 1.44M CP/M media.
+; Image: included at the resident origin chosen by PCBIOS/PCBIOEXP; existing
+; BIOS entries and buffer addresses remain fixed. No segment switch here.
+; Tables: GENDEF processes PCDISKS.DEF. The generated DPBs occupy the
+; original 160K/320K slots and the extension for 720K/1.44M. The BIOS
+; reserves the largest floppy CSV/ALV at startup.
+; Build: make cpm.sys cpmexp.sys
+; Contract: DS is the kernel segment. FD_CACHE and FD_REGS serve the floppy
+; branches only; FD_RESET flushes the old cache before changing geometry.
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; AX = logical track; SECT = 128-byte record within that track.
+; Cache key = track * 3 + record / 32. PHY_SEC indexes the 4K window.
+; Preserve DX and leave the original track-1 cache-bypass condition in ZF.
+;-----------------------------------------------------------------------------
+
+FD_CACHE:
+	push	dx
+	mov	dx,ax
+	shl	ax,1
+	add	ax,dx
+	mov	dx,word ptr SECT
+	push	cx
+	mov	cl,5
+	shr	dx,cl
+	pop	cx
+	add	ax,dx
+	mov	word ptr PHY_TRK,ax
+	mov	ax,word ptr SECT
+	and	ax,31
+	mov	word ptr PHY_SEC,ax
+	mov	ax,word ptr TRK
+	dec	ax
+	pop	dx
+	ret
+
+;-----------------------------------------------------------------------------
+; AX = cache key, SI = logical drive index.
+; Return CH/DH = cylinder/head, CL = first sector, AL = sector count.
+; The caller supplies DL and ES:BX using the existing common BIOS tail.
+; Preserve SI; AX/BX/CX/DX are result/scratch registers as in SETUP_INTREG.
+;-----------------------------------------------------------------------------
+
+FD_REGS:
+	push	si
+	xor	dx,dx
+	mov	bx,3
+	div	bx
+	push	dx			; window index, 0..2
+	mov	ch,al			; logical track, 0..159
+	shl	si,1
+	mov	bx,word ptr DPHTBL[si]
+	mov	bx,word ptr 0Ah[bx]	; selected DPB
+	mov	ax,word ptr [bx]	; records per track
+	shr	ax,1
+	shr	ax,1			; physical sectors per track
+	mov	byte ptr DSKPRM+4,al
+	mov	byte ptr DSKPRM+5,2Ah
+	mov	ah,40			; cylinders for legacy 160K/320K
+	cmp	al,8
+	jz	FD_GEOMETRY
+	mov	byte ptr DSKPRM+5,1Bh
+	mov	ah,80
+FD_GEOMETRY:
+	xor	dh,dh
+	cmp	ch,ah
+	jb	FD_HEAD_READY
+	add	ah,ah
+	dec	ah
+	sub	ah,ch
+	mov	ch,ah
+	mov	dh,1
+FD_HEAD_READY:
+	pop	bx
+	shl	bl,1
+	shl	bl,1
+	shl	bl,1			; first zero-based sector of window
+	mov	cl,bl
+	inc	cl
+	sub	al,bl			; sectors left in this track
+	cmp	al,8
+	jbe	FD_COUNT_READY
+	mov	al,8
+FD_COUNT_READY:
+	pop	si
+	ret
+
+;-----------------------------------------------------------------------------
+; Login reads the marker with legacy geometry, after flushing the old cache.
+; BX is the caller's DPH. Preserve the caller's track and record on success.
+;-----------------------------------------------------------------------------
+
+FD_RESET:
+	push	word ptr TRK
+	push	word ptr SECT
+	push	bx
+	test	byte ptr DSK_DIRTY,0FFh
+	jz	FD_PROBE
+	call	WRSEC
+	jnc	FD_PROBE
+	jmp	ABORT
+FD_PROBE:
+	mov	byte ptr DSK_DIRTY,0
+	mov	byte ptr DSK_LAST,0FFh
+	mov	word ptr 0Ah[bx],offset DPB0
+	mov	word ptr TRK,0
+	mov	word ptr SECT,0
+	call	CHK_CACHE
+	jnc	FD_MARKER
+	jmp	ABORT
+FD_MARKER:
+	pop	bx
+	mov	si,offset DSKBUF
+	mov	ax,offset DPB0
+	cmp	byte ptr 511[si],1
+	jnz	FD_EXTENDED
+	mov	ax,offset DPB1
+	jmps	FD_INSTALL
+FD_EXTENDED:
+	cmp	byte ptr 510[si],1
+	jnz	FD_INSTALL
+	cmp	byte ptr 511[si],72
+	jnz	FD_HIGH
+	mov	ax,offset DPB2
+	jmps	FD_INSTALL
+FD_HIGH:
+	cmp	byte ptr 511[si],144
+	jnz	FD_INSTALL
+	mov	ax,offset DPB3
+FD_INSTALL:
+	mov	word ptr 0Ah[bx],ax
+	pop	word ptr SECT
+	pop	word ptr TRK
+	ret

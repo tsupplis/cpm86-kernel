@@ -18,7 +18,7 @@ declare
     tok2 (*) byte data
     (0),
     tok3 (*) byte data
-    (0),
+    (1,'ORG'),
     tok4 (*) byte data
     (0),
     tok5 (*) byte data

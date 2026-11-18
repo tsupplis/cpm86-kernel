@@ -180,13 +180,6 @@ format_ids_ready:
 	mov	di,900h
 	mov	cx,loader_end-loader
 	rep	movsb
-; Select explicitly: either repository may supply the shared loader image.
-	mov	al,2
-	cmp	byte ptr os_mode,0
-	jz	boot_loader_ready
-	inc	al
-boot_loader_ready:
-	mov	es:byte ptr .951h,al
 	mov	byte ptr track,0
 	mov	byte ptr operation,3
 	call	disk_io

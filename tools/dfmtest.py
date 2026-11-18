@@ -56,11 +56,10 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
     track = bytearray([0xE5]) * 4096
     boot = (ROOT / 'bootsect.bin').read_bytes()
     loader = (ROOT / 'loader.bin').read_bytes()
-    assert len(boot) == 0x93 and len(loader) == 0x34e
+    assert len(boot) == 0x93 and 0 < len(loader) <= 0x700
     track[:len(boot)] = boot
     track[0x1ff] = sides - 1
     track[0x900:0x900 + len(loader)] = loader
-    track[0x951] = 3 if native else 2
     with tempfile.TemporaryDirectory(prefix='dform-test-') as temp:
         temp = Path(temp)
         (temp / 'track.bin').write_bytes(track)

@@ -3,8 +3,8 @@
 ;	LOADER - second stage boot loader written to track 0 by DSKMAINT
 ;	Copyright (C) 1983, Digital Research
 ;
-;	Reconstructed from the bytes DSKMAINT carries; assembles byte-identical
-;	to them.  Not a CP/M-86 program: BOOTSECT reads it into the top of
+;	Native 160K/320K/720K/1440K loader. Not a CP/M-86 program:
+;	BOOTSECT reads it into the top of
 ;	memory and jumps to offset 100h, which is where its code starts.
 ;
 ;	Build:	cpm86_asm86 loader	(writes loader.h86)
@@ -18,16 +18,15 @@
 ;	A key waiting at the end is read; if it is '?' a credit line is shown
 ;	first.  The line is kept XORed with a counter, see credits.
 ;
-;	Allocation blocks are 1K on a single sided diskette and 2K on a double
-;	sided one, which is told by byte 1ffh of the boot sector, still in
-;	memory at 0000:7dff.  Tracks are numbered as in DSKMAINT, and track 0
-;	is not part of the file system.  The variables are in their own segment
-;	so that ASM-86 does not put a CS: override in front of each reference.
+;	Boot markers select geometry. The second side is numbered backwards,
+;	as in the BIOS. Word allocation entries are used on 720K/1440K.
+;	The boot sector reserves 16K: code below 0800h, directory at 0800h,
+;	and a maximum 4K allocation block at 2800h. No hard disk support.
 ;
 ;*****************************************************************************
 
-dirbuf	equ	044eh			; directory, just past this image
-trkbuf	equ	0c4eh			; one track of file data after it
+dirbuf	equ	0800h
+trkbuf	equ	2800h
 
 	cseg
 	org	100h
@@ -37,6 +36,7 @@ start:	mov	ax,cs
 	mov	ss,ax
 	mov	sp,100h
 	call	getgeom
+	call	setdpt
 	call	initdir
 	mov	nameptr,offset cpmfile
 	mov	msgptr,offset msgcpm
@@ -45,6 +45,7 @@ start:	mov	ax,cs
 	mov	nameptr,offset ccpmfile
 	mov	msgptr,offset msgccpm
 	mov	entry,0
+	mov	gaplimit,3		; historical CCP/M extent-search allowance
 	call	trysys
 	mov	si,offset msgnone
 	jmp	fatal
@@ -59,7 +60,8 @@ found:	call	loadfirst
 
 again:	call	finddir
 	jnz	nextno
-	mov	gaps,2
+	mov	al,gaplimit
+	mov	gaps,al
 	call	loadext
 
 nextno:	call	bumpext
@@ -83,30 +85,34 @@ loadfirst:
 
 first:	call	bumpext
 	mov	di,dirent
-	mov	al,10h[di]
+	mov	ax,10h[di]
+	call	blocknum
 	call	seekblk
 	call	gethdr
 	mov	si,80h
 	call	copyblk
 	sub	loadseg,8
-	mov	bx,11h
-	mov	cx,0fh
+	mov	bx,10h
+	add	bx,blkwidth
+	mov	cx,slots
+	dec	cx
 	call	loadblks
 	ret
 
-; Load a following extent: all sixteen block numbers.  Block 0 ends the file.
+; Load an extent using its byte or word allocation entries. Zero ends it.
 loadext:
 	mov	al,'.'
 	call	putc
 	mov	bx,10h
-	mov	cx,10h
+	mov	cx,slots
 
 loadblks:
 	add	bx,dirent
 
 blkloop:
-	mov	al,[bx]
-	test	al,al
+	mov	ax,[bx]
+	call	blocknum
+	test	ax,ax
 	jnz	doblk
 	jmp	go
 
@@ -117,7 +123,7 @@ doblk:	push	bx
 	call	copyblk
 	pop	cx
 	pop	bx
-	inc	bx
+	add	bx,blkwidth
 	loop	blkloop
 	ret
 
@@ -125,12 +131,12 @@ doblk:	push	bx
 ; plain name: the low nibble of the user byte goes, so any user 0..15 reads as
 ; 0, and bit 7 of the three type bytes (read-only, system) is cleared.
 initdir:
-	mov	bufptr,dirbuf
-	mov	nsect,4
-	mov	al,0
-	call	seekblk
+	mov	bx,dirbuf
+	mov	ax,reserved
+	mov	cx,dirsects
+	call	readspan
 	mov	di,dirbuf
-	mov	cx,40h
+	mov	cx,dircount
 	mov	ax,7f7fh
 	cld
 
@@ -140,18 +146,15 @@ maskloop:
 	and	0bh[di],al
 	add	di,20h
 	loop	maskloop
-	mov	bufptr,trkbuf
-	mov	nsect,8
-	mov	curtrk,0ffh
 	ret
 
-; Find the name at nameptr, cmplen bytes of it, in the 40h directory entries.
+; Find the name at nameptr, cmplen bytes of it, in the directory.
 ; ZF is set and dirent points at the entry if it is there.
 finddir:
 	push	ds
 	pop	es
 	mov	dirent,dirbuf
-	mov	cx,40h
+	mov	cx,dircount
 	cld
 
 dirloop:
@@ -168,7 +171,7 @@ dirloop:
 
 dirret:	ret
 
-; Copy the block in the track buffer, less the first si bytes, to loadseg:0
+; Copy the block in the allocation buffer, less the first si bytes, to loadseg:0
 ; and step loadseg on by one block.
 copyblk:
 	mov	cx,blksize
@@ -182,16 +185,37 @@ copyblk:
 	add	loadseg,ax
 	ret
 
-; Block size from the sides flag of the boot sector: bytes, paragraphs and
-; sectors.
+; Select geometry from the boot sector retained at 0000:7C00.
+; Defaults are 160K; the two extended formats require both marker bytes.
 getgeom:
-	sub	ax,ax
+	xor	ax,ax
 	mov	es,ax
 	mov	ax,400h
 	cmp	es:byte ptr .7dffh,1
-	jnz	geomset
+	jnz	geomlarge
 	mov	ax,800h
-
+	jmp	geomset
+geomlarge:
+	cmp	es:byte ptr .7dfeh,1
+	jnz	geomset
+	cmp	es:byte ptr .7dffh,72
+	jz	geom720
+	cmp	es:byte ptr .7dffh,144
+	jnz	geomset
+	mov	spt,18
+	mov	reserved,36
+	mov	ax,1000h
+	jmp	geomwide
+geom720:
+	mov	spt,9
+	mov	reserved,18
+	mov	ax,800h
+geomwide:
+	mov	cylinders,80
+	mov	blkwidth,2
+	mov	slots,8
+	mov	dircount,256
+	mov	dirsects,16
 geomset:
 	mov	blksize,ax
 	mov	cl,4
@@ -199,7 +223,58 @@ geomset:
 	mov	blkpar,ax
 	mov	cl,5
 	shr	ax,cl
-	mov	blksec,al
+	mov	blksec,ax
+	ret
+
+; Own the INT 1Eh table while loading. Keep the BIOS timing values, but
+; supply this medium's sector count and read gap; restore the vector on entry.
+setdpt:
+	mov	si,es:word ptr .78h
+	mov	oldtable,si
+	mov	ax,es:word ptr .7ah
+	mov	oldtable+2,ax
+	push	ds
+	mov	ds,ax
+	push	cs
+	pop	es
+	mov	di,offset disktable
+	mov	cx,11
+	cld
+	rep	movsb
+	pop	ds
+	mov	ax,spt
+	mov	disktable+4,al
+	cmp	ax,8
+	jz	dptinstall
+	mov	disktable+5,1bh
+dptinstall:
+	xor	ax,ax
+	mov	es,ax
+	pushf
+	cli
+	mov	es:word ptr .78h,offset disktable
+	mov	es:word ptr .7ah,cs
+	popf
+	ret
+
+restoredpt:
+	xor	ax,ax
+	mov	es,ax
+	pushf
+	cli
+	mov	ax,oldtable
+	mov	es:word ptr .78h,ax
+	mov	ax,oldtable+2
+	mov	es:word ptr .7ah,ax
+	popf
+	ret
+
+; Clear the high byte only for legacy allocation maps.
+blocknum:
+	cmp	blkwidth,1
+	jnz	blockret
+	xor	ah,ah
+blockret:
 	ret
 
 ; The CMD header of the first block: the group descriptor gives the segment
@@ -240,57 +315,77 @@ putsloop:
 
 ; Start the program: segments to the data segment, far jump to entry.
 go:	call	egg
+	call	restoredpt
 	mov	ax,datseg
 	mov	ds,ax
 	mov	es,ax
 	mov	dl,0
 	jmpf	cs:dword ptr entry
 
-; Make block al addressable: read the track it is on, unless that one is
-; already in the buffer, and set blkaddr to the block inside it.  Track 0 is
-; skipped.  Tracks 0..39 are head 0, 40..79 are head 1 counted backwards.
+; Read allocation block AX into the block buffer. Reading individual sectors
+; handles blocks crossing a track or the reversed second-side boundary.
 seekblk:
-	mov	tries,5
 	mul	blksec
-	div	spt
-	mov	ch,ah
-	mov	cl,0
-	shl	cx,1
-	add	cx,trkbuf
-	mov	blkaddr,cx
-	cmp	al,curtrk
-	jnz	readtrk
+	add	ax,reserved
+	mov	bx,trkbuf
+	mov	blkaddr,bx
+	mov	cx,blksec
+	call	readspan
 	ret
 
-readtrk:
-	mov	curtrk,al
-	mov	dh,0
-	add	al,1
-	mov	ch,al
-	cmp	al,28h
-	jc	rd
-	mov	ch,4fh
-	sub	ch,al
-	mov	dh,1
-
-rd:	push	ds
+; AX = logical sector, BX = destination, CX = count. ES becomes DS.
+; Preserve the request across BIOS calls and bound controller retries.
+readspan:
+	mov	sector,ax
+	mov	remaining,cx
+	push	ds
 	pop	es
-	mov	cl,1
-	mov	bx,bufptr
-
+readnext:
+	mov	ax,sector
+	xor	dx,dx
+	div	spt
+	mov	cl,dl
+	inc	cl
+	xor	dx,dx
+	cmp	ax,cylinders
+	jb	readhead
+	mov	dx,cylinders
+	shl	dx,1
+	dec	dx
+	sub	dx,ax
+	mov	ax,dx
+	mov	dx,0100h
+readhead:
+	mov	ch,al
+	mov	tries,5
 rdretry:
-	mov	al,nsect
-	mov	ah,2
+	push	bx
+	push	cx
+	push	dx
+	mov	ax,0201h
 	int	13h
-	jc	rderr
-	ret
-
-rderr:	mov	ah,0
+	pop	dx
+	pop	cx
+	pop	bx
+	jnc	readok
+	push	bx
+	push	cx
+	push	dx
+	xor	ax,ax
 	int	13h
+	pop	dx
+	pop	cx
+	pop	bx
 	dec	tries
 	jnz	rdretry
 	mov	si,offset msgread
 	jmp	fatal
+readok:
+	add	bx,200h
+	inc	sector
+	dec	remaining
+	jnz	readnext
+	ret
 
 putc:	mov	bh,0
 	mov	ah,0eh
@@ -320,25 +415,34 @@ eggwait:
 
 eggret:	ret
 
+loader_data equ	offset $
 	dseg
-	org	32eh
+	org	loader_data
 blksize	dw	0			; allocation block, in bytes
 blkpar	dw	0			; and in paragraphs
-blksec	db	0			; and in sectors
-spt	db	8			; sectors per track
+blksec	dw	0			; and in sectors
+spt	dw	8			; sectors per track
 entry	dw	0			; far pointer to start the program at
 entryseg	dw	0
 datseg	dw	0			; segment for ds and es at the start
 nameptr	dw	0			; name being looked for
 msgptr	dw	0			; its 'Loading' message
 cmplen	dw	0ch			; bytes of the name to compare
+gaplimit db	2			; CP/M=2, CCP/M=3 after a found extent
 gaps	db	2			; missing extents in a row that end it
 dirent	dw	0			; directory entry found
-bufptr	dw	0			; where int 13h reads to
 loadseg	dw	0			; where the next block goes
 blkaddr	dw	0			; block inside the track buffer
-curtrk	db	0ffh			; track in the buffer, ff for none
-nsect	db	0			; sectors int 13h reads
+cylinders dw	40
+reserved dw	8
+blkwidth dw	1
+slots	dw	16
+dircount dw	64
+dirsects dw	4
+sector	dw	0
+remaining dw	0
+oldtable dw	0,0			; saved INT 1Eh far pointer
+disktable db	0,0,0,0,0,0,0,0,0,0,0		; private BIOS diskette parameters
 tries	db	0
 
 ; "\r\n\r\nMuch of this code is brought to you by... <bell>Dean Ballard<bell>

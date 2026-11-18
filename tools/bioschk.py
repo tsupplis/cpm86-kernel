@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Preserve the fixed kernel byte signatures used by the 144FEAT patches."""
+"""Check native floppy hooks, preserved BIOS sites and module boundaries."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# The frozen reference provides the exact old bytes expected by 144PAT2 and
-# 144BLDR2. Include the CALL displacement in patch W, not just its address.
+# The frozen reference pins unrelated BIOS instructions, including CALL
+# displacements. Only the two native floppy hooks intentionally differ.
 HOOKS = {
     "BDOS stack": (0x0B31, 3),
-    "floppy reset": (0x2D18, 44),
-    "floppy geometry": (0x2D4F, 17),
     "sector buffer": (0x2BEB, 3),
     "track buffer": (0x2D95, 3),
     "break stack": (0x2EB7, 3),
@@ -22,8 +20,19 @@ for name in ("cpm.sys", "cpmexp.sys"):
     image = (ROOT / name).read_bytes()[128:]
     for label, (start, length) in HOOKS.items():
         assert image[start:start + length] == reference[start:start + length], (
-            name, label, hex(start), "144FEAT signature changed")
-    print(f"PASS: {name}: all {len(HOOKS)} fixed 144FEAT hook signatures")
+            name, label, hex(start), "preserved BIOS instruction changed")
+    assert image[0x4c86:0x4c8a] == b'FDN1', (name, 'native capability missing')
+    import sys
+    sys.path.insert(0, str(ROOT / 'commands/hdmaint'))
+    from check_capacity import symbols
+    names = symbols(ROOT / ('pcbios.sym' if name == 'cpm.sys' else 'pcbioexp.sym'))
+    for site, opcode, target in [(0x2d18, 0xe9, 'FDRESET'),
+                                 (0x2d4f, 0xe8, 'FDREGS')]:
+        assert image[site] == opcode, (name, hex(site), 'native hook opcode')
+        displacement = int.from_bytes(image[site+1:site+3], 'little', signed=True)
+        assert site+3+displacement == names[target], (name, target, 'native hook target')
+    assert image[0x2d62:0x2d8f] == reference[0x2d62:0x2d8f], (name, 'hard-disk CHS changed')
+    print(f"PASS: {name}: {len(HOOKS)} preserved hooks, 2 native hooks, native marker and HD CHS")
 
 # The 8080-model kernel places every module's code/data in one address space.
 # Individual module baselines cannot detect cross-module overwrite.

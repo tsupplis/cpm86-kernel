@@ -29,7 +29,7 @@ DCOMP    = $(CMDDIR)/disk/dcomp.cmd
 TESTSUB  = $(CMDDIR)/submit/testcpm.sub
 DATPFK   = $(CMDDIR)/function/data.pfk
 
-# Content sets shared by every image recipe. The feature (720K/1.44M) images
+# Content sets shared by every image recipe. The larger (720K/1.44M) images
 # take everything; the 320K images take subsets.
 ASMTOOLS   = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 DRTOOLS    = dev/rasm86.cmd dev/link86.cmd dev/lib86.cmd dev/xref86.cmd \
@@ -59,27 +59,17 @@ EXPASM     = $(ASM86) $(DDT86) $(GENCMD) $(GENDEF)
 
 STOCKTOOLS = $(CORETOOLS) $(ASMTOOLS) $(DEVTOOLS) $(EXTTOOLS)
 EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
-FEATURETOOLS = $(STOCKTOOLS) $(CHKCPMFS)
-EXPFEATURETOOLS = $(EXPTOOLS) $(CHKCPMFS)
+ALLTOOLS = $(STOCKTOOLS) $(CHKCPMFS)
+EXPALLTOOLS = $(EXPTOOLS) $(CHKCPMFS)
 
 # Build
 
-all: cpm.sys mbc816.sys mbcv20.sys ad88.sys cpmexp.sys cpmorg.sys commands extra
+all: cpm.sys mbc816.sys mbcv20.sys ad88.sys cpmexp.sys cpmorg.sys commands
 
-.PHONY: all commands extra clean dist check test test-exp test-320
+.PHONY: all commands clean dist check test test-exp test-320
 
 commands:
 	$(MAKE) -C $(CMDDIR)
-
-extra: extra/144feat.inc
-	$(MAKE) -C extra
-
-# Track the generated file, rather than an alias that never exists.
-extra/144feat.inc: cpm.sys cpmexp.sys tools/gen_144feat_inc.py
-	python3 tools/gen_144feat_inc.py $@
-
-.PHONY: 144feat-map
-144feat-map: extra/144feat.inc
 
 cpm.sys: cpm86.h86
 	cpm86_gencmd cpm86.h86 8080 "CODE[A51,M0000]"
@@ -127,10 +117,10 @@ ad88.h86: cpm.h86 ad88bios.h86
 	doscat cpm.h86 > $@
 	cat ad88bios.h86 >> $@
 
-ad88bios.h86: apdisk.lib
+ad88bios.h86: apdisks.lib
 
-apdisk.lib: apdisk.def tools/gendef.sh | commands
-	sh tools/gendef.sh apdisk '$$C'
+apdisks.lib: apdisks.def tools/gendef.sh | commands
+	sh tools/gendef.sh apdisks '$$C'
 
 cpm86.h86: cpm.h86 pcbios.h86
 	doscat cpm.h86 > cpm86.h86
@@ -168,65 +158,68 @@ bdosbind.equ: bdosexp.h86 tools/editbind.py
 
 pcbioexp.h86: pc816.lib ccpexp.equ bdosbind.equ lineedit.lib
 
+# GENDEF supplies DPBs only. Symbolic ORGs in PCDISKS.DEF use placement
+# constants defined by each BIOS; headers and buffers remain BIOS-owned.
+pcdisks.lib: pcdisks.def tools/gendef.sh commands/gendef/gendef.plm commands/gendef/glit.plb commands/gendef/gtoken.plm | commands
+	sh tools/gendef.sh pcdisks '$$BC'
+
+pcbios.h86 pcbioexp.h86: pcfloppy.lib pcdisks.lib
+
 # Images
 
-cpm86-1440-at.img: commands extra cpm.sys Makefile diskdefs tools/cpm86cfgsec.py
-	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=144; open('$@.boot','wb').write(b)"
-	python3 -c "open('$@','wb').write(bytes([0xE5])*1474560)"
-	mkfs.cpm -f cpm86-144feat -b $@.boot $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-	rm -f $@.boot
-	cpmcp -f cpm86-144feat $@ cpm.sys 0:CPM.SYS
-	cpmcp -f cpm86-144feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
-	cpmcp -f cpm86-144feat $@ extra/144pat2.cmd 0:144PAT2.CMD
-	cpmcp -f cpm86-144feat $@ extra/144prep2.cmd 0:144PREP2.CMD
-	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
-	cpmcp -f cpm86-144feat $@ $(FEATURETOOLS) 0:
-	cpmls -F -f cpm86-144feat $@ '0:*.*'
+cpm86-1440-at.img: commands cpm.sys Makefile diskdefs tools/cpm86cfgsec.py
+	python3 -c "open('$@.wrk','wb').write(bytes([0xE5])*1474560)"
+	mkfs.cpm -f cpm86-1440 $@.wrk
+	dd if=commands/dskmaint/bootsect.bin of=$@.wrk bs=1 conv=notrunc
+	printf '\001\220' | dd of=$@.wrk bs=1 seek=510 conv=notrunc
+	dd if=commands/dskmaint/loader.bin of=$@.wrk bs=1 seek=2304 conv=notrunc
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -T raw -f cpm86-1440 $@.wrk cpm.sys 0:CPM.SYS
+	cpmcp -T raw -f cpm86-1440 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -T raw -f cpm86-1440 $@.wrk $(ALLTOOLS) 0:
+	cpmls -T raw -F -f cpm86-1440 $@.wrk '0:*.*'
+	mv $@.wrk $@
 
-cpm86-720-at.img: commands extra cpm.sys Makefile diskdefs tools/cpm86cfgsec.py
-	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=72; open('$@.boot','wb').write(b)"
-	python3 -c "open('$@','wb').write(bytes([0xE5])*737280)"
-	mkfs.cpm -f cpm86-720feat -b $@.boot $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-	rm -f $@.boot
-	cpmcp -f cpm86-720feat $@ cpm.sys 0:CPM.SYS
-	cpmcp -f cpm86-720feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
-	cpmcp -f cpm86-720feat $@ extra/144pat2.cmd 0:144PAT2.CMD
-	cpmcp -f cpm86-720feat $@ extra/144prep2.cmd 0:144PREP2.CMD
-	cpmcp -f cpm86-720feat $@ extra/atinit.cmd 0:ATINIT.CMD
-	cpmcp -f cpm86-720feat $@ $(FEATURETOOLS) 0:
-	cpmls -F -f cpm86-720feat $@ '0:*.*'
+cpm86-720-at.img: commands cpm.sys Makefile diskdefs tools/cpm86cfgsec.py
+	python3 -c "open('$@.wrk','wb').write(bytes([0xE5])*737280)"
+	mkfs.cpm -f cpm86-720 $@.wrk
+	dd if=commands/dskmaint/bootsect.bin of=$@.wrk bs=1 conv=notrunc
+	printf '\001\110' | dd of=$@.wrk bs=1 seek=510 conv=notrunc
+	dd if=commands/dskmaint/loader.bin of=$@.wrk bs=1 seek=2304 conv=notrunc
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -T raw -f cpm86-720 $@.wrk cpm.sys 0:CPM.SYS
+	cpmcp -T raw -f cpm86-720 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -T raw -f cpm86-720 $@.wrk $(ALLTOOLS) 0:
+	cpmls -T raw -F -f cpm86-720 $@.wrk '0:*.*'
+	mv $@.wrk $@
 
-cpm86-exp-1440-at.img: commands extra cpmexp.sys Makefile diskdefs tools/cpm86cfgsec.py
-	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=144; open('$@.boot','wb').write(b)"
-	python3 -c "open('$@','wb').write(bytes([0xE5])*1474560)"
-	mkfs.cpm -f cpm86-144feat -b $@.boot $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-	rm -f $@.boot
-	cpmcp -f cpm86-144feat $@ cpmexp.sys 0:CPM.SYS
-	cpmcp -f cpm86-144feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
-	cpmcp -f cpm86-144feat $@ extra/144pat2.cmd 0:144PAT2.CMD
-	cpmcp -f cpm86-144feat $@ extra/144prep2.cmd 0:144PREP2.CMD
-	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
-	cpmcp -f cpm86-144feat $@ $(EXPFEATURETOOLS) 0:
-	cpmls -F -f cpm86-144feat $@ '0:*.*'
+cpm86-exp-1440-at.img: commands cpmexp.sys Makefile diskdefs tools/cpm86cfgsec.py
+	python3 -c "open('$@.wrk','wb').write(bytes([0xE5])*1474560)"
+	mkfs.cpm -f cpm86-1440 $@.wrk
+	dd if=commands/dskmaint/bootsect.bin of=$@.wrk bs=1 conv=notrunc
+	printf '\001\220' | dd of=$@.wrk bs=1 seek=510 conv=notrunc
+	dd if=commands/dskmaint/loader.bin of=$@.wrk bs=1 seek=2304 conv=notrunc
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -T raw -f cpm86-1440 $@.wrk cpmexp.sys 0:CPM.SYS
+	cpmcp -T raw -f cpm86-1440 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -T raw -f cpm86-1440 $@.wrk $(EXPALLTOOLS) 0:
+	cpmls -T raw -F -f cpm86-1440 $@.wrk '0:*.*'
+	mv $@.wrk $@
 
-cpm86-exp-720-at.img: commands extra cpmexp.sys Makefile diskdefs tools/cpm86cfgsec.py
-	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=72; open('$@.boot','wb').write(b)"
-	python3 -c "open('$@','wb').write(bytes([0xE5])*737280)"
-	mkfs.cpm -f cpm86-720feat -b $@.boot $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-	rm -f $@.boot
-	cpmcp -f cpm86-720feat $@ cpmexp.sys 0:CPM.SYS
-	cpmcp -f cpm86-720feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
-	cpmcp -f cpm86-720feat $@ extra/144pat2.cmd 0:144PAT2.CMD
-	cpmcp -f cpm86-720feat $@ extra/144prep2.cmd 0:144PREP2.CMD
-	cpmcp -f cpm86-720feat $@ extra/atinit.cmd 0:ATINIT.CMD
-	cpmcp -f cpm86-720feat $@ $(EXPFEATURETOOLS) 0:
-	cpmls -F -f cpm86-720feat $@ '0:*.*'
+cpm86-exp-720-at.img: commands cpmexp.sys Makefile diskdefs tools/cpm86cfgsec.py
+	python3 -c "open('$@.wrk','wb').write(bytes([0xE5])*737280)"
+	mkfs.cpm -f cpm86-720 $@.wrk
+	dd if=commands/dskmaint/bootsect.bin of=$@.wrk bs=1 conv=notrunc
+	printf '\001\110' | dd of=$@.wrk bs=1 seek=510 conv=notrunc
+	dd if=commands/dskmaint/loader.bin of=$@.wrk bs=1 seek=2304 conv=notrunc
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -T raw -f cpm86-720 $@.wrk cpmexp.sys 0:CPM.SYS
+	cpmcp -T raw -f cpm86-720 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -T raw -f cpm86-720 $@.wrk $(EXPALLTOOLS) 0:
+	cpmls -T raw -F -f cpm86-720 $@.wrk '0:*.*'
+	mv $@.wrk $@
 
-cpm86-320-at.img: commands extra cpm.sys Makefile diskdefs tools/mk320.py tools/cpm86twist.py \
+cpm86-320-at.img: commands cpm.sys Makefile diskdefs tools/mk320.py tools/cpm86twist.py \
     tools/cpm86cfgsec.py
 	python3 tools/mk320.py $@.wrk --format cpm86-320 \
 	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
@@ -238,7 +231,7 @@ cpm86-320-at.img: commands extra cpm.sys Makefile diskdefs tools/mk320.py tools/
 	$(TWIST) twist $@.wrk $@
 	rm -f $@.wrk
 
-cpm86-exp-320-at.img: commands extra cpmexp.sys Makefile diskdefs tools/mk320.py tools/cpm86twist.py \
+cpm86-exp-320-at.img: commands cpmexp.sys Makefile diskdefs tools/mk320.py tools/cpm86twist.py \
     tools/cpm86cfgsec.py
 	python3 tools/mk320.py $@.wrk --format cpm86-320 \
 	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
@@ -319,7 +312,8 @@ check: cpm.sys cpmorg.sys cpmexp.sys commands tools/kernel_check.py tools/kernel
     tools/kernel-baseline.json
 	$(MAKE) -C commands/disk check
 	python3 tools/kernel_check.py
-	python3 tools/feature_compat_check.py
+	python3 tools/bioschk.py
+	python3 tools/fdcheck.py
 	python3 tools/rtc_check.py
 	python3 -B tools/century_check.py
 	python3 -B tools/edittest.py
@@ -334,6 +328,11 @@ check-disk:
 check-disk-live: all
 	python3 tools/disk_live_check.py
 
+# Native floppy boot/read/write tests on both BIOS variants.
+.PHONY: check-floppy-live
+check-floppy-live: cpm.sys cpmorg.sys cpmexp.sys commands
+	python3 tools/fdboot.py
+
 # Execute built hard-disk capacity/addressing routines; no physical disks.
 .PHONY: check-hd-capacity
 check-hd-capacity: cpm.sys cpmexp.sys
@@ -344,7 +343,6 @@ check-hd-capacity: cpm.sys cpmexp.sys
 
 clean:
 	$(MAKE) -C $(CMDDIR) clean
-	$(MAKE) -C extra clean
 	rm -rf *.h86 *.lst *.sym *.log
 	rm -f bdosbind.equ ccpexp.equ
 	rm -rf cpm86.cmd cpm.sys
@@ -354,7 +352,7 @@ clean:
 	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img
 	rm -rf cpm86-exp-320.img cpm86-exp-320-at.img cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 	rm -rf *.img.wrk
-	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisk.lib
+	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisks.lib pcdisks.lib
 	rm -f mbc816k.cmd mbcv20k.cmd ad88.cmd
 	# Remove outputs left by the former MBC target names.
 	rm -f cpm816.sys cpmv20.sys cpm816.bin cpmv20.bin

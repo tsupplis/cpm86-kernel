@@ -237,7 +237,7 @@ Notes:
 | `HDDBUF` | `4980h` | `4B80h` | `4BE2h` | 98 | `62h` | `4B80h`–`4BE1h` | Cold-only `HD_CAPACITY`; reclaimed after INIT |
 | `DIRBUF` | `4BE2h` | `4C62h` | `4C62h` | 0 | — | — | RS 128, ends exactly at `CSV14` |
 
-- The former **98-byte gap** (`4B80h`–`4BE1h`) now contains the cold-only `HD_CAPACITY` helper. It runs during hard-disk discovery, before the track buffer or 144FEAT reclaims this memory. It must not contain resident code or data. The replacement capacity check is padded to preserve all following BIOS addresses and the exact CALL signature checked by 144FEAT patch W.
+- The former **98-byte gap** (`4B80h`–`4BE1h`) now contains the cold-only `HD_CAPACITY` helper. It runs during hard-disk discovery, before the track buffer reclaims this memory. It must not contain resident code or data. The replacement capacity check is padded to preserve all following BIOS addresses and the original FIDD display CALL.
 - `DSKBUF`/`INIT` overlay: INIT code+data spans `3BE2h`–`4062h` (**1153 bytes**, `481h`), placed in the disk-buffer area and reclaimed after first boot.
 
 
@@ -247,8 +247,8 @@ Notes:
 BDOS, preserving the CCP DIR patch at `0A40h`. The EXP BDOS uses
 `0A60h`–`0A6Fh`. These additions reduce the free patch space listed above.
 `TGSHI` uses the previously reserved word at `24B8h`; subsequent system
-variables retain their addresses. Existing 144FEAT patch locations and byte
-signatures are checked by `tools/feature_compat_check.py`.
+variables retain their addresses. Native floppy hook targets and preserved unrelated instructions are checked
+by `tools/bioschk.py`.
 
 ### Optional BIOS RTC date
 
@@ -263,8 +263,7 @@ Applies to `pcbios.a86` and `pcbioexp.a86`; the frozen BIOS is unchanged.
 | `4780h` | Existing `CFG_BUF` boundary, unchanged |
 
 The helper finishes by jumping to the original `RESETIO`. All 613 pre-existing
-symbols in each BIOS retain their addresses; all ten fixed 144FEAT hook
-signatures remain unchanged. The helper's space may be reclaimed after boot
+symbols in each BIOS retain their addresses. The helper's space may be reclaimed after boot
 and must not hold resident code or data.
 
 | BIOS response | Cold-start result |
@@ -285,7 +284,7 @@ CX/DX detect unsupported no-op replies even when carry is clear.
 
 `tools/rtc_check.py`, included in `make check`, tests 25 simulated BIOS replies
 per kernel, including fallback, calendar validation and register/flag preservation.
-PCE boot and DIR checks cover both variants with 144FEAT, with RTC enabled and
+PCE boot and DIR checks cover both variants with RTC enabled and
 disabled. Tests without ATINIT also verify the BIOS-initialized date directly.
 
 ### Displayed century cutoff

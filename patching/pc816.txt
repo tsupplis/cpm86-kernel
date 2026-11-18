@@ -14,9 +14,8 @@ for SAVE. No runtime CCP instruction patching.
 
 Existing BIOS symbols stay fixed. Three-byte hooks at 2588h, 3BE9h and 3BF6h
 handle warm boot, initialization and banner selection. Code/data is appended
-at 4C90h; DPH_PTR (420Ah) starts dynamic disk allocation at END816 instead
-of 4C86h. The loader reads the recorded image length. 144FEAT signatures and
-the 32 KiB secondary-loader image limit must remain intact.
+at 4C90h; DPH_PTR (420Ah) starts dynamic disk allocation after all resident extensions. The generic loader reads the allocation map
+and skips the CMD header before entering the kernel.
 
 Ctrl-C: BDOS abandons its caller on its internal stack. Reentering BDOS there
 corrupted cleanup return addresses. Resetting the stack alone also bypassed

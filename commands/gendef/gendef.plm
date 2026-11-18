@@ -163,6 +163,7 @@ emitnulcom: procedure external;
 /* global variables */
 declare
     parm (26) byte external,
+    dpb$tog   byte at (.parm(1)),  /* DPB-only output */
     comm$tog  byte at (.parm(2)),  /* disk comment */
     off$tog   byte at (.parm(14)), /* generate 'offset' */
     scan$tog  byte at (.parm(18)), /* scanner trace */
@@ -317,6 +318,8 @@ disks: procedure;
     if ndisks = 0 or ndisks > maxdisks then
         call errptr(.('bad val$'));
     call scan;
+    /* DPB-only output retains parsing and validation, but no DPHs. */
+    if dpb$tog then return;
     /* dpbase equ $ */
     call emitchar(.('dpbase$'));
     call emitoptab(.('equ$'));
@@ -566,6 +569,7 @@ diskdef: procedure;
             call emitnulcom;
             end;
         call equiv(.('dpb$'),.('Equivalent Parameters$'));
+        if dpb$tog then return;
         call equiv(.('als$'),.('Same Allocation Vector Size$'));
         call equiv(.('css$'),.('Same Checksum Vector Size$'));
         call equiv(.('xlt$'),.('Same Translate Table$'));
@@ -655,6 +659,9 @@ diskdef: procedure;
         call emitdwnc(8000h,.('Permanent Disk$'));
     call emitdwnc(pv(ofs),.('Offset$'));
 
+    /* The remaining output belongs to translation and buffer storage. */
+    if dpb$tog then return;
+
     /* generate allocation vector */
     call emitcharn(.('xlt$'),pv(dn));
     call emitoptab(.('equ$'));
@@ -717,6 +724,7 @@ endef: procedure;
             call emitoptab(.('ds$')); else
             call emitoptab(.('rs$'));
         end reserve;
+    if dpb$tog then return;
     call emitnulcom;
     call emitbyte(';');
     call emittab;
@@ -770,6 +778,34 @@ endef: procedure;
     call emitdbnc(0,.('Marks End of Module$'));
     end endef;
 
+origin: procedure;
+    /* Emit one symbolic origin. The including assembler source owns its
+       value and segment; GENDEF neither resolves nor alters it. */
+    declare name (32) byte;
+    declare (n,i) byte;
+    call scan;
+    if token <> ident or errset then
+        do;
+        call errptr(.('symbol $'));
+        return;
+        end;
+    n = acclen;
+        do i = 0 to n-1;
+        name(i) = accum(i);
+        end;
+    call scan;
+    if not endline or errset then
+        do;
+        call errptr(.('extra  $'));
+        return;
+        end;
+    call emitoptab(.('org$'));
+        do i = 0 to n-1;
+        call emitbyte(name(i));
+        end;
+    call emitcrlf;
+    end origin;
+
 program: procedure;
     /* handle the entire genlib program */
     declare
@@ -789,6 +825,7 @@ program: procedure;
             tdisks,
             tdiskdef,
             tendef,
+            torg,
             0)) then
             call errptr(.('No Stmt$')); else
           do;
@@ -816,6 +853,8 @@ program: procedure;
                 call scan;
                 call endef;
                 end;
+            /* symbolic origin */
+                call origin;
             end;
           if token <> cr then
               call errptr(.('extra  $'));

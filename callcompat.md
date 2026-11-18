@@ -14,9 +14,6 @@ a supported path; unavailable optional features do not prevent normal use.
 
 | Command | Status | Comment |
 | --- | --- | --- |
-| 144BLDR2.CMD <!-- extra/144bldr2.cmd --> | 1.1 |  |
-| 144PAT2.CMD <!-- extra/144pat2.cmd --> | 1.1 |  |
-| 144PREP2.CMD <!-- extra/144prep2.cmd --> | Specific | 1.1 baseline. Requires the active 1.44 MB Feature driver; without it, disk preparation is refused. |
 | ASM86.CMD <!-- commands/asm86/asm86.cmd --> | Adaptive | 1.1 baseline. Version-gated BDOS 108 exit-status reporting; normal operation does not require it. |
 | ASSIGN.CMD <!-- commands/assign/assign.cmd --> | 1.1 |  |
 | ATINIT.CMD <!-- extra/atinit.cmd --> | 1.1 |  |

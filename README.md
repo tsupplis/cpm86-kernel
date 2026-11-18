@@ -11,7 +11,7 @@ The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsuppl
 | Development tools | DR development chain, DR & Microsoft BASIC, native ASM80/HEXCOM and a separate CP/M-80 tools disk |
 | **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
 | Usability and bug fixes | command-line editing and recall (EXP only), enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
-| Storage | 320K distributions, 720K/1.44M support through **144FEAT**, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
+| Storage | 320K distributions, native **720K/1.44M** support in both BIOSes, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
 | Coherent Ecosystem | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu). See for other sister projects at the end of this document |
 
 <p align="center">
@@ -216,15 +216,12 @@ scripts use CP/M media and kernels. Fixtures stay in ignored `local/hdmaint-test
 successful runs remove images and retain diagnostics. Manual `--prepare-only`
 fixtures are retained until removed after inspection.
 
-### 1.44 MB Feature
+### Native floppy support
 
-Freek Heite's "1.44 MB Feature" adds 720K, 1.2M and 1.44M diskette support. Built from source by `make -C extra` using MASM 5.10 and LINK 5.13 under DOS emulation. The rebuilt `144pat2.cmd` is byte-identical to the binary originally shipped here.
-
-| Output | Role |
-| --- | --- |
-| `144bldr2.cmd` | Secondary loader; patches the kernel in memory at boot |
-| `144pat2.cmd` | Applies the same patches to an already-running system |
-| `144prep2.cmd` | Prepares a diskette (boot sector + loader appended) |
+Both BIOSes read and write 160K, 320K, 720K and 1.44M CP/M media.
+All bootable distributions use the generic loader from `commands/dskmaint`;
+no runtime disk patch or FIDD reservation is required. Native 1.2M is not supported.
+Larger-format support in DCOPY/DCOMP and DSKMAINT/DFORM remains pending.
 
 ### Development toolchains
 
@@ -284,7 +281,7 @@ Images use source-built tools. CP/M-816 configuration images boot `cpmexp.sys` (
 | `cpm86-8080.img` | Data-only CP/M-80 tools, libraries and examples from `cpm80/` |
 | `cpm86-chkcpmfs.img` | Bootable CP/M-86 checker disk with PIP, STAT and CHKCPMFS |
 
-**720K / 1.44M with 144FEAT**
+**720K / 1.44M — native support**
 
 | Image | Contents |
 | --- | --- |
@@ -313,15 +310,15 @@ All formats use `os 2.2`. Using `os 3` adds an unwanted CP/M Plus label to the d
 | --- | --- | --- | --- | --- |
 | `ibmpc-514ss` | 40 × 8 × 512 (160K SS) | 1K | 64 | 1 track |
 | `cpm86-320` | 80 × 8 × 512 (320K DS) | 2K | 64 | 1 track |
-| `cpm86-720feat` | 160 × 9 × 512 (720K) | 2K | 256 | 2 tracks |
-| `cpm86-144feat` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
+| `cpm86-720` | 160 × 9 × 512 (720K) | 2K | 256 | 2 tracks |
+| `cpm86-1440` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
 | `cpm86-xt-hd` | 272 × 63 × 512 (8M partition) | 4K | 2048 | 16 tracks |
 
 | Format note | Detail |
 | --- | --- |
-| 144FEAT | DPBs are documented in [extra/144tech.md](extra/144tech.md) |
 | Hard disk | The table describes one image. BIOS reads each drive's actual parameters from its DR partition label |
-| 320K | Head 1 stores cylinders in reverse order. Use `cpm86-320` with `tools/cpm86twist.py`; Makefile image targets handle this automatically. The stock cpmtools `ibmpc-514ds` definition corrupts these raw images |
+| 320K | Use `cpm86-320` on an untwisted copy, then `tools/cpm86twist.py` to restore physical order. Makefile recipes handle this automatically. The stock `ibmpc-514ds` definition is unsuitable |
+| 720K / 1.44M | Use `cpm86-720` / `cpm86-1440` directly on physical images. LibDsk handles track ordering; no separate twist step |
 
 ## Playing with CP/M-86
 
@@ -365,7 +362,6 @@ Primary source: http://www.cpm.z80.de
 | Dev tools baseline | http://www.cpm.z80.de/download/cpmdev.zip |
 | Patch annotations | http://www.cpm.z80.de/download/cpm86ann.zip |
 | Bug patches | http://www.cpm.z80.de/download/cpm86bug.zip |
-| 144FEAT2 | Freek Heite |
 | hexcom | https://github.com/johnsonjh/tpzasm |
 
 ## License

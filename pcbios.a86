@@ -1693,8 +1693,8 @@ CALC_PHYSEC:
 	mov	ax,word ptr TRK
 	test	byte ptr DRVTYPE[si],80h	; Hard disk drive ?
 	jnz	CALC_PHYSEC_HDD		; Yes
-	mov	word ptr PHY_TRK,ax
-	dec	ax
+	call	FD_CACHE
+	nop
 	jmps	CALC_PHYSEC_RET
 CALC_PHYSEC_HDD:
 	shl	si,1h
@@ -1814,24 +1814,8 @@ RDSEC_ERR:
 
 RESET_FLOPPY:
 FEAT144_BIOS_RESET:
-	push	word ptr TRK		; Save current track
-	mov	word ptr TRK,0		; Home
-	call	CHK_CACHE
-	jnb	RESET_FLOPPY1
-	jmp	ABORT			; We're gone
-
-RESET_FLOPPY1:
-	mov	word ptr 0Ah[bx],offset DPBK1
-	push	bx
-	mov	bx,offset DSKBUF
-	dec	byte ptr 01FFh[bx]
-	pop	bx
-	jnz	RESET_FLOPPY2
-	mov	word ptr 0Ah[bx],offset DPBK2
-
-RESET_FLOPPY2:
-	pop	word ptr TRK		; Restore current track
-	ret
+	jmp	FD_RESET
+	rs	41			; Preserve SETUP_INTREG at 2D44h.
 
 ;----------------------------------------
 
@@ -1843,16 +1827,11 @@ SETUP_INTREG:
 	test	byte ptr DRVTYPE[si],80h	; Hard disk drive ?
 	jnz	SETUP_INTREG_HDD	; Yes
 FEAT144_BIOS_INTREG:
-	mov	ch,al
-	cmp	ch,28h
-	jb	SETUP_INTREG_FIN
-	mov	ch,4Fh
-	sub	ch,al
-	mov	dh,01h
+	call	FD_REGS
+	jmp	SETUP_INTREG_BUF
+	rs	7
 SETUP_INTREG_FIN:
-	mov	cl,01h
-	mov	al,08h
-	jmps	SETUP_INTREG_BUF
+	rs	6			; Preserve hard-disk register setup.
 SETUP_INTREG_HDD:
 	shl	si,1h
 	mov	bx,word ptr HDDPARMS[si]
@@ -3270,28 +3249,28 @@ DPBASE		equ	$
 DPH0		dw	0		; No translation table
 	dw	0,0,0			; reserved
 	dw	offset DIRBUF		; Directory scratch pad
-DPB0		dw	0
+DPH0DPB	dw	0
 	dw	0			; Check vector 0
 	dw	0			; Allocation vector 0
 
 DPH1		dw	0		; No translation table
 	dw	0,0,0			; reserved
 	dw	offset DIRBUF		; Directory scratch pad
-DPB1		dw	0
+DPH1DPB	dw	0
 	dw	0			; Check vector 0
 	dw	0			; Allocation vector 0
 
 DPH2		dw	0		; No translation table
 	dw	0,0,0			; reserved
 	dw	offset DIRBUF		; Directory scratch pad
-DPB2		dw	0
+DPH2DPB	dw	0
 	dw	0			; Check vector 0
 	dw	0			; Allocation vector 0
 
 DPH3		dw	0		; No translation table
 	dw	0,0,0			; reserved
 	dw	offset DIRBUF		; Directory scratch pad
-DPB3		dw	0
+DPH3DPB	dw	0
 	dw	0			; Check vector 0
 	dw	0			; Allocation vector 0
 
@@ -3302,33 +3281,13 @@ DPB4		dw	0
 	dw	0			; Check vector 0
 	dw	CSV14			; Allocation vector 4
 
-; DPBK1 and DPBK2 Physical disks
+; Physical floppy DPBs retain their published slots. The generated
+; PCDISKS.LIB fills these slots from PCDISKS.DEF at the end of this module.
 
-DPBK1	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	03h			; 03 		; Block shift factor		(bsh)
-	db	07h			; 07 		; Block mask			(blm)
-	db	00h			; 00 		; Null mask			(exm)
-	dw	009Bh			; 0155 		; Disk size - 1			(dsm)
-	dw	003Fh			; 0063 		; Directory max			(drm)
-	db	0C0h			; 11000000b	; Alloc 0			(AL0)
-	db	00h			; 00000000b	; Alloc 1			(AL1)
-	dw	0010h			; 0016		; Check size			(cks)
-	dw	0001h			; 0001		; Track offset			(off)
-
-	db	0DBh			; ?
-
-DPBK2	dw	0020h	; 0032 		; CP/M Sectors per track	(spt)
-	db	04h			; 04 		; Block shift factor		(bsh)
-	db	0Fh			; 15 		; Block mask			(blm)
-	db	01h			; 01 		; Null mask			(exm)
-	dw	009Dh			; 0157 		; Disk size - 1			(dsm)
-	dw	003Fh			; 0063 		; Directory max			(drm)
-	db	080h			; 10000000b	; Alloc 0			(AL0)
-	db	00h			; 00000000b	; Alloc 1			(AL1)
-	dw	0010h			; 0016		; Check size			(cks)
-	dw	0001h			; 0001		; Track offset			(off)
-
-	db	0DBh			; ?
+DPBK1	rs	15			; 160K DPB at 3B22h
+	db	0DBh			; Original guard byte
+DPBK2	rs	15			; 320K DPB at 3B32h
+	db	0DBh			; Original guard byte
 
 ; DPBK3 and DPBK4 Memory disks
 
@@ -3804,7 +3763,7 @@ INIT_FDD:
 	jcxz	INIT_FDD_RET
 INIT_FDD_LOOP:
 	mov	byte ptr DRVTYPE[bx],bl
-	mov	si,offset DPBK1
+	mov	si,offset DPB2	; Reserve largest floppy CSV/ALV.
 	call	CHKCP4
 	inc	bx
 	loop	INIT_FDD_LOOP
@@ -4147,7 +4106,7 @@ DEFDRV		db	0		; Default drive (for CCP)
 FDDCNT		db	0		; Number of diskette drives
 HDDCNT		db	0		; Number of Hard disk drives
 
-DPH_PTR		db	086h,04Ch	; Current DPH allocation pointer
+DPH_PTR		dw	offset FD_END	; Allocation follows resident extensions.
 DPH_BASE	dw	offset DPBASE	; Base of DPH table
 BIOS_SEGSZ	dw	0		; Segment size offset (MRT base computation)
 
@@ -4384,4 +4343,16 @@ DSPCMP:
 	ret
 DSPEND:
 
+	cseg
+	org	4C86h
+FD_NATIVE db	'FDN1'		; native floppy capability, checked by 144FEAT
+	cseg
+	org	4C90h
+	include pcfloppy.lib
+FD_TABLES	equ	offset $	; New-format DPBs follow the floppy code.
+FD160		equ	offset DPBK1
+FD320		equ	offset DPBK2
+	dseg
+	include pcdisks.lib
+FD_END	equ	offset $
 	end

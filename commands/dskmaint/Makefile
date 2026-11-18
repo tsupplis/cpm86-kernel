@@ -4,6 +4,8 @@ ASM86=cpm86_asm86
 H862BIN=h862bin
 BIN2ASM=bin2asm
 
+REF=../../base/dskmaint.cmd
+
 TOOLS=dskmaint.cmd dskmorg.cmd dform.cmd
 
 # The two images DSKMAINT writes to track 0, as flat binaries.
@@ -18,7 +20,7 @@ all: $(TOOLS) $(SNIPPETS)
 
 dskmaint.obj: dskmaint.a86 $(INCS)
 
-dskmorg.obj: dskmorg.a86 $(INCS)
+dskmorg.obj: dskmorg.a86 bootorg.inc loadorg.inc
 
 dform.obj: dform.a86 ccpmio.a86 $(INCS)
 
@@ -26,6 +28,13 @@ dform.obj: dform.a86 ccpmio.a86 $(INCS)
 # BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
 # loaded into. h862bin extracts each binary image; bin2asm emits the data
 # declarations included by DSKMAINT and DFORM.
+# Frozen reference images come from the shipped binary, not a second loader.
+bootorg.bin: $(REF)
+	dd if=$(REF) of=$@ bs=1 skip=2809 count=147 2>/dev/null
+
+loadorg.bin: $(REF)
+	dd if=$(REF) of=$@ bs=1 skip=2956 count=846 2>/dev/null
+
 bootsect.h86: bootsect.a86
 loader.h86: loader.a86
 
@@ -65,7 +74,6 @@ dform.cmd: dform.obj Makefile
 	  { echo "*** $<: assembly errors"; rm -f $@; exit 1; }
 
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
-REF=../../base/dskmaint.cmd
 
 check: dskmorg.cmd check-dform
 	cmp $< $(REF)
@@ -74,7 +82,7 @@ check: dskmorg.cmd check-dform
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
-	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS)
+	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS) bootorg.bin loadorg.bin bootorg.inc loadorg.inc
 
 check-dform: dform.cmd $(IMAGES)
 	python3 ../../tools/dfmtest.py

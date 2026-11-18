@@ -328,7 +328,7 @@ fmtloop:
 	rep	movsb
 	mov	si,offset loader
 	mov	di,0900h
-	mov	cx,034eh
+	mov	cx,loader_end-loader
 	rep	movsb
 	mov	byte ptr biosfunc,03h
 	call	diskio
@@ -1102,6 +1102,7 @@ bootsect:
 ; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
 loader:
 	include	loader.inc
+loader_end:
 nomemmsg	db	0dh,0ah,'Not enough available memory.',0dh,0ah
 	db	00h
 copymemmsg	db	' Memory not available for Copying ',00h

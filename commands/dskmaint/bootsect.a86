@@ -3,12 +3,12 @@
 ;	BOOTSECT - boot sector written to track 0 by DSKMAINT
 ;	Copyright (C) 1983, Digital Research
 ;
-;	Reconstructed from the bytes DSKMAINT carries; assembles byte-identical
-;	to them.  Not a CP/M-86 program: the BIOS loads it at 0000:7c00.
+;	Derived from the original DSKMAINT boot sector.
+;	Not a CP/M-86 program: the BIOS loads it at 0000:7c00.
 ;
 ;	Build:	cpm86_asm86 bootsect	(writes bootsect.h86)
 ;
-;	It finds the top of memory, reads the loader into a segment 8K below
+;	It finds the top of memory, reads the loader into a segment 16K below
 ;	it (sectors 5 to 8 of track 0) and jumps to offset 100h of that
 ;	segment, which is where DSKMAINT puts the loader image.  Four
 ;	attempts, then it prints a message and stops.
@@ -28,7 +28,7 @@ boot:	cli
 	mov	sp,7c00h
 	sti
 	int	12h			    ; memory size in K
-	sub	ax,8
+	sub	ax,16
 	mov	cl,6
 	shl	ax,cl			; K to paragraphs
 	mov	loadseg,ax

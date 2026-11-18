@@ -3,7 +3,13 @@
 `make` builds the DSKMAINT reconstruction, its reference configuration,
 and the command-line formatter DFORM. Both programs include the same
 `bootsect.inc` and `loader.inc`, generated from `bootsect.a86` and
-`loader.a86`. The existing DSKMAINT sources remain unchanged.
+`loader.a86`. The frozen `dskmorg` comparison extracts its original boot
+images from `base/dskmaint.cmd`; it does not duplicate the maintained loader.
+
+The generic loader reads 160K, 320K, 720K and 1.44M CP/M media. It uses
+16 KiB of temporary boot workspace, handles byte/word allocation maps and
+blocks crossing tracks, and restores INT 1Eh before entering the kernel.
+This does not yet add larger-format choices to the formatter UI.
 
 ## DFORM
 
@@ -33,11 +39,11 @@ console/P_KEEP/priority and UDA error-mode state.
 
 The formatted disk uses DSKMAINT's boot-track layout: E5 fill,
 shared boot code at offset 0, sides byte at 1FFh and shared loader at 900h.
-DFORM selects the loader retry byte for the detected OS; copy CPM.SYS or
-CCPM.SYS using PIP's [R] option to complete a bootable disk.
+Copy CPM.SYS or CCPM.SYS using PIP's [R] option to complete a bootable disk.
+The loader itself preserves the historical extent-search allowances (2 for
+CPM.SYS, 3 for CCPM.SYS); the formatter does not patch loader instructions.
 
-The same DFORM sources are used in the CCP/M repository. One binary
-supports CP/M-86 1.1 / BDOS 2.2 through IBM PC ROM BIOS and CCP/M-86 3.1
+One DFORM binary supports CP/M-86 1.1 / BDOS 2.2 through IBM PC ROM BIOS and CCP/M-86 3.1
 (OS version 1431h) through native XIOS in `ccpmio.a86`. Other versions
 are rejected before disk access. The historical DSKMAINT, boot and loader
 sources remain specific to this CP/M repository.
@@ -52,7 +58,12 @@ using a NASM test harness with simulated BDOS/BIOS/XIOS services, without host
 disk access. It checks option parsing, confirmation/cancellation, track
 order and all CHRN fields, the full 4096-byte boot image, optional verify,
 BIOS/XIOS failures, queue/console exclusion and cleanup. BDOS deliberately
-corrupts ES and working registers. Actual kernel/floppy testing is still required.
+corrupts ES and working registers.
+
+From the repository root, `make check-floppy-live` runs eight disposable PCE
+boot/read/write cases: both BIOSes on all four formats. Large-media kernels
+are placed above allocation block 255 on side two. Written records and the
+unchanged system file are checked from the saved image.
 
 ## DFORM verification and completion
 

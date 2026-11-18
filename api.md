@@ -38,7 +38,7 @@ PC BIOS configuration and clock contracts must not be assumed on those machines.
 | `K:2393h` (`CNUMCB`) | BDOS memory-control state | PRINT reads it | Address, byte size and meaning |
 | `K:24A5h` | Current user number | PC BIOS status line | Address and byte size |
 | `K:24AFh` | BDOS abort-mode flag | PC BIOS reads it; PRINT reads/writes it | Address, byte size and flag meanings |
-| `K:24B7h` | Default drive | PC BIOS; 144BLDR2 replacement startup code | Address and byte size |
+| `K:24B7h` | Default drive | PC BIOS | Address and byte size |
 | `K:24BDh`–`24BFh` | Numeric hour, minute and second | PC BIOS timer; storage belongs to the BDOS data area | Three-byte allocation at these addresses |
 | `S+20h` = `K:24C0h` | 17-byte `mm/dd/yy,hh:mm:ss` clock | TOD, shipped ATINIT and PC BIOS timer | Start address, separators and field sizes; do not insert century bytes |
 | `K:24D2h` | 14-byte status message | PC BIOS copies it to the status line; external writer not found | Address and 14-byte allocation |
@@ -47,7 +47,7 @@ PC BIOS configuration and clock contracts must not be assumed on those machines.
 | `K:2550h` | Pointer to current/required disk byte (`DISK`) | Slot exported by PC BIOS; no external reader found in the local source scan | Preserve the exported pointer slot and one-byte disk value |
 | `K:2552h` | Pointer to serial settings | CONFIG accesses settings; SETUP copies them | Pointer slot stays here; preserve the two-byte settings layout |
 | `K:2554h` | Pointer to logical I/O assignments | ASSIGN accesses assignments; SETUP copies them | Pointer slot stays here; preserve the five-word table layout |
-| `K:2556h` | Pointer to FIDD storage description | 144PAT2 and 144BLDR2 read/change it | Pointer slot stays here; preserve size and segment words |
+| `K:2556h` | Pointer to FIDD storage description | PC BIOS and FIDD clients | Pointer slot stays here; preserve size and segment words |
 | `K:2558h` | Pointer to current screen-mode byte (`CRTMOD`) | Slot exported by PC BIOS; no external reader found in the local source scan | Preserve the exported pointer slot and one-byte screen-mode value |
 
 For the six pointer slots, “the slot stays here” does **not** mean the pointed-to
@@ -69,50 +69,16 @@ its other saved options come from a configuration sector, not from `2550h`.
 DDT86 reads console width at `S+64` decimal after `GETDATAPAGEADDR`.
 The status-message read is in the PC BIOS timer routine `TIMINT10`.
 
-## 144FEAT instruction and data dependencies
+## Native floppy implementation
 
-These dependencies apply to the PC BIOSes. The patchers overwrite instructions
-and reuse BIOS memory. Both instruction addresses and expected bytes matter.
-Addresses below are kernel offsets, not file offsets (the SYS header precedes them).
-Both columns are explicit even when the addresses match. CCP stack addresses
-are the values used by the patchers in `extra/144feat.inc`, not every CCP stack label.
+Both BIOSes retain the existing BIOS entry points, 160K/320K DPB slots and
+4K disk buffer. The reset and geometry hooks delegate to `pcfloppy.lib`;
+`pcdisks.def` supplies all four DPBs through GENDEF. New-format tables and
+resident code are appended. Hard-disk geometry handling is unchanged.
 
-| `cpm.sys` address | `cpmexp.sys` address | Who uses it | What must stay unchanged |
-| --- | --- | --- | --- |
-| `0B31h`, 3 bytes | `0B31h`, 3 bytes | BDOS / 144PAT2 and 144BLDR2 | Stack-setting instruction and original stack address `248Eh` |
-| `2D18h`, 44 bytes | `2D18h`, 44 bytes | BIOS / both patchers | Floppy reset instructions |
-| `2D4Fh`, 17 bytes | `2D4Fh`, 17 bytes | BIOS / both patchers | Floppy geometry instructions |
-| `2BEBh`, 3 bytes | `2BEBh`, 3 bytes | BIOS / both patchers | Sector-buffer instruction |
-| `2D95h`, 3 bytes | `2D95h`, 3 bytes | BIOS / both patchers | Track-buffer instruction |
-| `2EB7h`, 3 bytes | `2EB7h`, 3 bytes | BIOS / both patchers | Break-stack instruction |
-| `3E89h`, 7 bytes (W) | `3E89h`, 7 bytes (W) | BIOS / 144BLDR2 | FIDD display instructions, including CALL displacement |
-| `3D15h`, 9 bytes (X) | `3D15h`, 9 bytes (X) | BIOS / 144BLDR2 | Cold-start instructions |
-| `3DF9h`, 25 bytes (Y) | `3DF9h`, 25 bytes (Y) | BIOS / 144BLDR2 | RAM-disk initialization instructions |
-| `3E59h`, 7 bytes (Z) | `3E59h`, 7 bytes (Z) | BIOS / 144BLDR2 | FIDD request instructions |
-| `031Fh` | `0322h` | Both patchers, `CCPSTK1` | Stack-setting instruction (3 bytes) |
-| `035Fh` | `0362h` | Both patchers, `CCPSTK2` | Stack-setting instruction (3 bytes) |
-| `035Fh` | `0362h` | Both patchers, `CCPSTK3` | Stack-setting instruction (3 bytes) |
-| `07DBh` | `07C4h` | Both patchers, `CCPSTK4` | Stack-setting instruction (3 bytes) |
-| `3A5Eh`, word | `3A5Eh`, word | BIOS track state / 144PAT2 resident code | Track word address and meaning |
-| `3AAAh`, pointer array | `3AAAh`, pointer array | BIOS / 144PAT2 and resident code | DPH pointer array address; CSV/ALV words at DPH +12/+14 |
-| `3AC6h` | `3AC6h` | BIOS / 144PAT2 | Diskette parameter table address and layout |
-| `3B22h`, `3B32h` | `3B22h`, `3B32h` | BIOS / 144PAT2 | 160K/320K DPB addresses and layouts |
-| `3A72h`, `3A74h` | `3A72h`, `3A74h` | BIOS / 144BLDR2 patch Y | RAM-disk segment/size words |
-| `3AC0h` | `3AC0h` | BIOS / 144BLDR2 patches W/Z | FIDD size word |
-| `3E27h`, `4028h` | `3E27h`, `4028h` | BIOS / 144BLDR2 | Addresses and calling conventions of the RAM-disk continuation and decimal-output routine |
-| `3BE2h`–`4BE1h` | `3BE2h`–`4BE1h` | BIOS track/INIT area / 144FEAT | Reused for stacks, CSV/ALV, DPT/DPB and resident feature code |
-
-The reused area is explicitly laid out in [144PAT2](extra/144pat2.asm): stacks
-end at `3CEBh`, `3DECh`, `3EEDh`; CSV buffers occupy `3F00h`–`4002h` with
-sentinels; ALVs occupy `4004h`–`40BEh` with sentinels; new DPTs start at
-`40C0h`/`40CCh`; new DPBs at `40D8h`/`40E8h`/`40F8h`/`410Fh`; FIDD-pointer
-storage is `410Ch`; feature code occupies `411Fh`–`4BE1h`.
-These are extension-owned allocations, not spare BIOS memory.
-
-Sources: [144PAT2](extra/144pat2.asm), [144BLDR2](extra/144bldr2.asm),
-[generated locations](extra/144feat.inc), and [generator](tools/gen_144feat_inc.py).
-The generated CCPSTK2 and CCPSTK3 entries both name the STK3 location;
-the separate cold-start STK2 label is not included in that patch table.
+The old runtime patch package is retired. Its instruction-replacement layout
+is not an API supported by the native BIOS. `tools/bioschk.py` verifies the
+native hook targets, preserved unrelated instructions and module boundaries.
 
 ## Raw disk and hardware contracts
 

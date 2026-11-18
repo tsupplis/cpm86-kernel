@@ -503,7 +503,7 @@ segtable db 1	;1 segments
 	dw 6000H	;2nd is 60000 -
 	dw 6000H	;C0000 (384k)
 
-	include apdisk.lib ;read in disk definitions
+	include apdisks.lib ;read in disk definitions
 
 loc_stk	rw  32	;local stack for initialization
 stkbase	equ offset $

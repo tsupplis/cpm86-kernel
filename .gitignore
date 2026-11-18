@@ -41,7 +41,6 @@ extra/*.obj
 extra/*.com
 extra/*.tmp
 extra/*.cmd
-!/pcdisks.lib
 !/pc816.lib
 !/lineedit.lib
 /bdosbind.equ
@@ -53,3 +52,5 @@ extra/*.cmd
 
 # Disposable emulator fixtures and regression diagnostics.
 /local/
+
+!/pcfloppy.lib

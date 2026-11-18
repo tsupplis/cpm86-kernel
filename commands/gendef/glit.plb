@@ -17,6 +17,7 @@ declare
     /* two character tokens: */
 
     /* three character tokens: */
+    torg lit '160',
 
     /* four character tokens: */
 

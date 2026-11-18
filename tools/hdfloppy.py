@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Boot 720K/1.44M 144FEAT images with a disposable hd_volume_check fixture.
+"""Boot 720K/1.44M native images with a disposable hd_volume_check fixture.
 
-Build the four standard/EXP feature images first. --fixture is read-only:
+Build the four standard/EXP native images first. --fixture is read-only:
 each emulator receives private copies of its disk images. Requires PCE,
 cpmtools, and HDTEST.CMD produced by hd_volume_check.py in the fixture.
 """
@@ -28,12 +28,12 @@ def test(case):
     name = 'cpm86-' + ('exp-' if variant == 'exp' else '') + str(size)
     shutil.copyfile(root / (name + '-at.img'), folder / 'floppy.img')
     shutil.copyfile(root / 'diskdefs', folder / 'diskdefs')
-    fmt = 'cpm86-' + ('144' if size == 1440 else '720') + 'feat'
+    fmt = 'cpm86-' + str(size)
     for source, target in [(fixture / 'hdtest.cmd', 'HDTEST.CMD'),
                            (root / 'commands/chkcpmfs/chkcpmfs.cmd', 'CHKCPMFS.CMD')]:
-        subprocess.run(['cpmrm', '-f', fmt, 'floppy.img', '0:' + target],
+        subprocess.run(['cpmrm', '-T', 'raw', '-f', fmt, 'floppy.img', '0:' + target],
                        cwd=folder, capture_output=True)
-        subprocess.run(['cpmcp', '-f', fmt, 'floppy.img', str(source), '0:' + target],
+        subprocess.run(['cpmcp', '-T', 'raw', '-f', fmt, 'floppy.img', str(source), '0:' + target],
                        cwd=folder, check=True, capture_output=True)
     image = bytearray((fixture / 'hard.img').read_bytes())
     lba, sectors = struct.unpack_from('<II', image, 454)
@@ -103,7 +103,7 @@ def test(case):
     assert len(data) >= 512 * 1024, (folder, len(data))
     for i in range(len(data) // 128):
         assert data[i * 128:(i + 1) * 128] == struct.pack('<H', i) * 64, (folder, i)
-    return (f'PASS: {variant} {size}K feature boot, DIR, disk-full writes, '
+    return (f'PASS: {variant} {size}K native boot, DIR, disk-full writes, '
             f'guest/host readback, checker and partition guards; {folder}')
 
 

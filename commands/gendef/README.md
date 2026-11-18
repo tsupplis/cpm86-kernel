@@ -1,8 +1,22 @@
 # GENDEF source rebuild
 
 GENDEF reads `name.DEF` and emits assembler disk tables in `name.LIB`.
-Usage: `GENDEF name [$COZ]`; C includes comments, O uses offset-relative
+Usage: `GENDEF name $BCOZ` (options are optional and combinable).
+B emits only DPBs and DPB aliases; C includes comments, O uses offset-relative
 labels, Z selects Z80/8080/8085 output instead of 8086/8088.
+
+For example, `GENDEF PCDISKS $BC` generates commented DPBs without disk
+parameter headers, sector translation tables, buffer-size symbols or scratch
+storage. The caller supplies those structures and controls table placement.
+Omitting B preserves the historical output.
+
+`ORG symbol` may precede a `DISKDEF` in the input. It emits an assembler
+`org` directive without changing segments. Define the symbol as a numeric
+address in the including source. Numeric operands, expressions and extra
+operands are rejected; existing definitions without ORG are unchanged.
+
+The PC BIOS defines `FD160`, `FD320` and `FDTABLES`, then includes
+`pcdisks.lib` directly. No intermediate extraction or format copies are used.
 
 Run `make` to build and `make check` to compare generated LIB files with
 the shipped tool under emu2. Build with the same Intel PL/M-86 / ASM86 / LINK86 / LOC86 / OH86
@@ -27,11 +41,16 @@ reports group enlargement and no explicit start address; GENCMD starts CODE
 at zero through the startup jump. These diagnostics are retained in listings.
 The rebuilt CMD differs from the shipped binary in compiler output/layout.
 
-Under emu2, the rebuilt and shipped programs produced byte-identical LIB
-files for the repository `pcdisks.def`, for default, $C, $O, $Z and $COZ
-options, including complete CP/M records and EOF padding. This covers the
-command-tail parsing addressed by patch 03 and both processor output modes.
-It does not prove identity for every accepted disk geometry or error case.
+Under emu2, `make check` passes 50 checks across the PC and Apple
+format definitions and a skewed format with a DPB alias. Default, $C, $O,
+$Z and $COZ output remains byte-identical to the shipped tool, including
+CP/M record padding. Adding B retains exactly the corresponding DPB
+assembler statements and aliases, with no other emitted structures.
+Ten checks cover symbolic placement in full and DPB-only modes; ten reject
+malformed ORG operands. `pcold.def` retains the pre-ORG PC definition for
+comparison with the original generator.
+This does not establish correctness for every geometry or error case.
+
 Distribution recipes and `tools/gendef.sh` use the rebuilt
 `commands/gendef/gendef.cmd`. The original `base/gendef.cmd` remains the
 reference used by `make check`.
