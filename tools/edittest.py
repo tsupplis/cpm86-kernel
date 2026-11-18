@@ -25,7 +25,15 @@ def check():
     patches = {
         'CONINC': f'mov si,[{cursor}]\nmov al,[si]\ninc si\nmov [{cursor}],si\nret',
         'CONSTS': 'xor ax,ax\nret',
-        'BCONOT': 'ret',
+        'BCONOT': f"""cmp byte [cs:{s('le_hidden')}],0
+je done
+mov byte [{cursor+2}],1
+mov ax,[{s('CURCUR')}]
+cmp ax,[{s('CURLOFF')}]
+je done
+mov ax,4c01h
+int 21h
+done: ret""",
         'BLIST': 'ret',
         'VSETCUR2': 'ret',
     }
@@ -63,6 +71,7 @@ mov [{s('INDSEG')}],ds
 mov byte [{buf}],{maximum}
 mov byte [{buf+maximum+2}],0a5h
 mov word [{cursor}],{seq}
+mov byte [{cursor+2}],0
 """
         for offset, value in enumerate(keys):
             setup += f'mov byte [{seq+offset}],{value}\n'
@@ -72,6 +81,8 @@ mov word [{cursor}],{seq}
         checks += f'push es\nmov ax,[cs:target+2]\nmov es,ax\ncmp byte [es:{s("le_active")}],0\njne failed\npop es\n'
         for offset, value in enumerate(expected):
             checks += f'cmp byte [{buf+2+offset}],{value}\njne failed\n'
+        if name == 'insert':
+            checks += f'cmp byte [{cursor+2}],1\njne failed\n'
         m.run('MRDCBF', setup, checks, patches=patches)
         print('PASS:', name)
     # Real save followed by recall, including truncation and blank/cancel policy.
@@ -91,6 +102,7 @@ mov word [{s('INPARA')}],{buf}
 mov [{s('INDSEG')}],ds
 mov byte [{buf}],{200 if name == 'recall cap' else 20}
 mov word [{cursor}],{seq}
+mov byte [{cursor+2}],0
 """
         for offset, value in enumerate(keys):
             setup += f'mov byte [{seq+offset}],{value}\n'

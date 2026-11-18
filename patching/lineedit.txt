@@ -39,6 +39,11 @@ Distribution: cpm86-exp-320.img and cpm86-exp-320-at.img use the established
 320K recipes with cpmexp.sys. Both are included in disks.zip alongside the
 larger EXP images. The AT variant includes automatic ATINIT startup.
 
-Results: 28 built-editor cases and full make check passed. PCE editor and
-bridge regressions passed on V20/320 and 8088/320. Resident growth is 1366
+Results: 32 built-editor cases and full make check passed. PCE editor and
+bridge regressions passed on V20/320 and 8088/320. Resident growth is 1466
 bytes, including the 128-byte recall slot. Standard kernel remains pinned.
+
+Cursor repaint fix: redraw and recall temporarily hide the cursor using the
+existing BIOS helpers. The exact previous shape (including hidden state) is
+restored after repaint or Ctrl-C. Tests check visibility during repaint writes
+and restoration after normal and interrupted repaint.

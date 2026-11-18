@@ -10,7 +10,7 @@ The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsuppl
 | **CP/M-816** | Native CP/M-86 CMD and 8080 CP/M-80 2.2 COM programs on V20/V30; standard CP/M-86 kernel remains available. you can use the PCE derived emulator [PCE 286](https://github.com/tsupplis/pce-286) for v20/v30 emulation on development/unix host |
 | Development tools | DR development chain, DR & Microsoft BASIC, native ASM80/HEXCOM and a separate CP/M-80 tools disk |
 | **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
-| Usability and bug fixes | Enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
+| Usability and bug fixes | EXP command-line editing and recall, enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
 | Storage | 320K distributions, 720K/1.44M support through **144FEAT**, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
 | Coherent Ecosystem | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu). See for other sister projects at the end of this document |
 
@@ -110,7 +110,7 @@ These patches are present in the frozen and maintained BDOS sets. The original P
 | PC BIOS RTC date | Standard and EXP read the initial date via `INT 1Ah/AH=04h` when supported. Stock XT or invalid replies retain the default; time initialization and fixed addresses are unchanged. See [mapping](mapping.md#optional-bios-rtc-date). |
 | [PC BIOS Y2K leap-year patch](patching/y2kleap.txt) | Standard and EXP recognize year 00 as leap (2000); four-byte in-place fix preserves addresses. The existing four-year rule is not Gregorian century handling for 2100. |
 | [PC BIOS displayed century](patching/century.txt) | Display `00–79` as 2000–2079 and `80–99` as 1980–1999. Clock storage and tools are unchanged; all existing addresses are preserved. |
-| [EXP line editor](patching/lineedit.txt) | CCP/M-style editing and 127-character recall through Function 10; standard kernel unchanged |
+| [EXP line editor](patching/lineedit.txt) | CCP/M-style editing and 127-character recall; cursor hidden during redraw. BDOS addresses and standard kernel unchanged |
 | Maintained PC hard disks | Support partitions up to 31.5 MiB; see [HDMAINT compatibility notes](commands/hdmaint/README.md) |
 
 Tool patches: 03 GENDEF, 04–05 ED, 09 PIP and 12 SUBMIT. Patches 02 (LDCOPY) and 14 (sample BIOS TRACK.A86) are outside this kernel.
