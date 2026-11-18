@@ -10,7 +10,10 @@ import argparse,re,shutil,subprocess,tempfile
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--sectors",type=int,choices=(8,9),default=9)
 parser.add_argument("--capacity", type=int, choices=(320,720,1440), default=320)
+parser.add_argument("--dskmaint", action="store_true", help="Exercise the DSKMAINT format/verify/copy menus")
 args=parser.parse_args()
+if args.dskmaint and args.capacity == 320:
+    parser.error("--dskmaint requires --capacity 720 or 1440")
 sectors=args.sectors if args.capacity==320 else 9 if args.capacity==720 else 18
 cylinders=40 if args.capacity==320 else 80
 ROOT=Path(__file__).resolve().parent.parent
@@ -53,6 +56,8 @@ if args.capacity == 320:
     (F/'source.img').write_bytes(expanded if sectors==9 else b)
 else:
     run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dform/dform.cmd'),'0:DFORM.CMD')
+    if args.dskmaint:
+        run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dskmaint/dskmaint.cmd'),'0:DSKMAINT.CMD')
     (F/'source.img').write_bytes((F/'logical.img').read_bytes())
 (F/'target.img').write_bytes(bytes([0xe5])*(cylinders*2*sectors*512))
 # Explicit sector images avoid ambiguous 320K raw-image geometry guessing.
@@ -71,21 +76,48 @@ c=['c f000000'];keys={':':'+Shift Semicolon -Shift',' ':'Space','[':'LeftBracket
 def command(s):
     for ch in s:c.extend(['key '+keys.get(ch,ch),'c 200000'])
     c.extend(['key Return','c 6000000'])
-if args.capacity != 320:
-    command(f'dform b: [{args.capacity}]')
-    c.extend(['key y','c 80000000','save "format.bin" bin b800:0000 fa0'])
-option=f' [{sectors}]' if args.capacity==320 else ''
-command('dcopy a: b:'+option)
-c.extend(['key Space','c 40000000','save "copy.bin" bin b800:0000 fa0','key n','c 4000000'])
-command('dcomp a: b:'+option)
-c.extend(['key Space','c 40000000','save "compare.bin" bin b800:0000 fa0','key n','c 4000000','q'])
+if args.dskmaint:
+    command('dskmaint')
+    c += ['save "menu.bin" bin b800:0000 fa0']
+    def key(name, cycles='6000000'):
+        c.extend(['key '+name, 'c '+cycles])
+    key('F6' if args.capacity==720 else 'F8')
+    key('F4')
+    c += ['save "confirm.bin" bin b800:0000 fa0']
+    key('y','80000000')
+    c += ['save "format.bin" bin b800:0000 fa0']
+    key('F10'); key('F1'); key('F4','80000000')
+    c += ['save "verify.bin" bin b800:0000 fa0']
+    key('F10'); key('F3'); key('F2'); key('F4'); key('y','80000000')
+    c += ['save "copy.bin" bin b800:0000 fa0']
+    key('F10'); key('F9')
+    command('dcomp a: b:')
+    key('Space','40000000')
+    c += ['save "compare.bin" bin b800:0000 fa0']
+    key('n'); c += ['q']
+else:
+    if args.capacity != 320:
+        command(f'dform b: [{args.capacity}]')
+        c.extend(['key y','c 80000000','save "format.bin" bin b800:0000 fa0'])
+    option=f' [{sectors}]' if args.capacity==320 else ''
+    command('dcopy a: b:'+option)
+    c.extend(['key Space','c 40000000','save "copy.bin" bin b800:0000 fa0','key n','c 4000000'])
+    command('dcomp a: b:'+option)
+    c.extend(['key Space','c 40000000','save "compare.bin" bin b800:0000 fa0','key n','c 4000000','q'])
 with (F/'pce.log').open('wb') as log:
     subprocess.run(['pce-ibmpc','-c','test.cfg','-t','null','-g','vga'],cwd=F,input=('\n'.join(c)+'\n').encode(),stdout=log,stderr=log,timeout=240,check=True)
 def screen(name):
     b=(F/(name+'.bin')).read_bytes();s='\n'.join(bytes(b[i:i+160:2]).decode('cp437').rstrip() for i in range(0,3840,160));(F/(name+'.txt')).write_text(s);return s
-if args.capacity != 320:
-    s=screen('format');assert 'Format complete.' in s,s
-s=screen('copy');assert 'Copy complete' in s,s
+if args.dskmaint:
+    assert 'Format 1440K' in screen('menu')
+    assert 'Is this what you want' in screen('confirm')
+    assert 'SELECT DISKETTE TO FORMAT' in screen('format'), screen('format')
+    assert 'SELECT DISKETTE TO VERIFY' in screen('verify'), screen('verify')
+    assert 'SELECT SOURCE DISKETTE' in screen('copy'), screen('copy')
+else:
+    if args.capacity != 320:
+        s=screen('format');assert 'Format complete.' in s,s
+    s=screen('copy');assert 'Copy complete' in s,s
 s=screen('compare');assert 'Diskettes compare ok' in s,s
 for name in ('source','target'):
     run('psi',name+'.psi','-O','raw','-o',name+'.img')

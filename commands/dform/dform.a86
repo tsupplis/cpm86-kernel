@@ -15,22 +15,22 @@
 ;	V	Verify every track (default) after formatting and writing the boot track.
 ;
 ;	Combine options or use separate groups. The closing ] is optional;
-;	DFORM A:[160V], DFORM A: [1] [V and DFORM A: [1V are equivalent.
-;	Letters are case-insensitive. Unknown options and conflicting 1/2
+;	DFORM A:[160V], DFORM A: [160] [V and DFORM A: [160V are equivalent.
+;	Letters are case-insensitive. Unknown options and conflicting capacity
 ;	selections print usage. An empty command also prints usage and exits.
 ;	Q skips verification; V and Q conflict.
 ;	Formatting always requires Y confirmation; N or Ctrl-C cancels.
 ;
 ;	A fresh disk contains the DSKMAINT boot sector and loader. The system
 ;	file (CPM.SYS or CCPM.SYS) must still be copied to it. Tracks follow
-;	DSKMAINT's order: head zero cylinders 0..39, then head one
-;	cylinders 39..0. No FAT is generated.
+;	DSKMAINT's order: head zero cylinders in ascending order, then head one
+;	cylinders in descending order. No FAT is generated.
 ;
 ;	CP/M-86 1.1 uses ROM BIOS; Concurrent CP/M-86 3.1 uses native XIOS.
 ;	CCP/M uses DSKMAINT 1.5's MXdisk, P_KEEP and console exclusion protocol.
 ;	The 512-byte stack and two aligned track buffers stay resident.
 ;	All exits restore the BIOS vector or release the CCP/M locks.
-;	The loader retry byte follows the detected OS: CP/M=2, CCP/M=3.
+;	The shared loader identifies CPM.SYS or CCPM.SYS itself.
 ;	Raw BDOS console I/O avoids an implicit Ctrl-C exit during formatting.
 ;
 ;*****************************************************************************

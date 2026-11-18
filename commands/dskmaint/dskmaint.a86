@@ -3,32 +3,26 @@
 ;	DSKMAINT - CP/M-86 diskette maintenance for the IBM PC
 ;	Copyright (C) 1983, Digital Research
 ;
-;	Reconstructed from the shipped binary; assembles byte-identical.
+;	Maintained reconstruction; DSKMORG preserves the byte-identical reference.
 ;
 ;	Build:	make
 ;	Check:	make check
 ;
-;	A menu on the function keys: F1 verify, F3 copy, F5 format single
-;	sided, F7 format double sided, F9 exit.  The screen is driven through
+;	Function keys: F1 verify, F3 copy, F4/F5 format 160K/320K,
+;	F6/F8 format 720K/1440K, F9 exit.  The screen is driven through
 ;	VT52 escape sequences by BDOS, except for clearing the window (BIOS
 ;	video), the keyboard (BIOS int 16h) and the diskette itself (BIOS
 ;	int 13h).
 ;
-;	The disk is handled one track at a time: eight sectors of 512 bytes,
-;	one 1000h byte buffer.  A diskette has 40 tracks, or 80 on two sides:
-;	tracks 0..39 are cylinders 0..39 on head 0 and tracks 40..79 are
-;	cylinders 39..0 on head 1.  The last byte of the boot sector tells
-;	whether the diskette is single or double sided.
+;	Tracks contain 8, 9 or 18 sectors of 512 bytes, on 40 or 80
+;	cylinders. Head 0 advances; head 1 returns in reverse cylinder order.
+;	The boot-sector marker selects the geometry. Track buffers occupy
+;	16K-aligned slots so BIOS DMA never crosses a 64K boundary.
 ;
-;	Formatting installs its own 8 sector parameter table over the BIOS
-;	diskette vector (int 1Eh) for the duration, then writes the boot sector
-;	and loader kept in the data (bootsect, loader).
+;	Disk operations temporarily install the selected geometry at int 1Eh.
+;	Formatting writes the embedded boot sector and loader to track 0.
 ;
 ;*****************************************************************************
-
-; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	0734h
-image_end	equ	1060h
 
 ; One group so the CMD has a single CODE descriptor (the 8080 model),
 ; but the data keeps its own segment.
@@ -211,7 +205,7 @@ copyrd:
 	mov	si,offset checkmsg
 	call	trkhdr
 
-; Read one track back into trkbuf and compare all 1000h bytes with the copy
+; Read one track back into trkbuf and compare all track_bytes bytes with the copy
 ; that was just written.  nextseg points es at the copy and steps on.
 cmploop:
 	call	showtrk
@@ -265,14 +259,14 @@ xferloop:
 	ret
 
 ; Point es at the current track buffer, then step curseg to the next one:
-; a track is 1000h bytes, 100h paragraphs.
+; Each track occupies a 16 KiB-aligned DMA slot.
 nextseg:
 	mov	es,word ptr curseg
 	add	word ptr curseg,0400h
 	ret
 
 ;-----------------------------------------------------------------------------
-; F5: format a single sided diskette, 40 tracks.
+; F4: format 160K single-sided media.
 ;-----------------------------------------------------------------------------
 fmt1:
 	call	default_geometry
@@ -282,7 +276,7 @@ fmt1:
 	jmps	fmtcommon
 
 ;-----------------------------------------------------------------------------
-; F7: format a double sided diskette, 80 tracks.
+; F5: format 320K double-sided media.
 ;-----------------------------------------------------------------------------
 fmt2:
 	call	default_geometry
@@ -326,7 +320,7 @@ fmtcommon:
 	jmp	word ptr fntable[bx]
 
 ;-----------------------------------------------------------------------------
-; Format every track (BIOS function 5) with the 8 sector parameter table
+; Format every track (BIOS function 5) with the selected sector parameter table
 ; installed over the diskette vector, then put the vector back.  Track 0 is
 ; then written again with the boot sector and the loader, the rest of the
 ; buffer left at 0e5h, and the last byte of the boot sector holds the sides
@@ -366,7 +360,7 @@ fmtloop:
 	mov	al,marker
 	mov	es:.01ffh,al
 fmt_marker_ready:
-	mov	cx,93h
+	mov	cx,boot_end-bootsect
 	rep	movsb
 	mov	si,offset loader
 	mov	di,0900h
@@ -377,8 +371,8 @@ fmt_marker_ready:
 	mov	si,offset vfyingmsg
 	jmp	vfyall
 
-; Build the eight address fields BIOS function 5 expects for the current track
-; at the start of trkbuf: cylinder, head, sector 1..8, size code 2 (512 bytes).
+; Build the selected number of address fields BIOS function 5 expects for the current track
+; at the start of trkbuf: cylinder, head, sector 1..sectors, size code 2 (512 bytes).
 mkidtab:
 	mov	es,word ptr trkbuf
 	mov	di,00h
@@ -760,7 +754,7 @@ flushend:
 
 ;-----------------------------------------------------------------------------
 ; Ask BDOS for the largest free block, then take from it one that starts on a
-; 1000h byte boundary, so that no track straddles a 64K DMA boundary.  trkbuf
+; 16 KiB boundary, so that no track straddles a 64K DMA boundary.  trkbuf
 ; is the first track, copyseg the rest, ntrkbuf how many whole tracks the rest
 ; holds.  The memory parameter block is trkbuf, buflen, bufflag.  Returns ZF
 ; clear if the memory was allocated.
@@ -888,7 +882,9 @@ get_ready:
 	push	ax
 	mov	al,sectors
 	mov	disk_params+4,al
+	push	si
 	call	setnewvec
+	pop	si
 	pop	ax
 	ret
 
@@ -902,7 +898,7 @@ default_geometry:
 	ret
 
 ;-----------------------------------------------------------------------------
-; Do BIOS function biosfunc on track `track` of drive: eight sectors, from or
+; Do BIOS function biosfunc on track `track` of drive: the selected sector count, from or
 ; to es:0.  diskio uses the track buffer, diskioes whatever es already points
 ; at.  A waiting key is looked at first: Control-C leaves through restart, any
 ; other key is thrown away.  Each track gets five attempts before the error is
@@ -954,7 +950,7 @@ retryio:
 	dec	byte ptr retries
 	jnz	tryio
 	mov	si,offset errtab
-	mov	cx,0ah
+	mov	cx,(errtab_end-errtab)/3
 
 errloop:
 	cld
@@ -1066,14 +1062,12 @@ conout:
 	cld
 	ret
 
-l0734:
-
 ; ---- data ----
 	dseg
 ndrives	dw	00h	; number of diskette drives
 biosfunc	db	00h	; int 13h function: 2 read, 3 write, 4 verify, 5 format
 drive	db	00h	; selected drive, 0 for A:
-track	db	00h	; current track, 0..79
+track	db	00h	; current logical track, 0..159
 trkcount	db	00h	; tracks still to do in this pass
 trktotal	db	00h	; tracks in the whole copy
 retries	db	00h	; attempts left for this track
@@ -1186,13 +1180,14 @@ drvkeys	db	0ah,02h,04h,06h,08h
 indrvmsg	db	' the Diskette in Drive ',00h
 trkmsg	db	' track',00h
 
-; The boot sector written to track 0 by the formatter, 93h bytes.  It is meant
+; The boot sector written to track 0 by the formatter.  It is meant
 ; to run at 0000:7c00.  The sides flag goes into byte 1ffh of the track.
 ; embedded real-mode code (int 10h x1, int 12h x1, int 13h x2), kept as data
 bootsect:
 	include	bootsect.inc
+boot_end:
 
-; The loader written at offset 900h of track 0, 34eh bytes.  It looks for
+; The loader written at offset 900h of track 0.  It looks for
 ; CPM.SYS or CCPM.SYS on the diskette and loads it.
 ; embedded real-mode code (int 10h x1, int 13h x2, int 16h x2), kept as data
 loader:
@@ -1206,19 +1201,38 @@ mismatmsg	db	' Source and Destination data do not ma','tch '
 
 ; int 13h status and the address of its message: ten entries, then the
 ; messages themselves.
-errtab	db	80h,0e7h,0eh,40h,00h,0fh,20h,18h,0fh,10h,32h,0fh
-	db	09h,44h,0fh,08h,59h,0fh,04h,6dh,0fh,03h,80h,0fh
-	db	02h,9ah,0fh,01h,0b2h,0fh
-	db	' Drive does not respond ',00h
-	db	' Seek operation failed ',00h
-	db	' Disk Controller failure ',00h
-	db	' Disk Read Error ',00h
-	db	' DMA Boundary Error ',00h
-	db	' DMA Overrun Error ',00h
-	db	' Sector not found ',00h
-	db	' Disk is Write Protected ',00h
-	db	' Disk is not Formatted ',00h
-	db	' Bad Command ',00h
+errtab:
+	db	80h
+	dw	noresponse
+	db	40h
+	dw	seekerror
+	db	20h
+	dw	controller
+	db	10h
+	dw	readerror
+	db	09h
+	dw	dmawindow
+	db	08h
+	dw	dmaoverrun
+	db	04h
+	dw	nosector
+	db	03h
+	dw	protected
+	db	02h
+	dw	unformatted
+	db	01h
+	dw	badcommand
+errtab_end:
+noresponse	db	' Drive does not respond ',00h
+seekerror	db	' Seek operation failed ',00h
+controller	db	' Disk Controller failure ',00h
+readerror	db	' Disk Read Error ',00h
+dmawindow	db	' DMA Boundary Error ',00h
+dmaoverrun	db	' DMA Overrun Error ',00h
+nosector	db	' Sector not found ',00h
+protected	db	' Disk is Write Protected ',00h
+unformatted	db	' Disk is not Formatted ',00h
+badcommand	db	' Bad Command ',00h
 fatalmsg	db	' Fatal Disk Error ',00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h

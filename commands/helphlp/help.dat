@@ -412,26 +412,19 @@
 
     Explanation:
 
-    DSKMAINT   is  a  multi-function  menu-driven  command   that
-    performs these diskette maintenance operations: formatting new or
-    re-usable diskettes,  copying one diskette's contents to another,
-    and verifying a diskette format.
-    Single- and Double-Sided Diskettes
+    Format, copy and verify CP/M diskettes. Supported capacities are
+    160K, 320K, 720K and 1440K. Copying preserves the source geometry;
+    use PIP to transfer files between different formats.
 
-    DSKMAINT  only copies between two diskettes which  have  been
-    formatted  as the same type:   between two single-sided diskettes
-    or between two double-sided diskettes.
+    F1        Verify a diskette.
+    F3        Copy a diskette.
+    F4/F5     Format 160K/320K.
+    F6/F8     Format 720K/1440K.
+    F9        Exit.
 
-    To  make  a  double-sided copy of  a  single-sided  diskette,
-    format  your double-sided diskette,  then use PIP to  copy  files
-    between the two diskettes.
-
-    Creating a Boot-Disk
-
-    In  order  to  create  a boot disk you  must  first  format  a
-    diskette,  either single or double sided.  Then exit DSKMAINT and
-    use  PIP to copy the file CPM.SYS to your disk.  You will have to
-    use the [r] option with PIP to copy CPM.SYS.
+    The empty 1200K box is a placeholder; that format is unavailable.
+    Formatting requires confirmation and verifies the written disk.
+    To make a boot disk, format it and copy CPM.SYS with PIP's [R] option.
 
     DSKMAINT returns several error messages.
 
