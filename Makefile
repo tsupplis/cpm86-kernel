@@ -330,7 +330,7 @@ check-disk-live: all
 
 # Native floppy boot/read/write tests on both BIOS variants.
 .PHONY: check-floppy-live
-check-floppy-live: cpm.sys cpmorg.sys cpmexp.sys commands
+check-floppy-live: cpm.sys cpmexp.sys commands
 	python3 tools/fdboot.py
 
 # Execute built hard-disk capacity/addressing routines; no physical disks.
@@ -338,6 +338,15 @@ check-floppy-live: cpm.sys cpmorg.sys cpmexp.sys commands
 check-hd-capacity: cpm.sys cpmexp.sys
 	$(MAKE) -C commands/hdmaint check
 	python3 tools/hd_capacity_check.py
+
+# EXP execution and command-line editing use disposable PCE images.
+.PHONY: check-exp-live check-reconstruction
+check-exp-live: cpmexp.sys commands
+	python3 tools/pc816chk.py --editor
+
+# Manual reconstruction tooling is independent of the production build.
+check-reconstruction:
+	python3 tools/a86selftest.py
 
 # Clean
 

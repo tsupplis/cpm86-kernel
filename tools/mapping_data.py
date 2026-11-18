@@ -2,8 +2,8 @@
 """Resolve the symbols and hex addresses cited in mapping.md against the .sym files.
 
 Usage:
-  mapaddr.py                      report every backticked symbol and hex address in mapping.md
-  mapaddr.py SYMBOL [SYMBOL ...]  look up specific symbols
+  mapping_data.py                      report every backticked symbol and hex address in mapping.md
+  mapping_data.py SYMBOL [SYMBOL ...]  look up specific symbols
   Options: --doc PATH (default ./mapping.md), --root DIR (default: directory of --doc)
 """
 import argparse
