@@ -11,7 +11,7 @@
 ;	drive:	Required installed floppy drive, A: or B:.
 ;	160	Single-sided, 160 KiB (40 cylinders, eight 512-byte sectors).
 ;	320	Double-sided, 320 KiB; the default capacity.
-;	720/1440 Double-sided 80-cylinder media.
+;	720/1200/1440 Double-sided 80-cylinder media.
 ;	V	Verify every track (default) after formatting and writing the boot track.
 ;
 ;	Combine options or use separate groups. The closing ] is optional;
@@ -49,6 +49,7 @@ opt_verify	equ	4
 opt_quick equ 8
 opt_720		equ	16
 opt_1440	equ	32
+opt_1200	equ	64
 stack_size	equ	512
 
 start:
@@ -135,6 +136,9 @@ show_capacity:
 	mov	dx,offset msg_720
 	cmp	sectors,9
 	je	show_capacity_ready
+	mov	dx,offset msg_1200
+	cmp	sectors,15
+	je	show_capacity_ready
 	mov	dx,offset msg_1440
 show_capacity_ready:
 	call	puts
@@ -199,6 +203,9 @@ format_ids_ready:
 	mov	es:byte ptr .1feh,1
 	mov	al,72
 	cmp	sectors,9
+	je	boot_marker_store
+	mov	al,120
+	cmp	sectors,15
 	je	boot_marker_store
 	mov	al,144
 boot_marker_store:
@@ -333,18 +340,26 @@ option_quick:
 	jmp next_option
 option_720:
 	cmp	cx,2
-	jb	bad_syntax
+	jae	length_720
+	jmp	bad_syntax
+length_720:
 	cmp	word ptr [si],'02'
-	jne	bad_syntax
+	je	digits_720
+	jmp	bad_syntax
+digits_720:
 	add	si,2
 	sub	cx,2
 	or	options,opt_720
 	jmp	next_option
 option_320:
 	cmp	cx,2
-	jb	bad_syntax
+	jae	length_320
+	jmp	bad_syntax
+length_320:
 	cmp	word ptr [si],'02'
-	jne	bad_syntax
+	je	digits_320
+	jmp	bad_syntax
+digits_320:
 	add	si,2
 	sub	cx,2
 	jmp	option_two
@@ -352,10 +367,21 @@ option_one:
 	cmp	cx,2
 	jb	option_single
 	cmp	word ptr [si],'06'
-	jne	option_1440
+	jne	option_1200
 	add	si,2
 	sub	cx,2
 	jmp	option_single
+option_1200:
+	cmp	cx,3
+	jb	option_single
+	cmp	word ptr [si],'02'
+	jne	option_1440
+	cmp	byte ptr 2[si],'0'
+	jne	bad_syntax
+	add	si,3
+	sub	cx,3
+	or	options,opt_1200
+	jmp	next_option
 option_1440:
 	cmp	cx,3
 	jb	option_single
@@ -394,7 +420,7 @@ args_done:
 	or byte ptr options,opt_verify
 verify_option_ready:
 	mov	al,options
-	and	al,opt_single+opt_double+opt_720+opt_1440
+	and	al,opt_single+opt_double+opt_720+opt_1200+opt_1440
 	mov	bl,al
 	dec	bl
 	test	al,bl
@@ -408,12 +434,19 @@ parse_branch_3_1:
 	mov	byte ptr sides,0
 	mov	byte ptr track_count,40
 args_return:
-	test	options,opt_720+opt_1440
+	test	options,opt_720+opt_1200+opt_1440
 	jz	geometry_ready
 	mov	cylinders,80
 	mov	track_count,160
 	mov	sectors,9
 	mov	track_bytes,4608
+	test	options,opt_1200
+	jz	geometry_1440
+	mov	sectors,15
+	mov	track_bytes,7680
+	mov	disk_params+7,54h
+	jmp	geometry_large_ready
+geometry_1440:
 	test	options,opt_1440
 	jz	geometry_large_ready
 	mov	sectors,18
@@ -846,12 +879,13 @@ msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10,13,10
 	db	'  A: or B:  Target floppy drive (required)',13,10
 	db	'  160       Single-sided, 160K',13,10
 	db	'  320       Double-sided, 320K (default)',13,10
-	db	'  720/1440  Double-sided, 720K or 1440K',13,10
+	db	'  720/1200/1440  Double-sided, 720K, 1200K or 1440K',13,10
 	db	'  V         Verify after formatting (default)',13,10
 	db '  Q         Quick format: skip verification',13,10
 	db	'  Combine options: [160V] or [160] [V; closing ] is optional.',13,10
 	db	'  Examples: DFORM A:[160V]   DFORM B: [V',13,10,'$'
 msg_720		db	'720K, double-sided; $'
+msg_1200	db	'1200K, double-sided; $'
 msg_1440	db	'1440K, double-sided; $'
 msg_legacy_format db 'This XIOS formatter supports only 160K/320K.',13,10,'$'
 msg_single	db	'160K, single-sided; $'

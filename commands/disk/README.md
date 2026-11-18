@@ -35,7 +35,7 @@ must agree with the selected profile. These capacities are detected without
 new command-line options; `[8]`/`[9]` remain legacy sector-count overrides.
 Both cylinder and sector counts must match for comparison. These larger
 profiles require an I/O backend and hardware capable of their geometry.
-Native CP/M boot markers also select 720K (01h/48h) and 1440K (01h/90h),
+Native CP/M boot markers also select 720K (01h/48h), 1200K (01h/78h) and 1440K (01h/90h),
 both 80-cylinder, double-sided formats. Detection is format-dependent, not
 OS-dependent; recognition does not add kernel filesystem support.
 

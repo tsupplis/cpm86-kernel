@@ -178,7 +178,7 @@
     Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
     proves nine; failed probing alone never proves eight. Unknown eight-sector
     media needs [8]. A known BPB contradicting the selection is rejected.
-    CP/M markers detect 720K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
+    CP/M markers detect 720K/1200K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
     These use 80 cylinders and require a capable driver and hardware.
     No capacity option is needed; kernel filesystem support is separate.
     [9] does not ignore unreadable sectors. DCOMP checks both geometries.
@@ -219,7 +219,7 @@
     Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
     proves nine; failed probing alone never proves eight. Unknown eight-sector
     media needs [8]. A known BPB contradicting the selection is rejected.
-    CP/M markers detect 720K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
+    CP/M markers detect 720K/1200K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
     These use 80 cylinders and require a capable driver and hardware.
     No capacity option is needed; kernel filesystem support is separate.
     [9] does not ignore unreadable sectors. DCOMP checks both geometries.
@@ -359,7 +359,7 @@
 
     160       Single-sided, 160K.
     320       Double-sided, 320K (default).
-    720/1440  Double-sided, 720K or 1440K; 80 cylinders.
+    720/1200/1440  Double-sided, 80 cylinders.
     V         Verify every track after formatting and writing the boot track.
     Verification is enabled by default. Q skips it; V and Q conflict.
 
@@ -413,16 +413,15 @@
     Explanation:
 
     Format, copy and verify CP/M diskettes. Supported capacities are
-    160K, 320K, 720K and 1440K. Copying preserves the source geometry;
+    160K, 320K, 720K, 1200K and 1440K. Copying preserves the source geometry;
     use PIP to transfer files between different formats.
 
     F1        Verify a diskette.
     F3        Copy a diskette.
     F4/F5     Format 160K/320K.
-    F6/F8     Format 720K/1440K.
+    F6/F7/F8  Format 720K/1200K/1440K.
     F9        Exit.
 
-    The empty 1200K box is a placeholder; that format is unavailable.
     Formatting requires confirmation and verifies the written disk.
     To make a boot disk, format it and copy CPM.SYS with PIP's [R] option.
 

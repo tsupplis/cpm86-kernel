@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FORMATS = [(160, 'ibmpc-514ss', 40, 1, 8, 0),
            (320, 'cpm86-320', 40, 2, 8, 160*1024),
            (720, 'cpm86-720', 80, 2, 9, 520*1024),
+           (1200, 'cpm86-1200', 80, 2, 15, 1040*1024),
            (1440, 'cpm86-1440', 80, 2, 18, 1040*1024)]
 
 
@@ -170,4 +171,4 @@ if __name__ == '__main__':
     for variant in ('cpm', 'cpmexp'):
         for geometry in FORMATS:
             check(variant, geometry)
-    print('PASS: 8 native floppy cases, 0 failures')
+    print('PASS: 10 native floppy cases, 0 failures')

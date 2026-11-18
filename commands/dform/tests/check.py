@@ -60,7 +60,7 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
     track[:len(boot)] = boot
     track[0x1ff] = sides - 1
     if cylinders == 80:
-        track[510:512] = bytes((1, 72 if sectors == 9 else 144))
+        track[510:512] = bytes((1, {9:72, 15:120, 18:144}[sectors]))
     track[0x900:0x900 + len(loader)] = loader
     with tempfile.TemporaryDirectory(prefix='dform-test-') as temp:
         temp = Path(temp)
@@ -177,7 +177,7 @@ for native in (False,True):
     case('A:[QV]',native=native,error='Invalid parameter.')
 print(f'PASS: {count} dual-OS DFORM cases; boot images, BIOS/XIOS, locks and cleanup checked')
 
-for size, sectors in ((720, 9), (1440, 18)):
+for size, sectors in ((720, 9), (1200, 15), (1440, 18)):
     case(tail=f'A:[{size}]', sectors=sectors, cylinders=80)
     case(tail=f'A:[{size}Q]', sectors=sectors, cylinders=80)
     case(tail=f'A:[{size}]', sectors=sectors, cylinders=80, corrupt_read=2, corrupt_track=159)
@@ -187,6 +187,6 @@ for size, sides in ((160, 1), (320, 2)):
     for native in (False, True):
         case(tail=f'A:[{size}V]', sides=sides, native=native)
         case(tail=f'A:[{size}Q]', sides=sides, native=native)
-for tail in ('A:[160320]', 'A:[160720]', 'A:[3201440]', 'A:[7201440]', 'A:[16]', 'A:[32]'):
+for tail in ('A:[160320]', 'A:[160720]', 'A:[3201440]', 'A:[7201440]', 'A:[1601200]', 'A:[12001440]', 'A:[120]', 'A:[1201]', 'A:[16]', 'A:[32]'):
     case(tail=tail, error='Invalid parameter.')
 print(f'PASS: {count} total formatter cases including capacity syntax')

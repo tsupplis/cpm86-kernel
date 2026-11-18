@@ -2,11 +2,11 @@
 ; PCFLOPPY.LIB - PC BIOS native floppy support
 ;
 ; Purpose: select floppy geometry and map logical records onto the existing
-; 4K cache. Supports 160K, 320K, 720K and 1.44M CP/M media.
+; 4K cache. Supports 160K, 320K, 720K, 1.2M and 1.44M CP/M media.
 ; Image: included at the resident origin chosen by PCBIOS/PCBIOEXP; existing
 ; BIOS entries and buffer addresses remain fixed. No segment switch here.
 ; Tables: GENDEF processes PCDISKS.DEF. The generated DPBs occupy the
-; original 160K/320K slots and the extension for 720K/1.44M. The BIOS
+; original 160K/320K slots and the extension for 720K/1.2M/1.44M. The BIOS
 ; reserves the largest floppy CSV/ALV at startup.
 ; Build: make cpm.sys cpmexp.sys
 ; Contract: DS is the kernel segment. FD_CACHE and FD_REGS serve the floppy
@@ -129,6 +129,11 @@ FD_EXTENDED:
 	mov	ax,offset DPB2
 	jmps	FD_INSTALL
 FD_HIGH:
+	cmp	byte ptr 511[si],120
+	jnz	FD_1440
+	mov	ax,offset DPB5
+	jmps	FD_INSTALL
+FD_1440:
 	cmp	byte ptr 511[si],144
 	jnz	FD_INSTALL
 	mov	ax,offset DPB3

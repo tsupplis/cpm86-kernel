@@ -19,7 +19,7 @@ def main():
         at = machine.s
         records = 0
         for index, cylinders, tracks, sectors in [(0, 40, 40, 8), (1, 40, 80, 8),
-                                                  (2, 80, 160, 9), (3, 80, 160, 18)]:
+                                                  (2, 80, 160, 9), (3, 80, 160, 18), (5, 80, 160, 15)]:
             setup = f'''mov word [{at('DPH0')}+10],{at('DPB'+str(index))}
  mov byte [{at('DISK')}],0
  mov byte [{at('DRVTYPE')}],0
@@ -99,8 +99,8 @@ failed:
 '''
             machine.run('CALC_PHYSEC', setup, 'or ax,ax\n jnz failed', bridge=bridge)
             records += tracks * sectors * 4
-        print(f'PASS: {variant}: {records} record/cache/CHS mappings across four formats')
-    print('PASS: 8 format checks, 0 failures')
+        print(f'PASS: {variant}: {records} record/cache/CHS mappings across five formats')
+    print('PASS: 10 format checks, 0 failures')
 
 
 if __name__ == '__main__':

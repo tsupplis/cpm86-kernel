@@ -26,9 +26,14 @@ geometry_boot_read:
         mov al,es:byte ptr .511
         cmp al,72
         je geometry_cpm_720
+        cmp al,120
+        je geometry_cpm_1200
         cmp al,144
         jne geometry_dos_bpb
         mov al,18
+        jmps geometry_cpm_large
+geometry_cpm_1200:
+        mov al,15
         jmps geometry_cpm_large
 geometry_cpm_720:
         mov al,9

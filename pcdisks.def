@@ -1,4 +1,4 @@
-disks 4
+disks 6
 org FD160
 diskdef 0,0,31,,1024,156,64,64,1
 org FD320
@@ -6,5 +6,7 @@ diskdef 1,0,31,,2048,158,64,64,1
 org FDTABLES
 diskdef 2,0,35,,2048,355,256,256,2
 diskdef 3,0,71,,4096,355,256,256,2
+; DPB4 is an existing BIOS symbol; keep it reserved.
+diskdef 5,0,59,,4096,296,256,256,2
 endef
 

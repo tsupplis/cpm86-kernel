@@ -11,7 +11,7 @@ The CP/M-86 cross development toolkit [cpm86-crossdev](https://github.com/tsuppl
 | Development tools | DR development chain, DR & Microsoft BASIC, native ASM80/HEXCOM and a separate CP/M-80 tools disk |
 | **Y2K** fixes | Correct year-2000 leap handling, optional BIOS RTC date initialization and a 1980–2079 display window |
 | Usability and bug fixes | command-line editing and recall (EXP only), enhanced SUBMIT, configuration tools, disk maintenance and filesystem checking |
-| Storage | 320K distributions, native **720K/1.44M** support in both BIOSes, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
+| Storage | 320K distributions, native **720K/1.2M/1.44M** support in both BIOSes, and CP/M hard-disk volumes up to **31.5 MiB** (Native Replacement for CVV) |
 | Coherent Ecosystem | Z80 software emulation or VCPM hardware 8080 execution with normal CP/M-86, from [cpm86-ports](https://github.com/tsupplis/cpm86-ports/tree/main/cpu). See for other sister projects at the end of this document |
 
 <p align="center">
@@ -218,11 +218,11 @@ fixtures are retained until removed after inspection.
 
 ### Native floppy support
 
-Both BIOSes read and write 160K, 320K, 720K and 1.44M CP/M media.
+Both BIOSes read and write 160K, 320K, 720K, 1.2M and 1.44M CP/M media.
 All bootable distributions use the generic loader from `commands/dskmaint`;
-no runtime disk patch or FIDD reservation is required. Native 1.2M is not supported.
-DCOPY/DCOMP and DSKMAINT/DFORM support these native formats. DSKMAINT shows
-1200K as an inactive placeholder; no function key selects it.
+no runtime disk patch or FIDD reservation is required.
+DCOPY/DCOMP and DSKMAINT/DFORM support these native formats.
+DSKMAINT selects 1200K with F7; DFORM uses `[1200]`.
 
 ### Development toolchains
 
@@ -312,6 +312,7 @@ All formats use `os 2.2`. Using `os 3` adds an unwanted CP/M Plus label to the d
 | `ibmpc-514ss` | 40 × 8 × 512 (160K SS) | 1K | 64 | 1 track |
 | `cpm86-320` | 80 × 8 × 512 (320K DS) | 2K | 64 | 1 track |
 | `cpm86-720` | 160 × 9 × 512 (720K) | 2K | 256 | 2 tracks |
+| `cpm86-1200` | 160 × 15 × 512 (1.2M) | 4K | 256 | 2 tracks |
 | `cpm86-1440` | 160 × 18 × 512 (1.44M) | 4K | 256 | 2 tracks |
 | `cpm86-xt-hd` | 272 × 63 × 512 (8M partition) | 4K | 2048 | 16 tracks |
 
@@ -319,7 +320,7 @@ All formats use `os 2.2`. Using `os 3` adds an unwanted CP/M Plus label to the d
 | --- | --- |
 | Hard disk | The table describes one image. BIOS reads each drive's actual parameters from its DR partition label |
 | 320K | Use `cpm86-320` on an untwisted copy, then `tools/cpm86twist.py` to restore physical order. Makefile recipes handle this automatically. The stock `ibmpc-514ds` definition is unsuitable |
-| 720K / 1.44M | Use `cpm86-720` / `cpm86-1440` directly on physical images. LibDsk handles track ordering; no separate twist step |
+| 720K / 1.2M / 1.44M | Use `cpm86-720` / `cpm86-1200` / `cpm86-1440` directly on physical images. LibDsk handles track ordering; no separate twist step |
 
 ## Playing with CP/M-86
 

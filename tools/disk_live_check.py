@@ -9,13 +9,13 @@ from pathlib import Path
 import argparse,re,shutil,subprocess,tempfile
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--sectors",type=int,choices=(8,9),default=9)
-parser.add_argument("--capacity", type=int, choices=(320,720,1440), default=320)
+parser.add_argument("--capacity", type=int, choices=(320,720,1200,1440), default=320)
 parser.add_argument("--format", action="store_true", help="Format the target with DFORM before copying")
 parser.add_argument("--dskmaint", action="store_true", help="Exercise the DSKMAINT format/verify/copy menus")
 args=parser.parse_args()
 if args.capacity == 320 and (args.format or args.dskmaint) and args.sectors != 8:
     parser.error("320K formatting requires --sectors 8")
-sectors=args.sectors if args.capacity==320 else 9 if args.capacity==720 else 18
+sectors=args.sectors if args.capacity==320 else {720:9, 1200:15, 1440:18}[args.capacity]
 cylinders=40 if args.capacity==320 else 80
 ROOT=Path(__file__).resolve().parent.parent
 CCPM=(ROOT/'media/ccpm86.cfg').exists()
@@ -83,7 +83,7 @@ if args.dskmaint:
     c += ['save "menu.bin" bin b800:0000 fa0']
     def key(name, cycles='6000000'):
         c.extend(['key '+name, 'c '+cycles])
-    key({320: 'F5', 720: 'F6', 1440: 'F8'}[args.capacity])
+    key({320: 'F5', 720: 'F6', 1200: 'F7', 1440: 'F8'}[args.capacity])
     key('F4')
     c += ['save "confirm.bin" bin b800:0000 fa0']
     key('y','80000000')

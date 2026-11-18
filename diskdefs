@@ -61,6 +61,19 @@ diskdef cpm86-720
   os 2.2
 end
 
+# Matches the 144BLDR2 1.2MB filesystem: DSM=295, DRM=255, OFF=2.
+diskdef cpm86-1200
+ libdsk:format ibm1200
+ seclen 512
+ tracks 160
+ sectrk 15
+ blocksize 4096
+ maxdir 256
+ skew 1
+ boottrk 2
+ os 2.2
+end
+
 diskdef cpm86-1440
   libdsk:format ibm1440
   seclen 512

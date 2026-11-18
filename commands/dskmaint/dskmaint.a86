@@ -9,12 +9,12 @@
 ;	Check:	make check
 ;
 ;	Function keys: F1 verify, F3 copy, F4/F5 format 160K/320K,
-;	F6/F8 format 720K/1440K, F9 exit.  The screen is driven through
+;	F6/F7/F8 format 720K/1200K/1440K, F9 exit.  The screen is driven through
 ;	VT52 escape sequences by BDOS, except for clearing the window (BIOS
 ;	video), the keyboard (BIOS int 16h) and the diskette itself (BIOS
 ;	int 13h).
 ;
-;	Tracks contain 8, 9 or 18 sectors of 512 bytes, on 40 or 80
+;	Tracks contain 8, 9, 15 or 18 sectors of 512 bytes, on 40 or 80
 ;	cylinders. Head 0 advances; head 1 returns in reverse cylinder order.
 ;	The boot-sector marker selects the geometry. Track buffers occupy
 ;	16K-aligned slots so BIOS DMA never crosses a 64K boundary.
@@ -72,21 +72,13 @@ mainmenu:
 	mov	dh,04h
 	call	putcent
 	mov	si,offset menuitems
-	mov	cx,07h
+	mov	cx,08h
 	call	drawmenu
-	mov	dx,1104h
-	call	gotoxy
-	mov	si,offset emptyfrm
-	call	puts
-	mov	si,offset itemend
-	call	puts
-	mov	si,offset fmt1200txt
-	call	puts
 	mov	si,offset selfunc
 	mov	dh,06h
 	call	putrev
 	mov	di,offset mainkeys
-	mov	cx,07h
+	mov	cx,08h
 	call	getchoice
 	dec	bx
 	shl	bx,1
@@ -291,6 +283,14 @@ fmt720:
 	mov	track_bytes,4608
 	mov	marker,72
 	mov	si,offset fmt720txt
+	jmps	fmtlarge
+fmt1200:
+	call	default_geometry
+	mov	sectors,15
+	mov	track_bytes,7680
+	mov	marker,120
+	mov	disk_params+7,54h
+	mov	si,offset fmt1200txt
 	jmps	fmtlarge
 fmt1440:
 	call	default_geometry
@@ -855,11 +855,18 @@ getsides:
 	mov	al,es:.01ffh
 	cmp	al,72
 	je	get_720
+	cmp	al,120
+	je	get_1200
 	cmp	al,144
 	jne	get_legacy
 	mov	sectors,18
 	mov	track_bytes,9216
 	mov	disk_params+7,6ch
+	jmps	get_large
+get_1200:
+	mov	sectors,15
+	mov	track_bytes,7680
+	mov	disk_params+7,54h
 	jmps	get_large
 get_720:
 	mov	sectors,9
@@ -1106,7 +1113,7 @@ scrnrest	db	1bh,45h,1bh,76h,1bh,6dh,00h
 corners	db	00h,00h,0dah,00h,4fh,0bfh,02h,00h,0c6h,02h,4fh
 	db	0b5h,17h,00h,0c0h,17h,4fh,0d9h
 titlestr	db	'CP/M-86 Disk Maintenance Program for the'
-	db	' IBM PC   version 1.2',00h
+	db	' IBM PC   version 1.3',00h
 
 ; Decoration of a menu entry.  itemfrm draws a 6 by 3 box and leaves the cursor
 ; inside it with an F in high intensity (ESC r); the key number follows; itemend
@@ -1115,10 +1122,6 @@ itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
 	db	72h,46h,00h
-emptyfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
-	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
-	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
-	db	72h,20h,20h,20h,00h
 itemend	db	1bh,75h,1bh,43h,20h,20h,00h
 mainhdr	db	'Main Menu',00h
 
@@ -1133,15 +1136,16 @@ fmt1txt	db	'Format 160K',00h
 fmt2txt	db	'Format 320K',00h
 	db	0eh,36h,'6 '
 fmt720txt	db	'Format 720K',00h
+	db	11h,04h,'7 '
+fmt1200txt	db	'Format 1200K',00h
 	db	11h,1dh,'8 '
 fmt1440txt	db	'Format 1440K',00h
 	db	14h,14h,'9 Exit this Program',00h
-fmt1200txt	db	'Format 1200K',00h
 selfunc	db	'SELECT FUNCTION',00h
 
 ; Key minus one, doubled, indexes the complete dispatch table.
-mainkeys	db	1,3,4,5,6,8,9
-fntable	dw	doverify,mainmenu,docopy,fmt1,fmt2,fmt720,mainmenu,fmt1440,doexit
+mainkeys	db	1,3,4,5,6,7,8,9
+fntable	dw	doverify,mainmenu,docopy,fmt1,fmt2,fmt720,fmt1200,fmt1440,doexit
 
 ; The prompts for the drive menu, at 08b5h, 08cfh, 08e6h and 0902h, shown in
 ; high intensity.  The code loads them into promptptr by address.

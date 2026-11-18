@@ -119,7 +119,7 @@ def case(tool, sides=2, tail='A: B:', memory=0x5100, mismatch=0,
 
 # Native CP/M geometry must never be mistaken for a 40-cylinder DOS disk.
 for tool in ('dcopy', 'dcomp'):
-    for sectors, marker in ((9, 72), (18, 144)):
+    for sectors, marker in ((9, 72), (15, 120), (18, 144)):
         for memory in (0x5100, 0x1401):
             case(tool, sectors=sectors, cylinders=80, bpb=0,
                  cpm_marker=marker, memory=memory)

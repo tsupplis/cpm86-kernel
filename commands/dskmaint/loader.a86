@@ -3,7 +3,7 @@
 ;	LOADER - second stage boot loader written to track 0 by DSKMAINT
 ;	Copyright (C) 1983, Digital Research
 ;
-;	Native 160K/320K/720K/1440K loader. Not a CP/M-86 program:
+;	Native 160K/320K/720K/1200K/1440K loader. Not a CP/M-86 program:
 ;	BOOTSECT reads it into the top of
 ;	memory and jumps to offset 100h, which is where its code starts.
 ;
@@ -19,7 +19,7 @@
 ;	first.  The line is kept XORed with a counter, see credits.
 ;
 ;	Boot markers select geometry. The second side is numbered backwards,
-;	as in the BIOS. Word allocation entries are used on 720K/1440K.
+;	as in the BIOS. Word allocation entries are used on 720K/1200K/1440K.
 ;	The boot sector reserves 16K: code below 0800h, directory at 0800h,
 ;	and a maximum 4K allocation block at 2800h. No hard disk support.
 ;
@@ -186,7 +186,7 @@ copyblk:
 	ret
 
 ; Select geometry from the boot sector retained at 0000:7C00.
-; Defaults are 160K; the two extended formats require both marker bytes.
+; Defaults are 160K; extended formats require both marker bytes.
 getgeom:
 	xor	ax,ax
 	mov	es,ax
@@ -200,10 +200,17 @@ geomlarge:
 	jnz	geomset
 	cmp	es:byte ptr .7dffh,72
 	jz	geom720
+	cmp	es:byte ptr .7dffh,120
+	jz	geom1200
 	cmp	es:byte ptr .7dffh,144
 	jnz	geomset
 	mov	spt,18
 	mov	reserved,36
+	mov	ax,1000h
+	jmp	geomwide
+geom1200:
+	mov	spt,15
+	mov	reserved,30
 	mov	ax,1000h
 	jmp	geomwide
 geom720:

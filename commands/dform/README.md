@@ -14,6 +14,7 @@ DFORM drive: { [options] ... }
 | 160 | Single-sided, 40 cylinders, 8 sectors/head |
 | 320 | Double-sided, 40 cylinders, 8 sectors/head; default |
 | 720 | Double-sided, 80 cylinders, 9 sectors/head |
+| 1200 | Double-sided, 80 cylinders, 15 sectors/head |
 | 1440 | Double-sided, 80 cylinders, 18 sectors/head |
 
 `A:` or `B:` is required. Verification is enabled by default; `Q` skips it,

@@ -608,7 +608,7 @@ write_count db 0
 verify_count db 0
 failed_requests db 0
 login_reset db 0
-params db 0cfh,02h,25h,02h,SECTORS,2ah,0ffh,50h + (SECTORS == 18)*1ch,0e5h,19h,04h
+params db 0cfh,02h,25h,02h,SECTORS,2ah,0ffh,50h + (SECTORS == 15)*4 + (SECTORS == 18)*1ch,0e5h,19h,04h
 tail db TAIL
 tail_end:
 expected_track:
