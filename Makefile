@@ -342,10 +342,7 @@ test: dist
 	./cpm86-320
 
 test-exp: dist
-	./cpm86-exp
-
-test-320: dist
-	./cpm86-320
+	./cpm86-exp-320
 
 # Raw floppy maintenance checks; live tests use disposable images only.
 .PHONY: check-disk check-disk-live
