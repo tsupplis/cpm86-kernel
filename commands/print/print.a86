@@ -62,8 +62,6 @@ bdos_word_2321	equ	2321h
 bdos_byte_2327	equ	2327h
 bdos_byte_2393	equ	2393h
 bdos_abort_mode	equ	24afh
-resident_ds_slot	equ	0bb1h
-resident_lock_slot	equ	0bc5h
 bios_console_status	equ	2506h
 bios_console_input	equ	2509h
 f_reset	equ	0h
@@ -1043,13 +1041,13 @@ restore_bios_hook:
 ; requests. INT E3h gives the spooler work while console input is waiting.
 ; ----------------------------------------------------------------------
 bios_hook:
-	cmp	bx,2506h
+	cmp	bx,bios_console_status
 	jz	hook_console_status
-	cmp	bx,2509h
+	cmp	bx,bios_console_input
 	jz	hook_console_input
 	jmpf	cs:dword ptr saved_bios_offset
 hook_console_status:
-	mov	bx,2506h
+	mov	bx,bios_console_status
 	callf	cs:dword ptr saved_bios_offset
 	push	es
 	push	ds
@@ -1068,10 +1066,10 @@ hook_console_input:
 	call	poll_console_and_spool
 	cmp	al,0h
 	jz	hook_console_input
-	mov	bx,2509h
+	mov	bx,bios_console_input
 	jmpf	cs:dword ptr saved_bios_offset
 poll_console_and_spool:
-	mov	bx,2506h
+	mov	bx,bios_console_status
 	callf	cs:dword ptr saved_bios_offset
 	push	es
 	push	ds
@@ -1742,5 +1740,10 @@ read_buffer	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 data_padding	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+
+; Numeric CODE offsets used with the segment of the resident copy.
+; Preserve their layout for compatibility with the shipped spooler.
+resident_ds_slot	equ	offset resident_data_segment
+resident_lock_slot	equ	offset spooler_lock
 
 	end

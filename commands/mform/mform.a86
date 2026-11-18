@@ -224,7 +224,7 @@ rddone:
         mov     cx,4
         mul     cx
         mov     cx,ax                   ; total entries
-        mov     bx,3e0h                 ; dirbuf - 20h
+        mov     bx,offset dirbuf-20h    ; before the first directory entry
         mov     dx,20h
 mark:
         add     bx,dx
