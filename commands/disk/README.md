@@ -29,12 +29,15 @@ an explicit [8]. [9] still requires sector nine to be readable. A known BPB
 contradicting the selection is rejected. DCOMP checks both media and rejects
 conflicting geometries. Each new pair is detected afresh.
 
-On the extended CDOS kernel, valid BPBs also select 80-cylinder DOS FAT12
+Valid BPBs also select 80-cylinder DOS FAT12
 720K (9 sectors/head), 1.2M (15) and 1.44M (18). The FAT/root/cluster fields
 must agree with the selected profile. These capacities are detected without
 new command-line options; `[8]`/`[9]` remain legacy sector-count overrides.
 Both cylinder and sector counts must match for comparison. These larger
-profiles are rejected on the CP/M/CCP/M backends.
+profiles require an I/O backend and hardware capable of their geometry.
+Native CP/M boot markers also select 720K (01h/48h) and 1440K (01h/90h),
+both 80-cylinder, double-sided formats. Detection is format-dependent, not
+OS-dependent; recognition does not add kernel filesystem support.
 
 DCOPY formats the target to the selected source geometry before writing its
 tracks, then reads them back and compares every sector byte with the source. This also removes a leftover ninth sector when

@@ -178,8 +178,9 @@
     Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
     proves nine; failed probing alone never proves eight. Unknown eight-sector
     media needs [8]. A known BPB contradicting the selection is rejected.
-    Extended CDOS also detects 720K, 1.2M and 1.44M DOS FAT12 BPBs;
-    these use 80 cylinders. No capacity option is needed.
+    CP/M markers detect 720K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
+    These use 80 cylinders and require a capable driver and hardware.
+    No capacity option is needed; kernel filesystem support is separate.
     [9] does not ignore unreadable sectors. DCOMP checks both geometries.
 
     DCOMP is read-only and reports differences by track and side.
@@ -218,8 +219,9 @@
     Without [8]/[9], validate a FAT12 BPB and probe sector nine. Success
     proves nine; failed probing alone never proves eight. Unknown eight-sector
     media needs [8]. A known BPB contradicting the selection is rejected.
-    Extended CDOS also detects 720K, 1.2M and 1.44M DOS FAT12 BPBs;
-    these use 80 cylinders. No capacity option is needed.
+    CP/M markers detect 720K/1440K; DOS BPBs detect 720K/1.2M/1.44M.
+    These use 80 cylinders and require a capable driver and hardware.
+    No capacity option is needed; kernel filesystem support is separate.
     [9] does not ignore unreadable sectors. DCOMP checks both geometries.
 
     DCOPY formats all target tracks to source geometry before writing and
