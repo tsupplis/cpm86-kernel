@@ -150,7 +150,7 @@ Original/patched binaries live in `base/`; source builds live in `commands/`. Im
 | `dcopy` | — | Copy 160/180/320/360K CP/M or FAT media |
 | `ddt86` | Original | CCP/M-86 3.1 port |
 | `dform` | — | Command-line formatter using DSKMAINT's boot sector and loader |
-| `dskmaint` | Updated 1.0→1.2 | Reconstructed CP/M-86 source |
+| `dskmaint` | Updated 1.0→1.3N | Reconstructed CP/M-86 source |
 | `ed` | DR-patched | CCP/M-86 3.1 port |
 | `function` | Original | Reconstructed CP/M-86 source |
 | `gencmd` | Original | CCP/M-86 3.1 port |
@@ -331,8 +331,8 @@ Use [PCE](http://www.hampa.ch/pce/) with cpmtools for testing, or try the 160K i
 <img src="./images/menu.png" alt="CP/M-86 Menu" width="48%">
 <br><sub>V20 MBC hardware &nbsp;·&nbsp; CP/M-86 running in PCE</sub><br>
 <img src="./images/setup.png" alt="BIOS Setup 1.2" width="48%">
-<img src="./images/dskmaint.png" alt="Disk Maintenance 1.2" width="48%">
-<br><sub>BIOS Setup 1.2 &nbsp;·&nbsp; Disk Maintenance 1.2</sub>
+<img src="./images/dskmaint.png" alt="Disk Maintenance 1.3N" width="48%">
+<br><sub>BIOS Setup 1.2 &nbsp;·&nbsp; Disk Maintenance 1.3N</sub>
 </p>
 
 ---
