@@ -40,7 +40,6 @@ cpm_key_vector	equ	380h
 cpm_key_offset	equ	254eh
 ccpm_console_table	equ	0c14h
 pd_uda	equ	10h
-record_size	equ	4a7h
 mbr_partition_offset	equ	1beh
 cpm_partition_type	equ	0dbh
 sector_signature	equ	0aa55h
@@ -275,7 +274,7 @@ scan_disk:
 	xor	ah,ah
 	sub	al,cl
 	push	ax
-	mov	bx,4a7h
+	mov	bx,record_size
 	mul	bx
 	add	ax,offset first_disk
 	mov	bx,ax
@@ -357,19 +356,19 @@ read_disk_partitions:
 	jmp	fatal_error
 check_mbr_signature:
 	push	bx
-	add	bx,2a5h
+	add	bx,record_sig
 	mov	ax,0aa55h
 	cmp	ax,[bx]
 	jz	decode_partitions
 	mov	cx,40h
-	mov	si,265h
+	mov	si,record_parts
 check_mbr_signature_at_025e:
 	pop	bx
 	push	bx
 	mov	byte ptr [bx+si],0h
 	inc	si
 	loop	check_mbr_signature_at_025e
-	mov	word ptr 2a5h[bx],0aa55h
+	mov	word ptr record_sig[bx],0aa55h
 
 ;-----------------------------------------------------------------------------
 ; Sort the four partition entries and unpack their 10-bit cylinder limits.
@@ -445,7 +444,7 @@ build_free_extents:
 	mov	word ptr 0ch[bx],0h
 	mov	byte ptr 3h[bx],0h
 	mov	byte ptr 15h[bx],0h
-	mov	si,265h
+	mov	si,record_parts
 	mov	di,28h
 	mov	dx,0h
 	xor	bp,bp	; end of already-counted cylinder range
@@ -501,7 +500,7 @@ scan_partition_entry_at_0385:
 	mov	dx,ax
 scan_partition_entry_at_0388:
 	add	si,10h
-	cmp	si,2a5h
+	cmp	si,record_sig
 	jnz	scan_partition_entry
 check_last_extent:
 	mov	cx,0eh[bx]
@@ -543,7 +542,7 @@ read_existing_label:
 	push	bx
 	mov	dl,[bx]
 	xor	dh,dh
-	add	bx,2a7h
+	add	bx,record_label
 	mov	cx,21h[bx]
 	mov	ax,ds
 	mov	es,ax
@@ -557,12 +556,12 @@ validate_existing_label:
 	pop	bx
 	push	bx
 	call	label_checksum
-	cmp	ax,2a7h[bx]
+	cmp	ax,record_label[bx]
 	jnz	invalid_existing_label
 	mov	ax,ds
 	mov	es,ax
 	mov	si,bx
-	add	si,2a9h
+	add	si,record_ident
 	mov	di,offset default_identity
 	mov	cx,1fh
 	repe	cmpsb
@@ -580,7 +579,7 @@ valid_existing_label:
 ; Use a pristine CP/M label when the existing system area is not valid.
 ;-----------------------------------------------------------------------------
 use_default_label:
-	mov	di,2a7h
+	mov	di,record_label
 	mov	si,offset default_label
 	mov	cx,200h
 use_default_label_at_0436:
@@ -1934,7 +1933,7 @@ select_second_disk:
 ; Copy the selected 4A7h-byte descriptor into the working record.
 ;-----------------------------------------------------------------------------
 copy_selected_disk:
-	mov	cx,4a7h
+	mov	cx,record_size
 	mov	di,offset selected_disk
 	mov	ax,ds
 	mov	es,ax
@@ -1962,12 +1961,12 @@ cylinder_to_blocks:
 ; Decode an existing volume label into directory and allocation metadata.
 ;-----------------------------------------------------------------------------
 decode_label:
-	mov	al,2d3h[bx]
+	mov	al,record_blm[bx]
 	inc	al
 	xor	ah,ah
 	push	ax
-	mov	dh,2d9h[bx]
-	mov	dl,2dah[bx]
+	mov	dh,record_al0[bx]
+	mov	dl,record_al1[bx]
 	mov	cx,10h
 	mov	ax,0h
 decode_label_at_0f25:
@@ -1980,7 +1979,7 @@ decode_label_at_0f25:
 	mov	cx,4h
 	mul	cx
 	mov	6h[bx],ax
-	mov	cx,2d7h[bx]
+	mov	cx,record_drm[bx]
 	inc	cx
 	mov	8h[bx],cx
 	mov	byte ptr 0bh[bx],0h
@@ -1993,7 +1992,7 @@ decode_label_at_0f4b:
 	shr	ax,cl
 	dec	ax
 	mov	0a3h[bx],ax
-	mov	ax,2d5h[bx]
+	mov	ax,record_dsm[bx]
 	inc	ax
 	pop	cx
 	shr	cx,1
@@ -2007,7 +2006,7 @@ decode_label_at_0f4b:
 ; Label checksum is the negative sum of the 255 words after its first word.
 ;-----------------------------------------------------------------------------
 label_checksum:
-	mov	si,2a9h
+	mov	si,record_ident
 	mov	cx,0ffh
 	mov	ax,0h
 label_checksum_at_0f72:
@@ -2089,7 +2088,7 @@ sort_partitions:
 	mov	sorting_slots,bx
 	call	reset_mbr_slots
 	pop	bx
-	mov	si,265h
+	mov	si,record_parts
 	mov	cx,3h
 sort_partitions_at_0f82:
 	mov	di,si
@@ -2129,7 +2128,7 @@ sort_partitions_at_0fae:
 	pop	cx
 sort_partitions_at_0fbd:
 	add	di,10h
-	cmp	di,2a5h
+	cmp	di,record_sig
 	jnz	sort_partitions_at_0f87
 	add	si,10h
 	loop	sort_partitions_at_0f82
@@ -2222,7 +2221,7 @@ commit_mbr:
 cache_mbr:
 	xor	ah,ah
 	mov	al,selected_disk
-	mov	bx,4a7h
+	mov	bx,record_size
 	mul	bx
 	add	ax,offset first_disk
 	add	ax,0a7h
@@ -2255,8 +2254,8 @@ swap_mbr_slots:
 	push	cx
 	push	si
 	push	di
-	sub	si,265h
-	sub	di,265h
+	sub	si,record_parts
+	sub	di,record_parts
 	mov	cl,4h
 	shr	si,cl
 	shr	di,cl
@@ -4180,6 +4179,19 @@ mbr_policy_screen	db	0ffh
 	dw	offset blink_off
 	db	0h
 data_end:
+
+; Record offsets are numeric differences, defined after their DATA labels.
+; ASM-86 requires OFFSET to avoid treating these as typed memory operands.
+record_size	equ	(offset second_disk)-(offset first_disk)
+record_parts	equ	(offset partition_table)-(offset selected_disk)
+record_sig	equ	(offset mbr_signature)-(offset selected_disk)
+record_label	equ	(offset volume_label)-(offset selected_disk)
+record_ident	equ	(offset volume_identity)-(offset selected_disk)
+record_blm	equ	(offset dpb_blm)-(offset selected_disk)
+record_dsm	equ	(offset dpb_dsm)-(offset selected_disk)
+record_drm	equ	(offset dpb_drm)-(offset selected_disk)
+record_al0	equ	(offset dpb_al0)-(offset selected_disk)
+record_al1	equ	(offset dpb_al1)-(offset selected_disk)
 
 ; EXTRA is allocation-only: GENCMD supplies its 800h-paragraph minimum.
 	end

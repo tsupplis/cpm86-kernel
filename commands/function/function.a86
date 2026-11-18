@@ -54,11 +54,6 @@ tailbuf		equ	0080h		; base page command tail, also the DMA buffer
 ; A definition is edited into a 20-byte buffer with a parallel array of display
 ; widths 15h bytes further on, so a rubout knows how much to erase.
 maxdef		equ	14h
-widths		equ	15h
-
-; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	0550h
-image_end	equ	0780h
 
 start:	jmps	begin
 
@@ -188,7 +183,7 @@ keyedit:
 ; Collect characters until a NUL arrives or the buffer fills.
 keystore:
 	call	editloop
-	mov	widths[di],ah
+	mov	byte ptr widths[di],ah
 	stosb
 	test	al,al
 	loopne	keystore
@@ -532,7 +527,7 @@ edback:
 	dec	di
 	inc	cx
 	push	cx
-	mov	cl,widths[di]
+	mov	cl,byte ptr widths[di]
 
 edrub:
 	mov	al,08h
@@ -843,8 +838,11 @@ dsptbl	dw	swapset,exitprog,progkey
 defbuf	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h
+defwidth:
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	0dbh,00h
+
+widths		equ	(offset defwidth)-(offset defbuf)
 
 	end

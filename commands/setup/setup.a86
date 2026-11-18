@@ -46,21 +46,6 @@ keytblptr	equ	0254eh		; two sets of ten 20-byte definitions
 serialptr	equ	02552h		; two serial-port parameter bytes
 iovecptr	equ	02554h		; five logical character-I/O assignment words
 
-; Absolute aliases for code-resident dispatch tables (fixed image addresses).  RASM otherwise adds
-; a CS override to a label operand, changing the original instruction bytes.
-cmdactsoff	equ	001bfh
-saveactsoff	equ	002b2h
-memactsoff	equ	00316h
-verifyactsoff	equ	0041ch
-stepactsoff	equ	00470h
-soundactsoff	equ	004e7h
-fiddsactsoff	equ	0053bh
-diskactsoff	equ	005efh
-
-; Bounds for tools/a86tool.py.
-data_org	equ	093ch
-image_end	equ	1e90h
-
 start:
 	jmps	begin
 
@@ -132,7 +117,8 @@ commandmenu:
 	call	selectprompt
 	mov	di,offset cmdkeys
 	call	getchoice
-	jmp	word ptr cmdactsoff[bx]
+; DS equals CS; explicit DS keeps dispatch symbolic without a CS prefix.
+	jmp	ds:word ptr cmdacts[bx]
 
 cmdacts	dw	newcommand,cancelcommand,mainpage
 
@@ -278,7 +264,7 @@ saveloop:
 	call	selectprompt
 	mov	di,offset savekeylist
 	call	getchoice
-	jmp	word ptr saveactsoff[bx]
+	jmp	ds:word ptr saveacts[bx]
 
 saveacts	dw	togglekeys,toggleio,toggleserial,mainpage
 
@@ -330,7 +316,7 @@ memorymenu:
 	call	selectprompt
 	mov	di,offset memkeys
 	call	getchoice
-	jmp	word ptr memactsoff[bx]
+	jmp	ds:word ptr memacts[bx]
 
 memacts	dw	newmemory,mainpage
 
@@ -475,7 +461,7 @@ verifyloop:
 	call	showverify
 	mov	di,offset verifykeys
 	call	getchoice
-	jmp	word ptr verifyactsoff[bx]
+	jmp	ds:word ptr verifyacts[bx]
 
 verifyacts	dw	verifyon,verifyoff,secondpage
 
@@ -518,7 +504,7 @@ steploop:
 	call	showstep
 	mov	di,offset stepkeys
 	call	getchoice
-	jmp	word ptr stepactsoff[bx]
+	jmp	ds:word ptr stepacts[bx]
 
 stepacts	dw	stepfaster,stepslower,mainpage
 
@@ -587,7 +573,7 @@ soundloop:
 	call	showsound
 	mov	di,offset soundkeys
 	call	getchoice
-	jmp	word ptr soundactsoff[bx]
+	jmp	ds:word ptr soundacts[bx]
 
 soundacts	dw	soundon,soundoff,secondpage
 
@@ -627,7 +613,7 @@ fiddsmenu:
 	call	selectprompt
 	mov	di,offset fiddskeys
 	call	getchoice
-	jmp	word ptr fiddsactsoff[bx]
+	jmp	ds:word ptr fiddsacts[bx]
 
 fiddsacts	dw	newfidds,mainpage
 
@@ -725,7 +711,7 @@ diskloop:
 	call	showdisk
 	mov	di,offset diskkeys
 	call	getchoice
-	jmp	word ptr diskactsoff[bx]
+	jmp	ds:word ptr diskacts[bx]
 
 diskacts	dw	usefloppy,secondpage,usehard
 
@@ -1627,5 +1613,6 @@ bootsig	dw	00h
 ; Sixteen trailing zero bytes in the shipped image.
 imagepad	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h
+
 
 	end
