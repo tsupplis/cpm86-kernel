@@ -129,7 +129,7 @@ ad88.h86: cpm.h86 ad88bios.h86
 
 ad88bios.h86: apdisk.lib
 
-apdisk.lib: commands apdisk.def tools/gendef.sh
+apdisk.lib: apdisk.def tools/gendef.sh | commands
 	sh tools/gendef.sh apdisk '$$C'
 
 cpm86.h86: cpm.h86 pcbios.h86
