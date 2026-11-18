@@ -51,7 +51,7 @@ main:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
-	mov	sp,1053h
+	mov	sp,offset stack_top
 	call	flushkb
 	call	allocmem
 	jnz	memok
@@ -65,26 +65,37 @@ memok:
 	call	initvec
 
 ;-----------------------------------------------------------------------------
-; Main menu.  getchoice returns the function key number (1,3,5,7,9) in bx;
-; one less is the byte offset of its handler in fntable.  Every handler comes
+; Main menu. getchoice returns the function key number in BX;
+; twice (key - 1) indexes fntable. Every handler comes
 ; back here through the menu, so an item repeats until F10 is pressed in the
 ; drive menu.
 ;-----------------------------------------------------------------------------
 mainmenu:
+	call	setoldvec
+	call	default_geometry
 	call	clrwin
 	mov	si,offset mainhdr
 	mov	dh,04h
 	call	putcent
 	mov	si,offset menuitems
-	mov	cx,05h
+	mov	cx,07h
 	call	drawmenu
+	mov	dx,1104h
+	call	gotoxy
+	mov	si,offset emptyfrm
+	call	puts
+	mov	si,offset itemend
+	call	puts
+	mov	si,offset fmt1200txt
+	call	puts
 	mov	si,offset selfunc
 	mov	dh,06h
 	call	putrev
 	mov	di,offset mainkeys
-	mov	cx,05h
+	mov	cx,07h
 	call	getchoice
 	dec	bx
+	shl	bx,1
 	mov	menusel,bx
 	jmp	word ptr fntable[bx]
 
@@ -96,7 +107,7 @@ restart:
 	mov	ax,cs
 	mov	ds,ax
 	mov	es,ax
-	mov	sp,1053h
+	mov	sp,offset stack_top
 	call	setoldvec
 	jmps	mainmenu
 
@@ -106,8 +117,9 @@ restart:
 ; same item again when it is done.
 ;-----------------------------------------------------------------------------
 doverify:
+	call	default_geometry
 	mov	si,offset vfytxt
-	mov	word ptr promptptr,08b5h
+	mov	word ptr promptptr,offset verify_prompt
 	call	seldrive
 	call	clrwin
 	mov	si,offset vfyingmsg
@@ -139,6 +151,7 @@ vfyloop:
 ; one chunk beyond the track buffer, it gives up.
 ;-----------------------------------------------------------------------------
 docopy:
+	call	default_geometry
 	test	byte ptr ntrkbuf,0ffh
 	jnz	copypick
 	mov	si,offset copymemmsg
@@ -146,13 +159,13 @@ docopy:
 
 copypick:
 	mov	si,offset copytxt
-	mov	word ptr promptptr,08cfh
+	mov	word ptr promptptr,offset source_prompt
 	call	seldrive
 	mov	srcdrive,bl
 	call	getsides
 	mov	srcsides,al
 	mov	si,offset copytxt
-	mov	word ptr promptptr,08e6h
+	mov	word ptr promptptr,offset target_prompt
 	call	seldrive
 	mov	dstdrive,bl
 	call	clrwin
@@ -204,11 +217,11 @@ cmploop:
 	call	showtrk
 	call	diskio
 	call	nextseg
+	mov	cx,track_bytes
 	push	ds
 	mov	ds,word ptr trkbuf
 	sub	si,si
 	sub	di,di
-	mov	cx,1000h
 	cld
 	repe	cmpsb
 	pop	ds
@@ -255,13 +268,14 @@ xferloop:
 ; a track is 1000h bytes, 100h paragraphs.
 nextseg:
 	mov	es,word ptr curseg
-	add	word ptr curseg,0100h
+	add	word ptr curseg,0400h
 	ret
 
 ;-----------------------------------------------------------------------------
 ; F5: format a single sided diskette, 40 tracks.
 ;-----------------------------------------------------------------------------
 fmt1:
+	call	default_geometry
 	mov	byte ptr sides,00h
 	mov	byte ptr trkcount,28h
 	mov	si,offset fmt1txt
@@ -271,13 +285,36 @@ fmt1:
 ; F7: format a double sided diskette, 80 tracks.
 ;-----------------------------------------------------------------------------
 fmt2:
+	call	default_geometry
 	mov	byte ptr sides,01h
 	mov	byte ptr trkcount,50h
 	mov	si,offset fmt2txt
+	jmp	fmtcommon
+
+fmt720:
+	call	default_geometry
+	mov	sectors,9
+	mov	track_bytes,4608
+	mov	marker,72
+	mov	si,offset fmt720txt
+	jmps	fmtlarge
+fmt1440:
+	call	default_geometry
+	mov	sectors,18
+	mov	track_bytes,9216
+	mov	marker,144
+	mov	disk_params+7,6ch
+	mov	si,offset fmt1440txt
+fmtlarge:
+	mov	cylinders,80
+	mov	sides,1
+	mov	trkcount,160
+	mov	al,sectors
+	mov	disk_params+4,al
 
 ; Pick the drive and ask for confirmation.  N goes back to the menu.
 fmtcommon:
-	mov	word ptr promptptr,0902h
+	mov	word ptr promptptr,offset format_prompt
 	call	seldrive
 	call	clrwin
 	mov	si,offset fmtingmsg
@@ -309,11 +346,10 @@ fmtloop:
 	inc	byte ptr track
 	dec	byte ptr trkcount
 	jnz	fmtloop
-	call	setoldvec
 	mov	es,word ptr trkbuf
 	mov	di,00h
 	mov	al,0e5h
-	mov	cx,1000h
+	mov	cx,track_bytes
 	cld
 	rep	stosb
 	mov	si,offset writemsg
@@ -324,6 +360,12 @@ fmtloop:
 	sub	di,di
 	mov	al,sides
 	mov	es:.01ffh,al
+	cmp	cylinders,80
+	jne	fmt_marker_ready
+	mov	es:byte ptr .01feh,1
+	mov	al,marker
+	mov	es:.01ffh,al
+fmt_marker_ready:
 	mov	cx,93h
 	rep	movsb
 	mov	si,offset loader
@@ -343,7 +385,8 @@ mkidtab:
 	call	calctrk
 	mov	dl,ch
 	mov	bx,0201h
-	mov	cx,08h
+	xor	cx,cx
+	mov	cl,sectors
 	cld
 
 idloop:
@@ -729,31 +772,41 @@ allocmem:
 	int	0e0h
 	inc	al
 	jz	allocret
-	mov	ax,trkbuf
-	add	ax,0ffh
-	mov	al,00h
+	mov	bx,trkbuf
+	mov	ax,bx
+	add	ax,3ffh
+	and	ax,0fc00h
+	sub	ax,bx
+	mov	bx,word ptr buflen
+	sub	bx,ax
+	jc	alloc_empty
+	add	ax,trkbuf
 	mov	trkbuf,ax
-	inc	ah
+	mov	word ptr buflen,bx
+	add	ax,400h
 	mov	copyseg,ax
-	mov	ah,buflenhi
-	sub	ah,01h		; one 1000h unit is lost to the alignment
-	jna	allocret
-	mov	.0747h,ax
-	dec	ah		; and one for the track buffer itself
-	mov	ntrkbuf,ah
+	mov	cl,10
+	shr	bx,cl
+	cmp	bx,2
+	jb	alloc_empty
+	dec	bx
+	mov	ntrkbuf,bl
 	mov	cl,38h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	inc	al
 
 allocret:
+	ret
+alloc_empty:
+	xor	al,al
 	ret
 
 ; Give the block back to BDOS.
 freemem:
 	mov	byte ptr bufflag,00h
 	mov	cl,39h
-	mov	dx,0745h
+	mov	dx,offset trkbuf
 	int	0e0h
 	ret
 
@@ -761,7 +814,7 @@ freemem:
 ; build newvec, a far pointer to the 8 sector table that follows newvecseg in
 ; the data (0757h).
 initvec:
-	mov	word ptr newvec,0757h
+	mov	word ptr newvec,offset disk_params
 	mov	word ptr newvecseg,ds
 	push	ds
 	pop	es
@@ -800,18 +853,52 @@ setvec:
 ; sector is 1 on a double sided diskette; anything else counts as single sided.
 ; Sets sides and trkcount (80 or 40), returns the flag in al, leaves track at 0.
 getsides:
-	mov	byte ptr track,00h
-	mov	byte ptr biosfunc,02h
+	mov	byte ptr track,0
+	mov	byte ptr biosfunc,2
 	call	diskio
+	cmp	es:byte ptr .01feh,1
+	jne	get_legacy
 	mov	al,es:.01ffh
-	mov	byte ptr trkcount,50h
-	cmp	al,01h
-	jz	gsdone
-	mov	byte ptr trkcount,28h
-	mov	al,00h
-
-gsdone:
+	cmp	al,72
+	je	get_720
+	cmp	al,144
+	jne	get_legacy
+	mov	sectors,18
+	mov	track_bytes,9216
+	mov	disk_params+7,6ch
+	jmps	get_large
+get_720:
+	mov	sectors,9
+	mov	track_bytes,4608
+get_large:
+	mov	marker,al
+	mov	cylinders,80
+	mov	trkcount,160
+	mov	al,1
+	jmps	get_ready
+get_legacy:
+	mov	al,es:.01ffh
+	mov	trkcount,80
+	cmp	al,1
+	je	get_ready
+	mov	trkcount,40
+	xor	al,al
+get_ready:
 	mov	sides,al
+	push	ax
+	mov	al,sectors
+	mov	disk_params+4,al
+	call	setnewvec
+	pop	ax
+	ret
+
+default_geometry:
+	mov	cylinders,40
+	mov	sectors,8
+	mov	track_bytes,4096
+	mov	marker,0
+	mov	disk_params+4,8
+	mov	disk_params+7,50h
 	ret
 
 ;-----------------------------------------------------------------------------
@@ -912,17 +999,19 @@ iosetup:
 	mov	cl,01h
 	sub	bx,bx
 	mov	ah,biosfunc
-	mov	al,08h
+	mov	al,sectors
 
 ; Cylinder in ch and head in dh for `track`: tracks 0..39 are head 0 with
 ; cylinder = track, tracks 40..79 are head 1 with cylinder = 79 - track.
 calctrk:
 	mov	ch,track
 	mov	dh,00h
-	cmp	ch,28h
+	cmp	ch,cylinders
 	jc	calcret
 	neg	ch
-	add	ch,4fh
+	add	ch,cylinders
+	add	ch,cylinders
+	dec	ch
 	mov	dh,01h
 
 calcret:
@@ -1009,7 +1098,7 @@ newvecseg	dw	00h	; and segment
 ; The 8 sector diskette parameter table installed while formatting, at 0757h.
 ; IBM layout: two specify bytes, motor off delay, 512 byte sectors, 8 sectors
 ; a track, gap, data length, format gap, fill byte 0e5h, head settle, motor start.
-	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+disk_params	db	0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
 
 ; Screen setup, sent at the start: clear (ESC E), text wrap off (w), cursor off
 ; (n), and reverse video (q), blinking (t) and high intensity (u) all off.  The
@@ -1027,39 +1116,45 @@ titlestr	db	'CP/M-86 Disk Maintenance Program for the'
 
 ; Decoration of a menu entry.  itemfrm draws a 6 by 3 box and leaves the cursor
 ; inside it with an F in high intensity (ESC r); the key number follows; itemend
-; ends the high intensity (ESC u) and draws a rule and an arrow towards the text.
+; ends the high intensity (ESC u) and separates the key box from its label.
 itemfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
 	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
 	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
 	db	72h,46h,00h
-itemend	db	1bh,75h,1bh,43h,20h,20h,0cdh,0cdh,10h,20h,20h,00h
+emptyfrm	db	0dah,0c4h,0c4h,0c4h,0c4h,0bfh,0ah,08h,0b3h,08h
+	db	08h,08h,08h,08h,08h,0b3h,0ah,08h,0c0h,0c4h,0c4h
+	db	0c4h,0c4h,0d9h,1bh,41h,08h,08h,08h,08h,1bh
+	db	72h,20h,20h,20h,00h
+itemend	db	1bh,75h,1bh,43h,20h,20h,00h
 mainhdr	db	'Main Menu',00h
 
 ; Main menu entries: row, column, key label, text.
-menuitems	db	08h,14h,31h,20h
+menuitems	db	08h,14h,'1 '
 vfytxt	db	'Verify a Diskette',00h
-	db	0bh,14h,33h,20h
+	db	0bh,14h,'3 '
 copytxt	db	'Copy from one Diskette to another',00h
-	db	0eh,14h,35h,20h
-fmt1txt	db	'Format a Single Sided Diskette',00h
-	db	11h,14h,37h,20h
-fmt2txt	db	'Format a Double Sided Diskette',00h
-	db	14h,14h
-	db	'9 Exit this Program',00h
+	db	0eh,04h,'4 '
+fmt1txt	db	'Format 160K',00h
+	db	0eh,1dh,'5 '
+fmt2txt	db	'Format 320K',00h
+	db	0eh,36h,'6 '
+fmt720txt	db	'Format 720K',00h
+	db	11h,1dh,'8 '
+fmt1440txt	db	'Format 1440K',00h
+	db	14h,14h,'9 Exit this Program',00h
+fmt1200txt	db	'Format 1200K',00h
 selfunc	db	'SELECT FUNCTION',00h
 
-; Function keys accepted at the main menu: F1, F3, F5, F7, F9.
-mainkeys	db	01h,03h,05h,07h,09h
-
-; One handler per main menu item, in key order.
-fntable	dw	doverify,docopy,fmt1,fmt2,doexit
+; Key minus one, doubled, indexes the complete dispatch table.
+mainkeys	db	1,3,4,5,6,8,9
+fntable	dw	doverify,mainmenu,docopy,fmt1,fmt2,fmt720,mainmenu,fmt1440,doexit
 
 ; The prompts for the drive menu, at 08b5h, 08cfh, 08e6h and 0902h, shown in
 ; high intensity.  The code loads them into promptptr by address.
-	db	'SELECT DISKETTE TO VERIFY',00h
-	db	'SELECT SOURCE DISKETTE',00h
-	db	'SELECT DESTINATION DISKETTE',00h
-	db	'SELECT DISKETTE TO FORMAT',00h
+verify_prompt	db	'SELECT DISKETTE TO VERIFY',00h
+source_prompt	db	'SELECT SOURCE DISKETTE',00h
+target_prompt	db	'SELECT DESTINATION DISKETTE',00h
+format_prompt	db	'SELECT DISKETTE TO FORMAT',00h
 insrcmsg	db	'INSERT SOURCE DISK, AND TYPE ANY KEY',00h
 indstmsg	db	'INSERT DESTINATION DISK, AND TYPE ANY',' KEY'
 	db	00h
@@ -1139,4 +1234,11 @@ fatalmsg	db	' Fatal Disk Error ',00h
 	db	0dbh
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 
+; Mutable geometry and stack are outside the embedded boot images.
+cylinders	db	40
+sectors		db	8
+marker		db	0
+track_bytes	dw	4096
+stack_space	rs	512
+stack_top:
 	end

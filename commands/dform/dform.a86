@@ -5,16 +5,17 @@
 ;	Formatting algorithm and boot images from DSKMAINT (Digital Research,
 ;	1983). Uses the same bootsect.inc and loader.inc as the reconstruction.
 ;
-;	Build:	make dform.cmd		Check: make check-dform
+;	Build:	make dform.cmd		Check: make check
 ;	Usage:	DFORM drive: { [options] ... }
 ;
 ;	drive:	Required installed floppy drive, A: or B:.
-;	1	Single-sided, 160 KiB (40 cylinders, eight 512-byte sectors).
-;	2	Double-sided, 320 KiB; the default if neither 1 nor 2 appears.
+;	160	Single-sided, 160 KiB (40 cylinders, eight 512-byte sectors).
+;	320	Double-sided, 320 KiB; the default capacity.
+;	720/1440 Double-sided 80-cylinder media.
 ;	V	Verify every track (default) after formatting and writing the boot track.
 ;
 ;	Combine options or use separate groups. The closing ] is optional;
-;	DFORM A:[1V], DFORM A: [1] [V and DFORM A: [1V are equivalent.
+;	DFORM A:[160V], DFORM A: [1] [V and DFORM A: [1V are equivalent.
 ;	Letters are case-insensitive. Unknown options and conflicting 1/2
 ;	selections print usage. An empty command also prints usage and exits.
 ;	Q skips verification; V and Q conflict.
@@ -27,7 +28,7 @@
 ;
 ;	CP/M-86 1.1 uses ROM BIOS; Concurrent CP/M-86 3.1 uses native XIOS.
 ;	CCP/M uses DSKMAINT 1.5's MXdisk, P_KEEP and console exclusion protocol.
-;	The 512-byte stack and separate aligned 4 KiB track buffers stay resident.
+;	The 512-byte stack and two aligned track buffers stay resident.
 ;	All exits restore the BIOS vector or release the CCP/M locks.
 ;	The loader retry byte follows the detected OS: CP/M=2, CCP/M=3.
 ;	Raw BDOS console I/O avoids an implicit Ctrl-C exit during formatting.
@@ -46,6 +47,8 @@ opt_single	equ	1
 opt_double	equ	2
 opt_verify	equ	4
 opt_quick equ 8
+opt_720		equ	16
+opt_1440	equ	32
 stack_size	equ	512
 
 start:
@@ -83,6 +86,14 @@ concurrent_version:
 	jz	concurrent_ok
 	jmp	wrong_os
 concurrent_ok:
+; This legacy XIOS formatter accepts exactly eight sector IDs. Refuse a
+; larger profile before confirmation rather than partially formatting it.
+	cmp	sectors,8
+	je	concurrent_legacy_ready
+	mov	dx,offset msg_legacy_format
+	call	puts
+	jmp	cleanup
+concurrent_legacy_ready:
 	mov	byte ptr os_mode,1
 	call	ccpm_init
 	jmp	installed_drive
@@ -101,24 +112,31 @@ floppy_present:
 	jmp	bad_drive
 installed_drive:
 
-; Align within a 12 KiB reservation; two 4 KiB tracks fit after
-; rounding up, and neither straddles a physical 64 KiB BIOS DMA boundary.
+; Two 16 KiB-aligned slots hold up to 18 sectors each without crossing
+; a physical 64 KiB DMA boundary; reservation includes alignment padding.
 	mov	ax,offset buffer_space
 	add	ax,15
 	mov	cl,4
 	shr	ax,cl
 	mov	bx,ds
 	add	ax,bx
-	add	ax,0ffh
-	and	ax,0ff00h
+	add	ax,3ffh
+	and	ax,0fc00h
 	mov	buffer_segment,ax
-	add ax,100h
+	add ax,400h
 	mov verify_segment,ax
 	mov	dx,offset msg_double
 	cmp	byte ptr sides,1
 	jz	show_capacity
 	mov	dx,offset msg_single
 show_capacity:
+	cmp	cylinders,80
+	jne	show_capacity_ready
+	mov	dx,offset msg_720
+	cmp	sectors,9
+	je	show_capacity_ready
+	mov	dx,offset msg_1440
+show_capacity_ready:
 	call	puts
 	mov	dx,offset msg_no_verify
 	test	byte ptr options,opt_verify
@@ -166,7 +184,7 @@ format_ids_ready:
 	call	puts
 	mov	es,word ptr buffer_segment
 	xor	di,di
-	mov	cx,1000h
+	mov	cx,track_bytes
 	mov	al,0e5h
 	cld
 	rep	stosb
@@ -176,6 +194,16 @@ format_ids_ready:
 	rep	movsb
 	mov	al,sides
 	mov	es:byte ptr .1ffh,al
+	cmp	cylinders,80
+	jne	boot_marker_ready
+	mov	es:byte ptr .1feh,1
+	mov	al,72
+	cmp	sectors,9
+	je	boot_marker_store
+	mov	al,144
+boot_marker_store:
+	mov	es:byte ptr .1ffh,al
+boot_marker_ready:
 	mov	si,offset loader
 	mov	di,900h
 	mov	cx,loader_end-loader
@@ -200,7 +228,8 @@ verify_loop:
 	mov es,buffer_segment
 	xor di,di
 	mov ax,0e5e5h
-	mov cx,800h
+	mov cx,track_bytes
+	shr cx,1
 	rep stosw
 	jmp verify_loop
 format_complete:
@@ -238,46 +267,107 @@ letter_ok:
 	mov	drive,al
 	add	al,'A'
 	mov	prompt_drive,al
-	jcxz	bad_syntax
+	or	cx,cx
+	jnz	parse_colon
+	jmp	bad_syntax
+parse_colon:
 	lodsb
 	dec	cx
 	cmp	al,':'
-	jnz	bad_syntax
+	je	next_group
+	jmp	bad_syntax
 next_group:
 	call	skip_spaces
-	jz	args_done
+	jnz	parse_group
+	jmp	args_done
+parse_group:
 	lodsb
 	dec	cx
 	cmp	al,'['
-	jnz	bad_syntax
+	je	parse_options
+	jmp	bad_syntax
+parse_options:
 	xor	bl,bl		; a group must contain at least one option
 next_option:
-	jcxz	group_end
+	or	cx,cx
+	jnz	parse_option
+	jmp	group_end
+parse_option:
 	mov	al,[si]
 	cmp	al,']'
-	jz	close_group
+	jnz	parse_branch_0_0
+	jmp	close_group
+parse_branch_0_0:
 	cmp	al,' '
-	jz	group_end
+	jnz	parse_branch_1_0
+	jmp	group_end
+parse_branch_1_0:
 	cmp	al,9
-	jz	group_end
+	jnz	parse_branch_1_1
+	jmp	group_end
+parse_branch_1_1:
 	lodsb
 	dec	cx
 	inc	bl
+	cmp	al,'3'
+	je	option_320
+	cmp	al,'7'
+	je	option_720
 	cmp	al,'1'
 	jz	option_one
 	cmp	al,'2'
-	jz	option_two
+	jnz	parse_branch_2_0
+	jmp	option_two
+parse_branch_2_0:
 	and	al,0dfh
 	cmp al,'Q'
 	je option_quick
 	cmp	al,'V'
-	jnz	bad_syntax
+	jz	parse_branch_3_0
+	jmp	bad_syntax
+parse_branch_3_0:
 	or	byte ptr options,opt_verify
 	jmp	next_option
 option_quick:
 	or byte ptr options,opt_quick
 	jmp next_option
+option_720:
+	cmp	cx,2
+	jb	bad_syntax
+	cmp	word ptr [si],'02'
+	jne	bad_syntax
+	add	si,2
+	sub	cx,2
+	or	options,opt_720
+	jmp	next_option
+option_320:
+	cmp	cx,2
+	jb	bad_syntax
+	cmp	word ptr [si],'02'
+	jne	bad_syntax
+	add	si,2
+	sub	cx,2
+	jmp	option_two
 option_one:
+	cmp	cx,2
+	jb	option_single
+	cmp	word ptr [si],'06'
+	jne	option_1440
+	add	si,2
+	sub	cx,2
+	jmp	option_single
+option_1440:
+	cmp	cx,3
+	jb	option_single
+	cmp	word ptr [si],'44'
+	jne	option_single
+	cmp	byte ptr 2[si],'0'
+	jne	bad_syntax
+	add	si,3
+	sub	cx,3
+	or	options,opt_1440
+	jmp	next_option
+option_single:
 	or	byte ptr options,opt_single
 	jmp	next_option
 option_two:
@@ -304,9 +394,13 @@ args_done:
 	or byte ptr options,opt_verify
 verify_option_ready:
 	mov	al,options
-	and	al,3
-	cmp	al,3
-	jz	bad_syntax
+	and	al,opt_single+opt_double+opt_720+opt_1440
+	mov	bl,al
+	dec	bl
+	test	al,bl
+	jz	parse_branch_3_1
+	jmp	bad_syntax
+parse_branch_3_1:
 	mov	byte ptr sides,1
 	mov	byte ptr track_count,80
 	test	al,opt_single
@@ -314,6 +408,21 @@ verify_option_ready:
 	mov	byte ptr sides,0
 	mov	byte ptr track_count,40
 args_return:
+	test	options,opt_720+opt_1440
+	jz	geometry_ready
+	mov	cylinders,80
+	mov	track_count,160
+	mov	sectors,9
+	mov	track_bytes,4608
+	test	options,opt_1440
+	jz	geometry_large_ready
+	mov	sectors,18
+	mov	track_bytes,9216
+	mov	disk_params+7,6ch
+geometry_large_ready:
+	mov	al,sectors
+	mov	disk_params+4,al
+geometry_ready:
 	ret
 
 ; Return ZF set at end of tail, clear if SI points at a non-space character.
@@ -458,10 +567,12 @@ bios:
 track_chs:
 	mov	ch,track
 	xor	dh,dh
-	cmp	ch,40
+	cmp	ch,cylinders
 	jc	chs_return
 	neg	ch
-	add	ch,79
+	add	ch,cylinders
+	add	ch,cylinders
+	dec	ch
 	mov	dh,1
 chs_return:
 	ret
@@ -472,7 +583,8 @@ make_ids:
 	mov	es,word ptr buffer_segment
 	xor	di,di
 	mov	bx,201h
-	mov	cx,8
+	xor	cx,cx
+	mov	cl,sectors
 	cld
 id_loop:
 	mov	ax,dx
@@ -508,7 +620,7 @@ io_bios:
 	xor	bx,bx
 	mov	es,word ptr buffer_segment
 	mov	ah,operation
-	mov al,8
+	mov al,sectors
 	cmp ah,4
 	jne bios_request_ready
 	mov ah,2
@@ -648,10 +760,11 @@ compare_verify_data:
 	push ds ! push es ! push si ! push di ! push cx
 	mov ax,buffer_segment
 	mov es,verify_segment
+	mov cx,track_bytes
+	shr cx,1
 	mov ds,ax
 	xor si,si
 	xor di,di
-	mov cx,800h
 	cld
 	repe cmpsw
 	pop cx ! pop di ! pop si ! pop es ! pop ds
@@ -707,6 +820,9 @@ retries		db	0
 last_status	db	0
 vector_active	db	0
 disk_touched	db	0
+cylinders	db	40
+sectors		db	8
+track_bytes	dw	4096
 buffer_segment	dw	0
 verify_segment dw 0
 return_code_supported db 0
@@ -728,12 +844,16 @@ msg_unverified db 'Warning: data was not verified.',13,10,'$'
 msg_banner	db	13,10,'CP/M-86 / CCP/M-86 FLOPPY FORMATTER VER 1.0N',13,10,'$'
 msg_usage	db	'USAGE: DFORM drive: { [options] ... }',13,10,13,10
 	db	'  A: or B:  Target floppy drive (required)',13,10
-	db	'  1         Single-sided, 160K',13,10
-	db	'  2         Double-sided, 320K (default)',13,10
+	db	'  160       Single-sided, 160K',13,10
+	db	'  320       Double-sided, 320K (default)',13,10
+	db	'  720/1440  Double-sided, 720K or 1440K',13,10
 	db	'  V         Verify after formatting (default)',13,10
 	db '  Q         Quick format: skip verification',13,10
-	db	'  Combine options: [1V] or [1] [V; closing ] is optional.',13,10
-	db	'  Examples: DFORM A:[1V]   DFORM B: [V',13,10,'$'
+	db	'  Combine options: [160V] or [160] [V; closing ] is optional.',13,10
+	db	'  Examples: DFORM A:[160V]   DFORM B: [V',13,10,'$'
+msg_720		db	'720K, double-sided; $'
+msg_1440	db	'1440K, double-sided; $'
+msg_legacy_format db 'This XIOS formatter supports only 160K/320K.',13,10,'$'
 msg_single	db	'160K, single-sided; $'
 msg_double	db	'320K, double-sided; $'
 msg_with_verify	db	'verification enabled.',13,10,'$'
@@ -766,6 +886,6 @@ loader_end:
 stack_space	rs	stack_size
 stack_top:
 ; Alignment padding plus separate 4096-byte expected/read-back buffers.
-buffer_space	rs	3000h
+buffer_space	rs	0a400h
 	include	ccpmio.a86
 	end

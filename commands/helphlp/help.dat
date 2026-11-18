@@ -357,27 +357,29 @@
 
     Options:
 
-    1         Single-sided, 160K: 40 cylinders, eight 512-byte sectors.
-    2         Double-sided, 320K: the default if neither 1 nor 2 is given.
+    160       Single-sided, 160K.
+    320       Double-sided, 320K (default).
+    720/1440  Double-sided, 720K or 1440K; 80 cylinders.
     V         Verify every track after formatting and writing the boot track.
-    Without V, no verification pass is performed.
+    Verification is enabled by default. Q skips it; V and Q conflict.
 
     Combine options in one bracket group or use separate groups.
     The closing ] is optional. Drive letters and options are case-insensitive.
-    Conflicting 1/2 options, unknown options and other incorrect arguments
+    Conflicting capacities, unknown options and other incorrect arguments
     display usage and exit. An empty command line also displays usage.
 
     This build supports CP/M-86 1.1 using the IBM PC ROM BIOS and
-    Concurrent CP/M-86 3.1 using native XIOS. Nine-sector 180K/360K formats
-    are not supported. The formatted disk contains DSKMAINT's boot code
+    Concurrent CP/M-86 3.1 using native XIOS (160K/320K only).
+    Nine-sector 180K/360K formats are not supported. The formatted disk contains DSKMAINT's boot code
     and the loader for the detected OS; copy CPM.SYS or CCPM.SYS to the
     disk with PIP's [R] option to complete a boot disk.
 
     Examples:
 
     A>DFORM A:
-    A>DFORM B:[1V]
-    A>DFORM A: [V
+    A>DFORM B:[160V]
+    A>DFORM A:[720]
+    A>DFORM B:[1440Q]
     A>DFORM A: [1] [V]
     A>DFORM A: [1] [V
 

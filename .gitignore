@@ -54,3 +54,6 @@ extra/*.cmd
 /local/
 
 !/pcfloppy.lib
+
+commands/dform/*.inc
+commands/dform/tests/__pycache__/

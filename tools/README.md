@@ -24,7 +24,7 @@ in `make check`.
 | `fdcheck.py` | `make check`: execute floppy record/cache/CHS mapping |
 | `rtc_check.py`, `century_check.py`, `edittest.py` | `make check`: RTC conversion, century display and EXP line editor |
 | `dsktest.py` | `make check-disk`: execute DCOPY/DCOMP with synthetic devices |
-| `dfmtest.py` | `make -C commands/dskmaint check`: execute DFORM with synthetic devices |
+| `../commands/dform/tests/check.py` | `make -C commands/dform check`: execute DFORM with synthetic devices |
 | `disk_live_check.py` | `make check-disk-live`: guest copy/compare of nine physical sectors |
 | `fdboot.py` | `make check-floppy-live`: both BIOSes, four formats, boot and persisted writes |
 | `hd_capacity_check.py` | `make check-hd-capacity`: execute HD capacity/address calculations |

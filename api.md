@@ -98,7 +98,7 @@ Distinguish ROM BIOS interfaces from the CP/M BIOS jump table.
 | IVT `0000:0388h`/`038Ch` (INT E2h/E3h) | PRINT resident installation | PRINT reads/writes vectors | Vector addresses and installation/removal convention; separate from INT E0h |
 | IVT `0000:0000h`, `006Ch`, `0070h`, `0398h` | CPU/PC interrupt conventions | PC BIOS divide, break, timer and unknown-disk handlers | Vector addresses, segments, installation and restoration |
 
-Evidence: [disk tools](commands/disk/), [DFORM](commands/dskmaint/dform.a86),
+Evidence: [disk tools](commands/disk/), [DFORM](commands/dform/dform.a86),
 [CHKCPMFS raw backend](commands/chkcpmfs/rawio.a86),
 [HDMAINT gateway](commands/hdmaint/hdmaint.a86), [loaders](commands/hdmaint/).
 An identical numeric address in a loader's own segment is **not** automatically

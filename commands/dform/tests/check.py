@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent / "commands/dskmaint"
+ROOT = Path(__file__).resolve().parents[1]
 count = 0
 
 
@@ -13,15 +13,15 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
          drive=0, retry=False, abort_verify=False, native=False,
          console_state=0, open_files=0, queue_fail=0, console_number=0,
          floppy_count=2, full_version=0x1431, initial_keep=0,
-         open_after_lock=0, initial_error_mode=7, ignore_errors=False, corrupt_read=0, corrupt_track=0):
+         open_after_lock=0, initial_error_mode=7, ignore_errors=False, corrupt_read=0, corrupt_track=0, sectors=8, cylinders=40):
     global count
     if native and version == 0x22:
         version = 0x0431
     if verify is False and 'Q' not in tail.upper(): tail += '[Q]'
     if verify is None: verify='Q' not in tail.upper()
-    formats = sides * 40
+    formats = sides * cylinders
     writes = 1
-    verifies = sides * 40 if verify else 0
+    verifies = sides * cylinders if verify else 0
     failures = (1 if retry else 5) if fail else 0
     if error or answer.upper() != 'Y':
         formats = writes = verifies = 0
@@ -37,7 +37,7 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
         verifies = 0
     if corrupt_read==2: verifies=corrupt_track
     reset = int(bool(formats or fail))
-    options = dict(SIDES=sides, ANSWER=ord(answer), TAIL=f'"{tail}"',
+    options = dict(SECTORS=sectors, CYLINDERS=cylinders, SIDES=sides, ANSWER=ord(answer), TAIL=f'"{tail}"',
                    ABORT_AT=abort, ABORT_VERIFY=int(abort_verify), FAIL_OP=fail,
                    FAIL_LIMIT=failures, FAIL_STATUS=status,
                    OSVER=version, EQUIPMENT=equipment, DRIVE=drive,
@@ -53,12 +53,14 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
     options['CORRUPT_READ']=corrupt_read
     options['CORRUPT_TRACK']=corrupt_track
     options['EXPECT_STATUS']=2 if native and full_version==0x1441 and ((version>>8)&15) in (4,6) else -1
-    track = bytearray([0xE5]) * 4096
-    boot = (ROOT / 'bootsect.bin').read_bytes()
-    loader = (ROOT / 'loader.bin').read_bytes()
+    track = bytearray([0xE5]) * (sectors * 512)
+    boot = (ROOT.parent / 'dskmaint/bootsect.bin').read_bytes()
+    loader = (ROOT.parent / 'dskmaint/loader.bin').read_bytes()
     assert len(boot) == 0x93 and 0 < len(loader) <= 0x700
     track[:len(boot)] = boot
     track[0x1ff] = sides - 1
+    if cylinders == 80:
+        track[510:512] = bytes((1, 72 if sectors == 9 else 144))
     track[0x900:0x900 + len(loader)] = loader
     with tempfile.TemporaryDirectory(prefix='dform-test-') as temp:
         temp = Path(temp)
@@ -85,8 +87,8 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
         assert ('160K, single-sided' in output) == (sides == 1), output
         assert ('verification enabled.' in output) == verify, output
     if corrupt_read==2:
-        cylinder=corrupt_track if corrupt_track<40 else 79-corrupt_track
-        head=int(corrupt_track>=40)
+        cylinder=corrupt_track if corrupt_track<cylinders else cylinders*2-1-corrupt_track
+        head=int(corrupt_track>=cylinders)
         assert f'Verify failed at cylinder {cylinder:02}, head {head}' in output,output
         assert 'Disk may be partially formatted or unusable.' in output,output
     if fail and not retry:
@@ -174,3 +176,17 @@ for native in (False,True):
     case('A:[1VQ]',native=native,error='Invalid parameter.')
     case('A:[QV]',native=native,error='Invalid parameter.')
 print(f'PASS: {count} dual-OS DFORM cases; boot images, BIOS/XIOS, locks and cleanup checked')
+
+for size, sectors in ((720, 9), (1440, 18)):
+    case(tail=f'A:[{size}]', sectors=sectors, cylinders=80)
+    case(tail=f'A:[{size}Q]', sectors=sectors, cylinders=80)
+    case(tail=f'A:[{size}]', sectors=sectors, cylinders=80, corrupt_read=2, corrupt_track=159)
+print(f'PASS: {count} total formatter cases')
+
+for size, sides in ((160, 1), (320, 2)):
+    for native in (False, True):
+        case(tail=f'A:[{size}V]', sides=sides, native=native)
+        case(tail=f'A:[{size}Q]', sides=sides, native=native)
+for tail in ('A:[160320]', 'A:[160720]', 'A:[3201440]', 'A:[7201440]', 'A:[16]', 'A:[32]'):
+    case(tail=tail, error='Invalid parameter.')
+print(f'PASS: {count} total formatter cases including capacity syntax')

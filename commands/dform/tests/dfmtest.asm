@@ -285,7 +285,7 @@ xios:
     jnz bad
     mov es,bx
     mov bx,[ss:bp+12]
-    cmp bx,SIDES*40
+    cmp bx,SIDES*CYLINDERS
     jae bad
     cmp al,15
     je .format
@@ -322,14 +322,14 @@ xios:
 %endif
     cmp bx,0
     jne bad
-    cmp byte [cs:format_count],SIDES*40
+    cmp byte [cs:format_count],SIDES*CYLINDERS
     jne bad
     push ds
     push cs
     pop ds
     mov si,expected_track
     xor di,di
-    mov cx,1000h
+    mov cx,SECTORS*512
     cld
     repe cmpsb
     jne bad
@@ -383,13 +383,13 @@ bios:
     and word [ss:bp+6],0fffeh
     cmp ah,0
     je .success
-    cmp al,8
+    cmp al,SECTORS
     jne bad
     cmp cl,1
     jne bad
     cmp dl,DRIVE
     jne bad
-    cmp ch,40
+    cmp ch,CYLINDERS
     jae bad
     cmp dh,SIDES
     jae bad
@@ -458,7 +458,7 @@ bios:
     jne bad
     inc cl
     add si,4
-    cmp cl,9
+    cmp cl,SECTORS+1
     jne .ids
     pop si
     pop cx
@@ -469,14 +469,14 @@ bios:
     jne bad
     cmp dh,0
     jne bad
-    cmp byte [cs:format_count],SIDES*40
+    cmp byte [cs:format_count],SIDES*CYLINDERS
     jne bad
     push ds
     push cs
     pop ds
     mov si,expected_track
     xor di,di
-    mov cx,1000h
+    mov cx,SECTORS*512
     cld
     repe cmpsb
     jne bad
@@ -510,13 +510,13 @@ fill_verify:
     push cs
     pop ds
     mov si,expected_track
-    mov cx,4096
+    mov cx,SECTORS*512
     cld
     rep movsb
     jmp .filled
 .blank:
     mov ax,0e5e5h
-    mov cx,2048
+    mov cx,SECTORS*256
     cld
     rep stosw
 .filled:
@@ -527,7 +527,7 @@ fill_verify:
     cmp byte [cs:bad_reads],0
     jne .good
 %endif
-    xor byte [es:4095],1
+    xor byte [es:SECTORS*512-1],1
     inc byte [cs:bad_reads]
     jmp .done
 %endif
@@ -542,10 +542,10 @@ fill_verify:
 
 ; The second head runs backwards, exactly as in DSKMAINT.
 check_chs:
-    cmp al,40
+    cmp al,CYLINDERS
     jb .head0
     neg al
-    add al,79
+    add al,CYLINDERS*2-1
     cmp dh,1
     jne bad
     jmp .cylinder
@@ -608,7 +608,7 @@ write_count db 0
 verify_count db 0
 failed_requests db 0
 login_reset db 0
-params db 0cfh,02h,25h,02h,08h,2ah,0ffh,50h,0e5h,19h,04h
+params db 0cfh,02h,25h,02h,SECTORS,2ah,0ffh,50h + (SECTORS == 18)*1ch,0e5h,19h,04h
 tail db TAIL
 tail_end:
 expected_track:

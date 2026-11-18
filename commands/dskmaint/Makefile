@@ -6,7 +6,7 @@ BIN2ASM=bin2asm
 
 REF=../../base/dskmaint.cmd
 
-TOOLS=dskmaint.cmd dskmorg.cmd dform.cmd
+TOOLS=dskmaint.cmd dskmorg.cmd
 
 # The two images DSKMAINT writes to track 0, as flat binaries.
 IMAGES=bootsect.bin loader.bin
@@ -21,8 +21,6 @@ all: $(TOOLS) $(SNIPPETS)
 dskmaint.obj: dskmaint.a86 $(INCS)
 
 dskmorg.obj: dskmorg.a86 bootorg.inc loadorg.inc
-
-dform.obj: dform.a86 ccpmio.a86 $(INCS)
 
 # bootsect and loader are assembled by themselves (ASM-86, not RASM-86):
 # BOOTSECT runs at 0000:7c00 and LOADER at offset 100h of the segment it is
@@ -57,13 +55,6 @@ loader.h86: loader.a86
 	$(LINK86) $* '[$$sz, cod[ori[0]], dat[ori[0],max[0]]]'
 	cmdinfo $@
 
-# LINKCMD may retain trailing unused DATA bytes after collapsing the group.
-# Keep only the declared CODE payload, as in the dual-OS CCP/M build.
-dform.cmd: dform.obj Makefile
-	$(LINK86) dform '[$$sz,cod[ori[0]],dat[ori[0],max[0]]]'
-	@python3 -c "p='$@';b=open(p,'rb').read();open(p,'wb').write(b[:128+int.from_bytes(b[1:3],'little')*16])"
-	cmdinfo $@
-
 # RASM-86 exits 0 and still writes an .obj when it reports errors, so neither
 # the exit status nor the file's existence can be trusted; check the count.
 %.obj: %.a86
@@ -75,16 +66,13 @@ dform.cmd: dform.obj Makefile
 
 # The reconstruction reproduces the shipped binary exactly; keep it that way.
 
-check: dskmorg.cmd check-dform
+check: dskmorg.cmd
 	cmp $< $(REF)
-	@echo "PASS: dskmaint.cmd is byte-identical to $(REF)"
+	@echo "PASS: dskmorg.cmd is byte-identical to $(REF)"
 
 
 clean:
 	rm -f *.sys *.loc *.cmd *.obj *.h86 *.sym *.lin *.lst *.prn
 	rm -f *.loc *.mp? *.lnk *.log $(IMAGES) $(INCS) bootorg.bin loadorg.bin bootorg.inc loadorg.inc
 
-check-dform: dform.cmd $(IMAGES)
-	python3 ../../tools/dfmtest.py
-
-.PHONY: all check check-dform clean
+.PHONY: all check clean
