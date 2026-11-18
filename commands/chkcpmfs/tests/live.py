@@ -52,8 +52,12 @@ def prepare_system(folder, system, disk_format, cwd):
     # Assemble a disposable test disk from this project's own built outputs.
     # No dependency on an already packaged distribution or another project.
     logical=folder/'system-logical.img'
-    base=ROOT/'base-320.img' if system=='cpm86' else MEDIA/'base.img'
-    convert(base,logical,'untwist',cwd)
+    if system=='cpm86':
+        run('python3', str(ROOT/'tools/mk320.py'), str(logical), '--format', 'cpm86-320',
+            '--boot', str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+            str(ROOT/'commands/dskmaint/loader.bin'), cwd=cwd)
+    else:
+        convert(MEDIA/'base.img',logical,'untwist',cwd)
     if system=='cpm86':
         sources=[ROOT/'cpm.sys',COMMAND/'chkcpmfs.cmd',ROOT/'commands/stat/stat.cmd']
     else:
@@ -213,11 +217,17 @@ def main():
     system = local_system()
     cwd = ROOT if system == "cpm86" else MEDIA
     disk_format = "cpm86-320" if system == "cpm86" else "ccpm86-320"
-    empty = (ROOT / "base-320.img" if system == "cpm86" else
-             MEDIA / "base.img")
+    empty = MEDIA / "base.img"
     with tempfile.TemporaryDirectory(prefix=f"chkcpmfs-{system}-") as directory:
         folder = Path(directory)
-        if system != 'cpm86':
+        if system == 'cpm86':
+            empty=folder/'empty.img'
+            run('python3', str(ROOT/'tools/mk320.py'), str(empty), '--format', 'cpm86-320',
+                '--boot', str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+                str(ROOT/'commands/dskmaint/loader.bin'), cwd=cwd)
+            run('python3', str(ROOT/'tools/cpm86twist.py'), 'twist', str(empty), str(empty),
+                cwd=cwd)
+        else:
             blank=folder/'empty-logical.img'
             convert(empty,blank,'untwist',cwd)
             data=bytearray(blank.read_bytes())

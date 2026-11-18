@@ -21,7 +21,9 @@ def check(cpu, media, editor=False):
     (folder / 'diskdefs').write_bytes((ROOT / 'diskdefs').read_bytes())
     fmt = {'320': 'cpm86-320', '720': 'cpm86-720feat', '1440': 'cpm86-144feat'}[media]
     if media == '320':
-        run('python3', str(ROOT / 'tools/cpm86twist.py'), 'untwist', str(ROOT / 'base-320.img'), 'work.img')
+        run('python3', str(ROOT/'tools/mk320.py'), 'work.img', '--format', 'cpm86-320', '--boot',
+            str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+            str(ROOT/'commands/dskmaint/loader.bin'))
     else:
         # Same blank-media recipe as Makefile, isolated from repository clean.
         boot = bytearray((ROOT / 'extra/144boot2.bin').read_bytes())

@@ -169,7 +169,12 @@ stacktop:
 '''
 (F/'hdtest.asm').write_text(asm);run('nasm','-f','bin','hdtest.asm','-o','hdtest.bin');payload=(F/'hdtest.bin').read_bytes();paras=math.ceil(len(payload)/16);header=bytearray(128);header[0]=1;struct.pack_into('<HHHH',header,1,paras,0,paras,0);(F/'hdtest.cmd').write_bytes(header+payload+bytes(paras*16-len(payload)))
 config=ROOT/('media/cdos86.cfg' if cdos else 'media/ccpm86.cfg' if ccpm else 'cpm86-320.cfg')
-bootbase=ROOT/('media/cdos86base.img' if cdos else 'media/ccpm86base.img' if ccpm else 'base-320.img')
+bootbase=ROOT/('media/cdos86base.img' if cdos else 'media/ccpm86base.img') if ccpm or cdos else F/'empty.img'
+if not (ccpm or cdos):
+    run('python3', str(ROOT/'tools/mk320.py'), str(bootbase), '--format', 'cpm86-320', '--boot',
+        str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+        str(ROOT/'commands/dskmaint/loader.bin'))
+    run('python3', str(ROOT/'tools/cpm86twist.py'), 'twist', str(bootbase), str(bootbase))
 shutil.copyfile(ROOT/('media/diskdefs' if ccpm or cdos else 'diskdefs'),F/'diskdefs')
 run('python3',str(ROOT/'tools/cpm86twist.py'),'untwist',str(bootbase),'floppy.logical')
 fmt='ccpm86-320' if ccpm or cdos else 'cpm86-320'

@@ -64,164 +64,147 @@ EXPTOOLS   = $(EXPCORE) $(EXPASM) $(DEVTOOLS) $(EXTTOOLS)
 FEATURETOOLS = $(STOCKTOOLS) $(CHKCPMFS)
 EXPFEATURETOOLS = $(EXPTOOLS) $(CHKCPMFS)
 
-# Rebuilt files are normal prerequisites, so command/help changes refresh
-# their images. Delegate compilation to the owning command Makefiles.
-.SECONDEXPANSION:
-SOURCE_TOOLS = $(ASM86) $(DDT86) $(ED) $(GENCMD) $(HELP) $(HLP) $(PIP) \
-               $(STAT) $(SUBMIT) $(TOD) $(ASSIGN) $(DSKMAINT) $(FUNCTION) \
-               $(MFORM) $(HDMAINT) $(CONFIG) $(SETUP) $(PRINT) $(GENDEF) \
-               $(EXTTOOLS) $(CHKCPMFS)
-$(SOURCE_TOOLS): $$(wildcard $$(@D)/*.a86 $$(@D)/*.plm $$(@D)/*.inc $$(@D)/*.plb $$(@D)/*.lit $$(@D)/Makefile)
-	$(MAKE) -C $(@D) $(@F)
-$(HLP): commands/helphlp/help.dat $(HELP)
-
-# Expand each image's target-specific content list at dependency evaluation.
-$(DIST_DISKS): Makefile $$(FTOOLS)
-
-# Every image target drives one of the two image recipes below through
-# target-specific FEAT/BASE/KRNL/FTOOLS variables. KRNL is empty on the
-# data-only disks, ATSTART is set only on the -at variants.
-
-# 320K disks need the side-1 reordering, so the work happens on an untwisted
-# copy that is twisted back at the end.
-define twist_image
-	$(TWIST) untwist $(BASE) $@.wrk
-	$(if $(KRNL),cpmcp -f $(FEAT) $@.wrk $(KRNL) 0:CPM.SYS)
-	$(if $(ATSTART),cpmcp -f $(FEAT) $@.wrk extra/atinit.cmd 0:ATINIT.CMD)
-	cpmcp -f $(FEAT) $@.wrk $(FTOOLS) 0:
-	cpmls -F -f $(FEAT) $@.wrk 0:*.*
-	$(TWIST) twist $@.wrk $@
-	rm -f $@.wrk
-endef
-
-# V selects the feature build: "2" is the stock one, "x" the expkrnl one.
-# The loader keeps its on-disk name either way, since the boot sector's FCB
-# searches for that literal.
-define feat_image
-	cp $(BASE) $@
-	-cpmrm -f $(FEAT) $@ 0:144BLDR2.CMD
-	cpmcp -f $(FEAT) $@ $(KRNL) 0:CPM.SYS
-	cpmcp -f $(FEAT) $@ extra/144bldr2.cmd 0:144BLDR2.CMD
-	cpmcp -f $(FEAT) $@ extra/144pat2.cmd 0:144PAT2.CMD
-	cpmcp -f $(FEAT) $@ extra/144prep2.cmd 0:144PREP2.CMD
-	cpmcp -f $(FEAT) $@ extra/atinit.cmd 0:ATINIT.CMD
-	cpmcp -f $(FEAT) $@ $(FTOOLS) 0:
-	cpmls -F -f $(FEAT) $@ 0:*.*
-endef
-
 .PHONY: all commands extra clean dist check test test-exp test-320
 
-commands: $(GENDEF)
+commands:
 	$(MAKE) -C $(CMDDIR)
 
 extra: extra/144feat.inc
 	$(MAKE) -C extra
 
-cpmwk.img: base-160.img
-	cp $< $@
-
-# The AT base starts ATINIT through the keyboard buffer at boot.
-# Create the configuration sector missing from the original 320K base.
-base-320-at.img: base-320.img
-	cp $< $@
-	python3 tools/cpm86cfgsec.py $@ atinit
-
-# A blank feature disk is just the boot sector plus an erased directory, so
-# mkfs.cpm can lay one down directly and 144PREP is only needed on real media.
-# mkfs.cpm does not size the image, hence the pre-fill. The boot sector's last
-# byte is the media byte (144boot2.asm, cpmedia): 72 = 720K, 144 = 1.44M.
-base-720-at.img: MEDIA = 72
-base-720-at.img: BYTES = 737280
-base-720-at.img: FEAT = cpm86-720feat
-base-1440-at.img: MEDIA = 144
-base-1440-at.img: BYTES = 1474560
-base-1440-at.img: FEAT = cpm86-144feat
-
-base-720-at.img base-1440-at.img: | extra
-	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[0x1ff]=$(MEDIA); open('$@.boot','wb').write(bytes(b))"
-	python3 -c "open('$@','wb').write(bytes([0xE5])*$(BYTES))"
-	mkfs.cpm -f $(FEAT) -b $@.boot $@
+cpm86-1440-at.img: commands extra cpm.sys Makefile diskdefs \
+    extra/144pat2.cmd extra/144prep2.cmd extra/atinit.cmd tools/cpm86cfgsec.py
+	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=144; open('$@.boot','wb').write(b)"
+	python3 -c "open('$@','wb').write(bytes([0xE5])*1474560)"
+	mkfs.cpm -f cpm86-144feat -b $@.boot $@
 	python3 tools/cpm86cfgsec.py $@ atinit
 	rm -f $@.boot
+	cpmcp -f cpm86-144feat $@ cpm.sys 0:CPM.SYS
+	cpmcp -f cpm86-144feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144pat2.cmd 0:144PAT2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144prep2.cmd 0:144PREP2.CMD
+	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-144feat $@ $(FEATURETOOLS) 0:
+	cpmls -F -f cpm86-144feat $@ '0:*.*'
 
-cpm86-1440-at.img: FEAT = cpm86-144feat
-cpm86-1440-at.img: BASE = base-1440-at.img
-cpm86-1440-at.img: KRNL = cpm.sys
-cpm86-1440-at.img: FTOOLS = $(FEATURETOOLS)
-cpm86-1440-at.img: cpm.sys base-1440-at.img | commands extra
-	$(feat_image)
+cpm86-720-at.img: commands extra cpm.sys Makefile diskdefs \
+    extra/144pat2.cmd extra/144prep2.cmd extra/atinit.cmd tools/cpm86cfgsec.py
+	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=72; open('$@.boot','wb').write(b)"
+	python3 -c "open('$@','wb').write(bytes([0xE5])*737280)"
+	mkfs.cpm -f cpm86-720feat -b $@.boot $@
+	python3 tools/cpm86cfgsec.py $@ atinit
+	rm -f $@.boot
+	cpmcp -f cpm86-720feat $@ cpm.sys 0:CPM.SYS
+	cpmcp -f cpm86-720feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-720feat $@ extra/144pat2.cmd 0:144PAT2.CMD
+	cpmcp -f cpm86-720feat $@ extra/144prep2.cmd 0:144PREP2.CMD
+	cpmcp -f cpm86-720feat $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-720feat $@ $(FEATURETOOLS) 0:
+	cpmls -F -f cpm86-720feat $@ '0:*.*'
 
-cpm86-720-at.img: FEAT = cpm86-720feat
-cpm86-720-at.img: BASE = base-720-at.img
-cpm86-720-at.img: KRNL = cpm.sys
-cpm86-720-at.img: FTOOLS = $(FEATURETOOLS)
-cpm86-720-at.img: cpm.sys base-720-at.img | commands extra
-	$(feat_image)
+cpm86-exp-1440-at.img: commands extra cpmexp.sys Makefile diskdefs \
+    extra/144bldr2.cmd extra/144pat2.cmd extra/144prep2.cmd extra/atinit.cmd tools/cpm86cfgsec.py
+	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=144; open('$@.boot','wb').write(b)"
+	python3 -c "open('$@','wb').write(bytes([0xE5])*1474560)"
+	mkfs.cpm -f cpm86-144feat -b $@.boot $@
+	python3 tools/cpm86cfgsec.py $@ atinit
+	rm -f $@.boot
+	cpmcp -f cpm86-144feat $@ cpmexp.sys 0:CPM.SYS
+	cpmcp -f cpm86-144feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144pat2.cmd 0:144PAT2.CMD
+	cpmcp -f cpm86-144feat $@ extra/144prep2.cmd 0:144PREP2.CMD
+	cpmcp -f cpm86-144feat $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-144feat $@ $(EXPFEATURETOOLS) 0:
+	cpmls -F -f cpm86-144feat $@ '0:*.*'
 
-# Experimental kernel with the same source-built tool policy.
-cpm86-exp-1440-at.img: FEAT = cpm86-144feat
-cpm86-exp-1440-at.img: BASE = base-1440-at.img
-cpm86-exp-1440-at.img: KRNL = cpmexp.sys
-cpm86-exp-1440-at.img: FTOOLS = $(EXPFEATURETOOLS)
-cpm86-exp-1440-at.img: cpmexp.sys base-1440-at.img | commands extra
-	$(feat_image)
+cpm86-exp-720-at.img: commands extra cpmexp.sys Makefile diskdefs \
+    extra/144bldr2.cmd extra/144pat2.cmd extra/144prep2.cmd extra/atinit.cmd tools/cpm86cfgsec.py
+	python3 -c "b=bytearray(open('extra/144boot2.bin','rb').read()); b[511]=72; open('$@.boot','wb').write(b)"
+	python3 -c "open('$@','wb').write(bytes([0xE5])*737280)"
+	mkfs.cpm -f cpm86-720feat -b $@.boot $@
+	python3 tools/cpm86cfgsec.py $@ atinit
+	rm -f $@.boot
+	cpmcp -f cpm86-720feat $@ cpmexp.sys 0:CPM.SYS
+	cpmcp -f cpm86-720feat $@ extra/144bldr2.cmd 0:144BLDR2.CMD
+	cpmcp -f cpm86-720feat $@ extra/144pat2.cmd 0:144PAT2.CMD
+	cpmcp -f cpm86-720feat $@ extra/144prep2.cmd 0:144PREP2.CMD
+	cpmcp -f cpm86-720feat $@ extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-720feat $@ $(EXPFEATURETOOLS) 0:
+	cpmls -F -f cpm86-720feat $@ '0:*.*'
 
-cpm86-exp-720-at.img: FEAT = cpm86-720feat
-cpm86-exp-720-at.img: BASE = base-720-at.img
-cpm86-exp-720-at.img: KRNL = cpmexp.sys
-cpm86-exp-720-at.img: FTOOLS = $(EXPFEATURETOOLS)
-cpm86-exp-720-at.img: cpmexp.sys base-720-at.img | commands extra
-	$(feat_image)
+cpm86-320-at.img: commands extra cpm.sys Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py extra/atinit.cmd \
+    tools/cpm86cfgsec.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -f cpm86-320 $@.wrk cpm.sys 0:CPM.SYS
+	cpmcp -f cpm86-320 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-320 $@.wrk $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-cpm86-320-at.img: FEAT = cpm86-320
-cpm86-320-at.img: BASE = base-320-at.img
-cpm86-320-at.img: KRNL = cpm.sys
-cpm86-320-at.img: ATSTART = 1
-cpm86-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
-cpm86-320-at.img: cpm.sys base-320-at.img | commands
-	$(twist_image)
+cpm86-exp-320-at.img: commands extra cpmexp.sys Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py \
+    extra/atinit.cmd tools/cpm86cfgsec.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	python3 tools/cpm86cfgsec.py $@.wrk atinit
+	cpmcp -f cpm86-320 $@.wrk cpmexp.sys 0:CPM.SYS
+	cpmcp -f cpm86-320 $@.wrk extra/atinit.cmd 0:ATINIT.CMD
+	cpmcp -f cpm86-320 $@.wrk $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-cpm86-exp-320-at.img: FEAT = cpm86-320
-cpm86-exp-320-at.img: BASE = base-320-at.img
-cpm86-exp-320-at.img: KRNL = cpmexp.sys
-cpm86-exp-320-at.img: ATSTART = 1
-cpm86-exp-320-at.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
-cpm86-exp-320-at.img: cpmexp.sys base-320-at.img | commands
-	$(twist_image)
+cpm86-320.img: commands cpm.sys Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	cpmcp -f cpm86-320 $@.wrk cpm.sys 0:CPM.SYS
+	cpmcp -f cpm86-320 $@.wrk $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-cpm86-320.img: FEAT = cpm86-320
-cpm86-320.img: BASE = base-320.img
-cpm86-320.img: KRNL = cpm.sys
-cpm86-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
-cpm86-320.img: cpm.sys base-320.img | commands
-	$(twist_image)
+cpm86-exp-320.img: commands cpmexp.sys Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	cpmcp -f cpm86-320 $@.wrk cpmexp.sys 0:CPM.SYS
+	cpmcp -f cpm86-320 $@.wrk $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-cpm86-exp-320.img: FEAT = cpm86-320
-cpm86-exp-320.img: BASE = base-320.img
-cpm86-exp-320.img: KRNL = cpmexp.sys
-cpm86-exp-320.img: FTOOLS = $(CORETOOLS) $(ASMTOOLS) $(EXTTOOLS)
-cpm86-exp-320.img: cpmexp.sys base-320.img | commands
-	$(twist_image)
+cpm86-320-dev.img: commands Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	cpmcp -f cpm86-320 $@.wrk $(PIP) $(SUBMIT) $(ED) $(DEVTOOLS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-cpm86-320-dev.img: FEAT = cpm86-320
-cpm86-320-dev.img: BASE = base-320.img
-cpm86-320-dev.img: FTOOLS = $(PIP) $(SUBMIT) $(ED) $(DEVTOOLS)
-cpm86-320-dev.img: base-320.img
-	$(twist_image)
+cpm86-8080.img: commands $(CPM80FILES) Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/loader.bin tools/cpm86twist.py cpm80/
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	cpmcp -f cpm86-320 $@.wrk $(CPM80FILES) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
-# CP/M-80 tools: data-only 320K disk, all supplied files in user area 0.
-cpm86-8080.img: FEAT = cpm86-320
-cpm86-8080.img: BASE = base-320.img
-cpm86-8080.img: FTOOLS = $(CPM80FILES)
-cpm86-8080.img: base-320.img cpm80/
-	$(twist_image)
-
-cpm86-chkcpmfs.img: FEAT = cpm86-320
-cpm86-chkcpmfs.img: BASE = base-320.img
-cpm86-chkcpmfs.img: KRNL = cpm.sys
-cpm86-chkcpmfs.img: FTOOLS = $(PIP) $(STAT) $(CHKCPMFS)
-cpm86-chkcpmfs.img: cpm.sys base-320.img | commands
-	$(twist_image)
+cpm86-chkcpmfs.img: commands cpm.sys Makefile diskdefs tools/mk320.py \
+    commands/dskmaint/bootsect.bin commands/dskmaint/loader.bin tools/cpm86twist.py
+	python3 tools/mk320.py $@.wrk --format cpm86-320 \
+	    --boot commands/dskmaint/bootsect.bin --loader commands/dskmaint/loader.bin
+	cpmcp -f cpm86-320 $@.wrk cpm.sys 0:CPM.SYS
+	cpmcp -f cpm86-320 $@.wrk $(PIP) $(STAT) $(CHKCPMFS) 0:
+	cpmls -F -f cpm86-320 $@.wrk '0:*.*'
+	$(TWIST) twist $@.wrk $@
+	rm -f $@.wrk
 
 .PHONY: chkcpmfs-live-images
 chkcpmfs-live-images: cpm86-chkcpmfs.img
@@ -315,15 +298,12 @@ clean:
 	$(MAKE) -C $(CMDDIR) clean
 	$(MAKE) -C extra clean
 	rm -rf *.h86 *.lst *.sym *.log
-	rm -f bdosbind.equ
+	rm -f bdosbind.equ ccpexp.equ
 	rm -rf cpm86.cmd cpm.sys 
 	rm -rf cpm86exp.cmd cpmexp.sys 
 	rm -rf cpm86org.cmd cpmorg.sys
-	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
-        cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
-	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
-	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
-	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
+	rm -rf cpm86-720-at.img cpm86-exp-720-at.img
+	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img
 	rm -rf cpm86-exp-320.img cpm86-exp-320-at.img cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 	rm -rf *.img.wrk
 	rm -f mbc816.sys mbcv20.sys mbc816.bin mbcv20.bin ad88.sys apdisk.lib
@@ -333,11 +313,8 @@ clean:
 	rm -rf *.xxd
 
 clean-images:
-	rm -rf cpm86-160-1-at.img cpm86-160-1.img \
-        cpm86-160-2.img cpm86-160-3.img cpm86-160-4.img
-	rm -rf cpm86-exp-160-1-at.img cpm86-exp-160-1.img
-	rm -rf cpm86-720-at.img cpm86-exp-720-at.img base-720-at.img
-	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img base-1440-at.img
+	rm -rf cpm86-720-at.img cpm86-exp-720-at.img
+	rm -rf cpm86-1440-at.img cpm86-exp-1440-at.img
 	rm -rf cpm86-exp-320.img cpm86-exp-320-at.img cpm86-320-at.img cpm86-320.img cpm86-320-dev.img cpm86-chkcpmfs.img cpm86-8080.img
 
 dist: disks.zip
@@ -350,7 +327,8 @@ disks.zip: Makefile $(DIST_DISKS) README.md LICENSE.md LICENSE-bis.md diskdefs t
 
 # Frozen references and pinned hashes guard source cleanup against code drift.
 .PHONY: check
-check: cpm.sys cpmorg.sys cpmexp.sys $(CHKCPMFS) tools/kernel_check.py tools/kernel_check_test.py tools/kernel-baseline.json
+check: cpm.sys cpmorg.sys cpmexp.sys commands tools/kernel_check.py tools/kernel_check_test.py \
+    tools/kernel-baseline.json
 	$(MAKE) -C commands/disk check
 	python3 tools/kernel_check.py
 	python3 tools/feature_compat_check.py
@@ -384,10 +362,10 @@ check-hd-capacity: cpm.sys cpmexp.sys
 	python3 tools/hd_capacity_check.py
 
 # EXP-only 8080 bridge: bindings follow the assembled CCP; no runtime patches.
-cppexp.equ: ccpexp.h86 tools/expbind.py
+ccpexp.equ: ccpexp.h86 tools/expbind.py
 	python3 -B tools/expbind.py
 
 bdosbind.equ: bdosexp.h86 tools/editbind.py
 	python3 -B tools/editbind.py
 
-pcbioexp.h86: pc816.lib cppexp.equ bdosbind.equ lineedit.lib
+pcbioexp.h86: pc816.lib ccpexp.equ bdosbind.equ lineedit.lib

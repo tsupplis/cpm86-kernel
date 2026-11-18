@@ -2,14 +2,21 @@
 from pathlib import Path
 import tempfile
 from live import (ROOT,MEDIA,local_system,prepare_system,prepare_data,convert,
-                  directory_entries,boot,read_screen)
+                  directory_entries,boot,read_screen,run)
 
 def main():
     system=local_system();cwd=ROOT if system=='cpm86' else MEDIA
     fmt='cpm86-320' if system=='cpm86' else 'ccpm86-320'
-    empty=ROOT/'base-320.img' if system=='cpm86' else MEDIA/'base.img'
+    empty=MEDIA/'base.img'
     with tempfile.TemporaryDirectory(prefix='chkcpmfs-native-repair-') as tmp:
         folder=Path(tmp)
+        if system=='cpm86':
+            empty=folder/'empty.img'
+            run('python3', str(ROOT/'tools/mk320.py'), str(empty), '--format', 'cpm86-320',
+                '--boot', str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+                str(ROOT/'commands/dskmaint/loader.bin'), cwd=cwd)
+            run('python3', str(ROOT/'tools/cpm86twist.py'), 'twist', str(empty), str(empty),
+                cwd=cwd)
         sysimage,_=prepare_system(folder,system,fmt,cwd)
         clean,_,_,_,_=prepare_data(folder,empty,fmt,cwd)
         logical=folder/'dirty.logical';convert(clean,logical,'untwist',cwd)

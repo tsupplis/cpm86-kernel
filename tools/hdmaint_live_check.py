@@ -48,7 +48,8 @@ shutil.copyfile(CMD,F/'hdmaint.cmd')
 kernel = R/('cpmexp.sys' if A.personality=='experimental' else 'cpm.sys')
 shutil.copyfile(kernel,F/'cpm.sys')
 shutil.copyfile(R/'diskdefs', F/'diskdefs')
-run('python3',str(R/'tools/cpm86twist.py'),'untwist',str(R/'base-320.img'),'boot.logical.img')
+run('python3', str(R/'tools/mk320.py'), 'boot.logical.img', '--format', 'cpm86-320', '--boot',
+    str(R/'commands/dskmaint/bootsect.bin'), '--loader', str(R/'commands/dskmaint/loader.bin'))
 run('cpmcp','-f','cpm86-320','boot.logical.img','cpm.sys','hdmaint.cmd','0:')
 run('python3',str(R/'tools/cpm86twist.py'),'twist','boot.logical.img','boot.img')
 # All disk-backed scenarios use the agreed native-XT geometry.

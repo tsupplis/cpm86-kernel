@@ -24,7 +24,9 @@ if CCPM:
     fmt='ccpm86-320'
     run('cpmcp','-f',fmt,'logical.img',str(ROOT/'kernel/sysgen/ccpm.sys'),'0:CCPM.SYS')
 else:
-    run('python3',str(ROOT/'tools/cpm86twist.py'),'untwist',str(ROOT/'base-320.img'),'logical.img')
+    run('python3', str(ROOT/'tools/mk320.py'), 'logical.img', '--format', 'cpm86-320', '--boot',
+        str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
+        str(ROOT/'commands/dskmaint/loader.bin'))
     fmt='cpm86-320'
     run('cpmcp','-f',fmt,'logical.img',str(ROOT/'cpm.sys'),'0:CPM.SYS')
 for tool in ['dcopy','dcomp']:

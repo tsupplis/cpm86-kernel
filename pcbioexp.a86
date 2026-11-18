@@ -4383,7 +4383,7 @@ DSPCMP:
 	ret
 DSPEND:
 
-	include cppexp.equ
+	include ccpexp.equ
 	include pc816.lib
 	include bdosbind.equ
 	include lineedit.lib
