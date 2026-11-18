@@ -22,10 +22,6 @@
 ;
 ;*****************************************************************************
 
-; Bounds for tools/a86tool.py: where the data starts and the image ends.
-data_org	equ	049eh
-image_end	equ	09a0h
-
 ; ---- addresses outside this image ----
 tailbuf	equ	0080h		; base page: command tail, length byte first
 xiosser	equ	2552h		; SER1 pointer in the XIOS pointer block
@@ -52,7 +48,7 @@ begin:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
-	mov	sp,0994h
+	mov	sp,offset stacktop
 	cld
 	call	flushkb
 	mov	cl,31h
@@ -763,7 +759,9 @@ helpmsg	db	3fh,0dh,0ah
 	db	'1200 baud, 7 bit odd parity, with 2 stop'
 	db	' bits.',0dh,0ah,0ah,'CONFIG P0 1200 7 ODD 2',0dh
 	db	0ah,00h
-	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
+
+; Preserve the original 128-byte stack and twelve trailing padding bytes.
+stackspace:
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
@@ -775,5 +773,7 @@ helpmsg	db	3fh,0dh,0ah
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h
+stacktop:
+	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 
 	end

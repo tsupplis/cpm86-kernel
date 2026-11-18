@@ -47,11 +47,6 @@ inmask	equ	0dh	; keyboard and serial ports
 outmask	equ	7eh	; screen, serial ports and printers
 nlogical	equ	5
 maxphys	equ	7
-stacktop	equ	0d90h	; initial SP inside the trailing zero-filled area
-
-; Bounds for tools/a86tool.py (the last byte is LINK86 paragraph padding).
-data_org	equ	0736h
-image_end	equ	0da0h
 
 ;***********************************************************
 ;  CODE SEGMENT
@@ -73,7 +68,7 @@ begin:
 	mov	ax,cs
 	mov	ds,ax
 	mov	ss,ax
-	mov	sp,stacktop
+	mov	sp,offset stacktop
 	cld
 	call	flushkb
 	mov	cl,f_sysdata
@@ -1142,8 +1137,7 @@ errsuf		db	' ***',0dh
 			db	'ASSIGN L O SN P0',0dh,0ah
 	db	00h		; terminate the error/help text
 
-; Stack storage: starts at 0D0Fh with the working banner.  Initial SP is
-; stacktop (0D90h); the stack grows downward into these zero-filled bytes.
+; Stack grows downward through the existing zero-filled storage.
 stackspace	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
@@ -1156,6 +1150,7 @@ stackspace	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h,00h,00h,00h,00h,00h,00h
 
+stacktop:
 ; Fifteen bytes above initial SP; LINK86 adds one paragraph-padding byte.
 imagepad	db	00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h,00h
 	db	00h,00h,00h
