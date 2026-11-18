@@ -221,7 +221,8 @@ fixtures are retained until removed after inspection.
 Both BIOSes read and write 160K, 320K, 720K and 1.44M CP/M media.
 All bootable distributions use the generic loader from `commands/dskmaint`;
 no runtime disk patch or FIDD reservation is required. Native 1.2M is not supported.
-Larger-format support in DCOPY/DCOMP and DSKMAINT/DFORM remains pending.
+DCOPY/DCOMP and DSKMAINT/DFORM support these native formats. DSKMAINT shows
+1200K as an inactive placeholder; no function key selects it.
 
 ### Development toolchains
 

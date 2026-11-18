@@ -25,7 +25,7 @@ in `make check`.
 | `rtc_check.py`, `century_check.py`, `edittest.py` | `make check`: RTC conversion, century display and EXP line editor |
 | `dsktest.py` | `make check-disk`: execute DCOPY/DCOMP with synthetic devices |
 | `../commands/dform/tests/check.py` | `make -C commands/dform check`: execute DFORM with synthetic devices |
-| `disk_live_check.py` | `make check-disk-live`: guest copy/compare of nine physical sectors |
+| `disk_live_check.py` | `make check-disk-live`: guest copy/compare of nine physical sectors; `--capacity 720/1440` checks native media, `--dskmaint` exercises menu format/verify/copy, `--format --sectors 8` checks 320K DFORM |
 | `fdboot.py` | `make check-floppy-live`: both BIOSes, four formats, boot and persisted writes |
 | `hd_capacity_check.py` | `make check-hd-capacity`: execute HD capacity/address calculations |
 | `pc816chk.py`, `editlive.py` | `make check-exp-live`: 8080 execution and keyboard/display checks; script options select CPU/media |

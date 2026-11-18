@@ -10,10 +10,11 @@ import argparse,re,shutil,subprocess,tempfile
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--sectors",type=int,choices=(8,9),default=9)
 parser.add_argument("--capacity", type=int, choices=(320,720,1440), default=320)
+parser.add_argument("--format", action="store_true", help="Format the target with DFORM before copying")
 parser.add_argument("--dskmaint", action="store_true", help="Exercise the DSKMAINT format/verify/copy menus")
 args=parser.parse_args()
-if args.dskmaint and args.capacity == 320:
-    parser.error("--dskmaint requires --capacity 720 or 1440")
+if args.capacity == 320 and (args.format or args.dskmaint) and args.sectors != 8:
+    parser.error("320K formatting requires --sectors 8")
 sectors=args.sectors if args.capacity==320 else 9 if args.capacity==720 else 18
 cylinders=40 if args.capacity==320 else 80
 ROOT=Path(__file__).resolve().parent.parent
@@ -49,15 +50,16 @@ else:
     run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'cpm.sys'),'0:CPM.SYS')
 for tool in ['dcopy','dcomp']:
     run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/f'commands/disk/{tool}.cmd'),'0:')
+if args.format or args.dskmaint or args.capacity != 320:
+    run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dform/dform.cmd'),'0:DFORM.CMD')
+    if args.dskmaint:
+        run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dskmaint/dskmaint.cmd'),'0:DSKMAINT.CMD')
 if args.capacity == 320:
     run('python3',str(ROOT/'tools/cpm86twist.py'),'twist','logical.img','native.img')
     b=(F/'native.img').read_bytes();assert len(b)==327680
     expanded=b''.join(b[i*4096:(i+1)*4096]+bytes([0xa0+i%48])*512 for i in range(80))
     (F/'source.img').write_bytes(expanded if sectors==9 else b)
 else:
-    run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dform/dform.cmd'),'0:DFORM.CMD')
-    if args.dskmaint:
-        run('cpmcp','-T','raw','-f',fmt,'logical.img',str(ROOT/'commands/dskmaint/dskmaint.cmd'),'0:DSKMAINT.CMD')
     (F/'source.img').write_bytes((F/'logical.img').read_bytes())
 (F/'target.img').write_bytes(bytes([0xe5])*(cylinders*2*sectors*512))
 # Explicit sector images avoid ambiguous 320K raw-image geometry guessing.
@@ -81,7 +83,7 @@ if args.dskmaint:
     c += ['save "menu.bin" bin b800:0000 fa0']
     def key(name, cycles='6000000'):
         c.extend(['key '+name, 'c '+cycles])
-    key('F6' if args.capacity==720 else 'F8')
+    key({320: 'F5', 720: 'F6', 1440: 'F8'}[args.capacity])
     key('F4')
     c += ['save "confirm.bin" bin b800:0000 fa0']
     key('y','80000000')
@@ -91,12 +93,12 @@ if args.dskmaint:
     key('F10'); key('F3'); key('F2'); key('F4'); key('y','80000000')
     c += ['save "copy.bin" bin b800:0000 fa0']
     key('F10'); key('F9')
-    command('dcomp a: b:')
+    command('dcomp a: b: [8]' if args.capacity == 320 else 'dcomp a: b:')
     key('Space','40000000')
     c += ['save "compare.bin" bin b800:0000 fa0']
     key('n'); c += ['q']
 else:
-    if args.capacity != 320:
+    if args.format or args.capacity != 320:
         command(f'dform b: [{args.capacity}]')
         c.extend(['key y','c 80000000','save "format.bin" bin b800:0000 fa0'])
     option=f' [{sectors}]' if args.capacity==320 else ''
@@ -115,7 +117,7 @@ if args.dskmaint:
     assert 'SELECT DISKETTE TO VERIFY' in screen('verify'), screen('verify')
     assert 'SELECT SOURCE DISKETTE' in screen('copy'), screen('copy')
 else:
-    if args.capacity != 320:
+    if args.format or args.capacity != 320:
         s=screen('format');assert 'Format complete.' in s,s
     s=screen('copy');assert 'Copy complete' in s,s
 s=screen('compare');assert 'Diskettes compare ok' in s,s
