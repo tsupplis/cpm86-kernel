@@ -74,7 +74,7 @@ def blocks(record, width):
 
 
 def prepare_empty(folder, system, cwd, size=320):
-    """Create local fixtures; CDOS retains its existing boot-image interface."""
+    """Create disposable local fixtures using the maintained boot sources."""
     logical = folder / f'empty-{size}-logical.img'
     if size != 320:
         logical.write_bytes(bytes([0xe5]) * (size * 1024))
@@ -84,11 +84,6 @@ def prepare_empty(folder, system, cwd, size=320):
         data = bytearray(logical.read_bytes())
         data[510] = 1
         data[511] = marker
-        logical.write_bytes(data)
-    elif system == 'cdos':
-        convert(MEDIA / 'base.img', logical, 'untwist', cwd)
-        data = bytearray(logical.read_bytes())
-        data[:4096] = (ROOT / 'boot/boottrack.bin').read_bytes()
         logical.write_bytes(data)
     else:
         fmt = 'cpm86-320' if system == 'cpm86' else 'ccpm86-320'
@@ -277,9 +272,7 @@ def main():
     args = parser.parse_args()
     system = local_system()
     if args.formats is None:
-        args.formats = [320] if system == "cdos" else [320, 720, 1200, 1440]
-    if system == "cdos" and args.formats != [320]:
-        parser.error("CDOS native large formats are not implemented yet")
+        args.formats = [320, 720, 1200, 1440]
     cwd = ROOT if system == "cpm86" else MEDIA
     disk_format = "cpm86-320" if system == "cpm86" else "ccpm86-320"
     private = ROOT / 'private'
