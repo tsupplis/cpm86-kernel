@@ -414,8 +414,7 @@
     Explanation:
 
     Format, copy and verify CP/M diskettes. Supported capacities are
-    160K, 320K, 720K, 1200K and 1440K. Copying preserves the source geometry;
-    use PIP to transfer files between different formats.
+    160K, 320K, 720K, 1200K and 1440K.
 
     F1        Verify a diskette.
     F3        Copy a diskette.
@@ -423,7 +422,10 @@
     F6/F7/F8  Format 720K/1200K/1440K.
     F9        Exit.
 
-    Formatting requires confirmation and verifies the written disk.
+    Formatting destroys existing data and requires confirmation. It writes
+    the shared boot sector and loader, then verifies every track.
+    Copy requires source and target of the same format. Use PIP to transfer
+    files between different formats.
     To make a boot disk, format it and copy CPM.SYS with PIP's [R] option.
 
     DSKMAINT returns several error messages.
@@ -440,8 +442,8 @@
 
     Disk read error           - defective diskette.
 
-    Diskettes are not of      - you are trying to copy between single
-    the same type              and double sided diskettes.
+    Diskettes are not of      - source and target diskette formats
+    the same type              do not match.
 
     Source and destination    - data does not compare, one of the
     data do not match          diskettes is defective.
@@ -827,6 +829,25 @@
     A>REN NEWFILE.DAT = OLDFILE.DAT
     A>REN B:NEWFILE.DAT = OLDFILE.DAT
 
+///1SAVE
+    Syntax:
+
+    SAVE n {d:}filename.typ
+
+    Explanation:
+
+    CP/M-816 only: save n pages of 256 bytes from the retained 8080
+    execution bank, starting at 0100h. n is decimal, from 0 to 250.
+    Use after an 8080 COM program returns normally. Existing files are
+    refused; use an explicit filename without wildcards.
+
+    This saves memory, not assembler HEX output. Use CP/M-80 LOAD to
+    convert an ASM-generated HEX file into a COM file.
+
+    Examples:
+
+    A>SAVE 1 B:TEST.COM
+
 ///1STAT
     Syntax:
 
@@ -1077,14 +1098,16 @@
 ///1GENDEF
     Syntax:
 
-    GENDEF name {$COZ}
+    GENDEF name {$BCOZ}
 
     Explanation:
 
     Reads name.DEF and writes assembler disk tables to name.LIB.
+    B emits only DPBs and DPB aliases, without headers or buffers.
     C includes comments; O selects offset-relative labels;
     Z selects Z80/8080/8085 rather than 8086/8088 output.
-    Options can be combined, for example GENDEF PCDISKS $COZ.
+    Options can be combined, for example GENDEF PCDISKS $BC.
+    Omitting B preserves the full disk-table output.
 
 ///1LINEEDIT
     EXP line editing (PC console only):
