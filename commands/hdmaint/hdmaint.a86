@@ -728,7 +728,7 @@ edit_start_cylinder_at_0516:
 edit_start_cylinder_at_0537:
 	sub	ax,9h
 	add	bx,4h
-	cmp	bx,0a93h
+	cmp	bx,offset bad_cylinders
 	jnz	edit_start_cylinder_at_0516
 edit_start_cylinder_at_0543:
 	mov	ax,partition_start
@@ -798,7 +798,7 @@ default_partition:
 	add	bx,offset selected_disk
 	mov	byte ptr [bx],0h
 	mov	byte ptr 4h[bx],0dbh
-	sub	bx,0cbch
+	sub	bx,offset partition_table
 	mov	ax,bx
 	mov	bl,10h
 	div	bl

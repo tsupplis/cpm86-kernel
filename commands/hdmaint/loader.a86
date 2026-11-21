@@ -372,7 +372,7 @@ bd_bdoses:
 	mov	ax,cs
 	mov	ss,ax
 bd_setup_stack:
-	mov	sp,1159h
+	mov	sp,offset bd_stack_top
 bd_bdosei:
 	mov	bx,word ptr bd_instof
 	mov	es,word ptr bd_instsg
@@ -407,7 +407,7 @@ bd_bdosb:
 	mov	byte ptr bd_afwfcb,al
 	mov	byte ptr bd_enttyp,al
 	mov	byte ptr bd_flomod,al
-	mov	bx,0f4ch
+	mov	bx,offset bd_endprc
 	push	bx
 	cmp	cl,29h
 	jc	bd_bdosbs
@@ -422,19 +422,19 @@ bd_bdosbs:
 	add	bx,bx
 	jmp	cs:word ptr bdos_vectors[bx]
 bd_ebadsc:
-	mov	bx,1076h
+	mov	bx,offset bd_bad_sector_text
 	call	bd_erproc
 	cmp	al,3h
 	jnz	bd_stwfce
 	jmps	bd_erofie
 bd_eselct:
-	mov	bx,1081h
+	mov	bx,offset bd_select_text
 	jmps	bd_erofis
 bd_erodsk:
-	mov	bx,108dh
+	mov	bx,offset bd_disk_readonly_text
 	jmps	bd_erofis
 bd_erofil:
-	mov	bx,1088h
+	mov	bx,offset bd_file_readonly_text
 bd_erofis:
 	call	bd_erproc
 bd_erofie:
@@ -445,7 +445,7 @@ bd_erproc:
 	mov	al,byte ptr bd_curdsk
 	add	al,41h
 	mov	byte ptr bd_cerrdk,al
-	mov	cx,1066h
+	mov	cx,offset bd_error_prefix
 	call	bd_bufprn
 	pop	cx
 	call	bd_bufprn
@@ -460,7 +460,7 @@ bd_stwfcb:
 	xor	ch,ch
 	mov	si,word ptr bd_inpara
 	mov	word ptr bd_ptufcb,si
-	mov	di,1091h
+	mov	di,offset bd_saved_fcb
 	mov	word ptr bd_inpara,di
 	mov	ds,word ptr bd_indseg
 	cld
@@ -489,7 +489,7 @@ bd_rstfcb:
 	mov	cl,byte ptr bd_cnfcbc
 	xor	ch,ch
 	mov	es,word ptr bd_indseg
-	mov	si,1091h
+	mov	si,offset bd_saved_fcb
 	mov	di,word ptr bd_ptufcb
 	mov	word ptr bd_inpara,di
 	cld
@@ -857,16 +857,16 @@ bd_nodtex:
 	mov	al,1h
 	jmps	bd_btprst
 bd_blist:
-	mov	bx,120fh
+	mov	bx,offset bios_list_vector
 	jmps	loc_07a2
 bd_bconin:
-	mov	bx,1209h
+	mov	bx,offset bios_input_vector
 	jmps	loc_07a2
 bd_bconst:
-	mov	bx,1206h
+	mov	bx,offset bios_status_vector
 	jmps	loc_07a2
 bd_bconot:
-	mov	bx,120ch
+	mov	bx,offset bios_output_vector
 loc_07a2:
 	call	bx
 	ret
@@ -874,7 +874,7 @@ bd_dbios:
 	call	bx
 	retf
 bd_dseror:
-	mov	bx,1006h
+	mov	bx,offset bd_select_error_vector
 bd_error:
 	jmp	word ptr [bx]
 bd_copy:
@@ -940,7 +940,7 @@ bd_dwrits:
 bd_dwritn:
 	or	al,al
 	jz	bd_gdptbe
-	mov	bx,1004h
+	mov	bx,offset bd_bad_sector_vector
 	jmp	bd_error
 bd_stdirt:
 	mov	bx,word ptr bd_dircnt
@@ -1088,12 +1088,12 @@ bd_chkrol:
 	mov	al,byte ptr [bx]
 	rcl	al,1
 	jnc	bd_gtdrpe
-	mov	bx,100ah
+	mov	bx,offset bd_file_readonly_vector
 	jmps	bd_chkroe
 bd_chkrod:
 	call	bd_chkrov
 	jz	bd_gtdrpe
-	mov	bx,1008h
+	mov	bx,offset bd_disk_readonly_vector
 bd_chkroe:
 	jmp	bd_error
 bd_gtdrpt:
@@ -1889,7 +1889,14 @@ bd_function_42:
 	db	0h,0h,0h,0h,0h
 bios_gateway	db	0a5h,7h
 bd_sgbios	dw	0h
-	db	0a4h,4h,0b0h,4h,0b5h,4h,0bah,4h,0h,0h,0h,0h,0h,0h,0h,0h
+bd_bad_sector_vector:
+	db	0a4h,4h
+bd_select_error_vector:
+	db	0b0h,4h
+bd_disk_readonly_vector:
+	db	0b5h,4h
+bd_file_readonly_vector:
+	db	0bah,4h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h
 bd_echkil	db	0h
 bd_ppromp	db	0h
@@ -1941,9 +1948,21 @@ bd_sysmod	db	0h
 bd_syssrc	db	0h
 bd_syscnt	db	0h
 state_1064	db	0h
-bd_sysflg	db	0h,42h,64h,6fh,73h,20h,45h,72h,72h,20h,4fh,6eh,20h ; .Bdos Err On 
-bd_cerrdk	db	20h,3ah,20h,24h,42h,61h,64h,20h,53h,65h,63h,74h,6fh,72h,24h,53h ;  : $Bad Sector$S
-	db	65h,6ch,65h,63h,74h,24h,46h,69h,6ch,65h,20h,52h,2fh,4fh,24h,0h ; elect$File R/O$.
+bd_sysflg	db	0h
+bd_error_prefix:
+	db	42h,64h,6fh,73h,20h,45h,72h,72h,20h,4fh,6eh,20h
+bd_cerrdk	db	20h,3ah,20h,24h
+bd_bad_sector_text:
+	db	42h,61h,64h,20h,53h,65h,63h,74h,6fh,72h,24h
+bd_select_text:
+	db	53h
+	db	65h,6ch,65h,63h,74h,24h
+bd_file_readonly_text:
+	db	46h,69h,6ch,65h,20h
+bd_disk_readonly_text:
+	db	52h,2fh,4fh,24h
+bd_saved_fcb:
+	db	0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
@@ -1956,7 +1975,9 @@ bd_cerrdk	db	20h,3ah,20h,24h,42h,61h,64h,20h,53h,65h,63h,74h,6fh,72h,24h,53h ;  
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
-	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
+	db	0h,0h,0h,0h,0h,0h,0h
+bd_stack_top:
+	db	0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
 	db	0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h,0h
@@ -2059,7 +2080,7 @@ bios_initialize:
 	int	10h
 	mov	ah,0h
 	int	10h
-	mov	word ptr bdos_vectors,406h
+	mov	word ptr bdos_vectors,offset bd_bdosen
 	mov	word ptr state_0382,cs
 copy_disk_label:
 	mov	ax,cs
@@ -2213,7 +2234,7 @@ bios_read:
 	mov	word ptr request_cylinder,ax
 	mov	byte ptr request_head,dl
 	mov	byte ptr request_function,2h
-	mov	word ptr request_offset,184eh
+	mov	word ptr request_offset,physical_buffer
 	mov	word ptr request_segment,cs
 	mov	ax,word ptr .label_block_records
 	shr	ax,1
