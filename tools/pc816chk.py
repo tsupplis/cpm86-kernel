@@ -2,6 +2,7 @@
 """EXP bridge regression on disposable PCE disks; no host clock/disk writes."""
 from pathlib import Path
 import argparse
+import hashlib
 import re
 import subprocess
 import tempfile
@@ -11,9 +12,14 @@ ROOT = Path(__file__).resolve().parents[1]
 NATIVE_CPUS = ('8088', '8086')
 
 
-def check(cpu, media, editor=False):
-    folder = Path(tempfile.mkdtemp(prefix='pc816-'))
+def check(cpu, media, editor=False, kernel=ROOT / 'cpmexp.sys'):
+    parent = ROOT / 'local/pc816-tests'
+    parent.mkdir(parents=True, exist_ok=True)
+    folder = Path(tempfile.mkdtemp(prefix='live-', dir=parent))
     print(f'{cpu}/{media}: {folder}', flush=True)
+    kernel_bytes = kernel.read_bytes()
+    (folder / 'kernel.sys').write_bytes(kernel_bytes)
+    print('Kernel SHA256:', hashlib.sha256(kernel_bytes).hexdigest(), flush=True)
 
     def run(*args):
         return subprocess.run(args, cwd=folder, check=True, capture_output=True)
@@ -36,7 +42,7 @@ def check(cpu, media, editor=False):
         data[510:512] = bytes([1, int(media)//10])
         data[0x900:0x900+len(loader)] = loader
         image.write_bytes(data)
-    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', str(ROOT / 'cpmexp.sys'), '0:CPM.SYS')
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'kernel.sys', '0:CPM.SYS')
     # 8080: print through BDOS, then RET through the bridge's return address.
     hello = bytes.fromhex('11 09 01 0e 09 cd 05 00 c9') + b'CPM816 HELLO PASS\r\n$'
     (folder / 'hello.com').write_bytes(hello)
@@ -155,7 +161,9 @@ message db 'NATIVE PASS',13,10,'$'
     run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'hello.com', '0:NATIVE.COM')
     (folder / 'empty.com').write_bytes(b'')
     run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'empty.com', '0:EMPTY.COM')
-    (folder / 'large.com').write_bytes(bytes(0xfc00))
+    (folder / 'large.com').write_bytes(bytes(502 * 128))
+    (folder / 'maximum.com').write_bytes(hello.ljust(501 * 128, b'\0'))
+    run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'maximum.com', '0:MAXIMUM.COM')
     run('cpmcp', '-T', 'raw', '-f', fmt, 'work.img', 'large.com', '0:LARGE.COM')
     if media == '320':
         run('python3', str(ROOT / 'tools/cpm86twist.py'), 'twist', 'work.img', 'boot.img')
@@ -239,8 +247,9 @@ message db 'NATIVE PASS',13,10,'$'
                 # Clear display before each assertion, so old output cannot pass.
                 for text, expected in [('hello', 'CPM816 HELLO PASS'),
                                        ('args a:one.txt b:two.com', 'ARGS PASS'),
-                                                                              ('empty', 'empty COM file'),
-                                       ('large', 'COM file too large'),
+                                       ('maximum', 'CPM816 HELLO PASS'),
+                                       ('empty', 'E/EMPTY'),
+                                       ('large', 'E/TOOBIG'),
                                        ('native', 'NATIVE PASS')]:
                     command('clear')
                     wait('CLEARED')
@@ -250,18 +259,18 @@ message db 'NATIVE PASS',13,10,'$'
             wait('CLEARED')
             command('submit bridge' + ('' if cpu in NATIVE_CPUS else ' a:one.txt b:two.com'))
             submitted = wait('SUBMIT PASS')
-            required = ('NATIVE TYPE PASS', 'NATIVE PASS') if cpu in NATIVE_CPUS else ('CPM816 HELLO PASS', 'ARGS PASS', 'WRITE PASS', 'SAVE complete', 'SAVE: file exists', 'SAVE: invalid arguments or disk error')
+            required = ('NATIVE TYPE PASS', 'NATIVE PASS') if cpu in NATIVE_CPUS else ('CPM816 HELLO PASS', 'ARGS PASS', 'WRITE PASS', 'SAVE complete', 'E/FEXIST', 'E/SAVEARGS')
             assert all(marker in submitted for marker in required), submitted
             assert 'BRIDGE TEST FAILED' not in submitted, submitted
             if cpu not in NATIVE_CPUS:
                 command('save 1 gone.com')
-                wait('SAVE: no retained 8080 program')
+                wait('E/NOSAVE')
                 command('abort')
                 wait('ABORT READY')
                 send('key +Ctrl c -Ctrl')
                 wait('A>')
                 command('save 1 abort.com')
-                wait('SAVE: no retained 8080 program')
+                wait('E/NOSAVE')
             print(f'PASS: {cpu}/{media}: SUBMIT sequence and parameters', flush=True)
             print(f'PASS: {cpu}/{media}: boot/banner, native CMD precedence, '
                   + ('unsupported COM rejection' if cpu in NATIVE_CPUS else 'Ctrl-C/native/COM recovery, 8080 return/repeat, arguments/FCBs, file write, empty/large rejection, native recovery'), flush=True)
@@ -288,11 +297,16 @@ message db 'NATIVE PASS',13,10,'$'
         assert b'BAD.COM' not in listing
         print(f'PASS: {cpu}/{media}: host verified BDOS write and SAVE bytes, repeat, bounds and overwrite refusal', flush=True)
 
+    # Keep logs/screens for review; remove disposable media after success.
+    for image in folder.glob('*.img'):
+        image.unlink()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--cpu', choices=['8088', '8086', 'v20', 'v30'], default='v20')
     parser.add_argument('--media', choices=['320', '720', '1440'], default='320')
     parser.add_argument('--editor', action='store_true')
+    parser.add_argument('--kernel', type=Path, default=ROOT / 'cpmexp.sys')
     args = parser.parse_args()
-    check(args.cpu, args.media, args.editor)
+    check(args.cpu, args.media, args.editor, args.kernel)

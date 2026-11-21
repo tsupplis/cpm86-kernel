@@ -42,6 +42,7 @@ extra/*.com
 extra/*.tmp
 extra/*.cmd
 !/pc816.lib
+!/pc816x.lib
 !/lineedit.lib
 /bdosbind.equ
 /ccpexp.equ

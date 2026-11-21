@@ -92,7 +92,7 @@ FINDCOM816:
 	jnz	LOAD816
 	jmp	ccp_error
 LOAD816:
-	call	RELEASE816
+	call	SIZE816
 	mov	byte ptr bank816,0
 	mov	byte ptr vec816,0
 	mov	dx,offset mem816
@@ -115,23 +115,8 @@ ZERO816:
 	int	224
 	mov	dx,100h
 READ816:
-	push	dx
-	mov	cl,26
-	int	224
-	mov	dx,offset ccp_file
-	mov	cl,20
-	int	224
-	pop	dx
-	cmp	al,1
-	jz	EOF816
-	or	al,al
-	jnz	BAD816
-	add	dx,80h
-	cmp	dx,0fb80h
-	jb	READ816
-; One additional record would collide with the 8080 compatibility area.
-	mov	dx,offset large816
-	jmp	FAIL816
+	jmp	READX816
+	rb	34		; Preserve the following resident addresses.
 BAD816:
 	mov	dx,offset readerr816
 	jmp	FAIL816
@@ -144,8 +129,9 @@ PREP816:
 ; Close before the CCP parser reuses its working FCB.
 	mov	dx,offset ccp_file
 	mov	cl,16
-	int	224
-	call	ARGS816
+	call	CLOSEX816
+	nop
+	nop
 	mov	es,word ptr mem816
 	mov	es:byte ptr .iobyte80,0
 	mov	al,byte ptr BDOSCURDRV
@@ -444,7 +430,7 @@ SAVETAIL816:
 	int	224
 	cmp	al,0ffh
 	jne	$+5
-	jmp	SAVEERR816
+	jmp	SAVECREATE816
 	mov	dx,word ptr mem816
 	mov	cl,51
 	int	224
@@ -472,13 +458,11 @@ SAVECLOSE816:
 	mov	dx,offset saved816
 	jmps	SAVERESET816
 SAVEBADWRITE816:
-	mov	dx,offset savefcb816
-	mov	cl,16
-	int	224
+	jmp	SAVEWRX816
+	rb	4
 SAVEDELETE816:
-	mov	dx,offset savefcb816
-	mov	cl,19
-	int	224
+	jmp	SAVECLX816
+	rb	4
 SAVEERR816:
 	mov	dx,offset savemsgerr816
 	jmps	SAVERESET816
@@ -794,10 +778,13 @@ keep816	db	0
 saverecs816	dw	0
 saveoff816	dw	0
 savefcb816	rw	18
-nosave816	db	13,10,'SAVE: no retained 8080 program',13,10,'$'
+nosave816	db	13,10,'E/NOSAVE',13,10,'$'
+	rb	22		; Keep resident addresses fixed.
 saved816	db	13,10,'SAVE complete',13,10,'$'
-exists816	db	13,10,'SAVE: file exists',13,10,'$'
-savemsgerr816	db	13,10,'SAVE: invalid arguments or disk error',13,10,'$'
+exists816	db	13,10,'E/FEXIST',13,10,'$'
+	rb	9		; Keep resident addresses fixed.
+savemsgerr816	db	13,10,'E/SAVEARGS',13,10,'$'
+	rb	27		; Keep resident addresses fixed.
 cpu816	db	0
 runsp816	dw	0
 bank816	db	0
@@ -810,8 +797,12 @@ banner816	db	13,10,10,'CP/M-816 for the IBM PC and IBM PC XT  Version 1.1',13,10
 	db	'Copyright (C) 1983, Digital Research',13,10,10,10
 	db	'Hardware Supported :',13,10,10
 	db	'             8080 Emulation : V20/V30',13,10,0
-nomem816	db	13,10,'CP/M-816: 64K memory unavailable',13,10,'$'
-large816	db	13,10,'CP/M-816: COM file too large',13,10,'$'
-empty816	db	13,10,'CP/M-816: empty COM file',13,10,'$'
-readerr816	db	13,10,'CP/M-816: COM read failed',13,10,'$'
+nomem816	db	13,10,'E/NOMEM',13,10,'$'
+	rb	25		; Keep resident addresses fixed.
+large816	db	13,10,'E/TOOBIG',13,10,'$'
+	rb	20		; Keep resident addresses fixed.
+empty816	db	13,10,'E/EMPTY',13,10,'$'
+	rb	17		; Keep resident addresses fixed.
+readerr816	db	13,10,'E/READ',13,10,'$'
+	rb	19		; Keep resident addresses fixed.
 END816	equ	offset $

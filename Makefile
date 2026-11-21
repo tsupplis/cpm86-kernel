@@ -156,7 +156,7 @@ ccpexp.equ: ccpexp.h86 tools/expbind.py
 bdosbind.equ: bdosexp.h86 tools/editbind.py
 	python3 -B tools/editbind.py
 
-pcbioexp.h86: pc816.lib ccpexp.equ bdosbind.equ lineedit.lib
+pcbioexp.h86: pc816.lib pc816x.lib ccpexp.equ bdosbind.equ lineedit.lib
 
 # GENDEF supplies DPBs only. Symbolic ORGs in PCDISKS.DEF use placement
 # constants defined by each BIOS; headers and buffers remain BIOS-owned.
@@ -315,6 +315,7 @@ check: cpm.sys cpmorg.sys cpmexp.sys commands tools/kernel_check.py tools/kernel
 	python3 tools/bioschk.py
 	python3 tools/fdcheck.py
 	python3 tools/rtc_check.py
+	python3 tools/pc816err.py
 	python3 -B tools/century_check.py
 	python3 -B tools/edittest.py
 	python3 tools/kernel_check_test.py

@@ -2914,12 +2914,12 @@ BREAKMES	db	39h		; length of following text
 	db	'Return to CP/M (Y/N)?'
 
 ZEROMES		db	49h		; length of following text
-	db	' *** Divide by Zero Error from '
+	db	'                  E/DIVZERO AT '
 ZEROMESADR	db	'0000:0000'
 	db	' ***    Type any key to continue.'
 
 INTERMES	db	4Dh		; length of following text
-	db	' *** Unexpected Interrupt #'
+	db	'              E/INTERRUPT #'
 INTERMESNUM	db	'00'
 	db	' from '
 INTERMESADR	db	'0000:0000'
@@ -3011,73 +3011,73 @@ FEBLENGTH	dw	'29','32','31','32','31'
 ; Error messages
 
 ERRDISKLEN	rb	1
-ERRDISK		db	'Disk Error  Drive '
+ERRDISK		db	'     E/DISK DRIVE '
 EDRIVE		rb	1
-	db	':  Track '
+	db	':  TRACK '
 ETRACK		rb	4
 	db	0
 
 TEN		dw	10
 
-DEFF		db	0Fh,'Sense Op Failed'
-DEBB		db	0Fh,'Undefined Error'
-DE80		db	11h,'Failed to Respond'
-DE40		db	0Bh,'Seek Failed'
-DE20		db	11h,'Controller Failed'
-DE11		db	0Eh,'Data Corrected'
-DE10		db	0Ah,'Data Error'
-DE0B		db	10h,'Track Flag Error'
-DE09		db	11h,'DMA Address Error'
-DE08		db	10h,'DMA Chip Failure'
-DE07		db	10h,'Drive Parameters'
-DE05		db	0Ch,'Reset Failed'
-DE04		db	10h,'Sector Not Found'
-DE03		db	0Fh,'Write-Protected'
-DE02		db	11h,'Addr Mark Missing'
-DE01		db	0Fh,'Illegal Command'
-DE00		db	0Dh,'Unknown Error'
+DEFF		db	0Fh,'SENSE FAILED   '
+DEBB		db	0Fh,'UNDEFINED      '
+DE80		db	11h,'NO RESPONSE      '
+DE40		db	0Bh,'SEEK FAILED'
+DE20		db	11h,'CONTROLLER FAILED'
+DE11		db	0Eh,'DATA CORRECTED'
+DE10		db	0Ah,'DATA ERROR'
+DE0B		db	10h,'TRACK FLAG ERROR'
+DE09		db	11h,'DMA ADDRESS ERROR'
+DE08		db	10h,'DMA CHIP FAILURE'
+DE07		db	10h,'DRIVE PARAMETERS'
+DE05		db	0Ch,'RESET FAILED'
+DE04		db	10h,'SECTOR NOT FOUND'
+DE03		db	0Fh,'WRITE PROTECTED'
+DE02		db	11h,'ADDR MARK MISSING'
+DE01		db	0Fh,'ILLEGAL COMMAND'
+DE00		db	0Dh,'UNKNOWN ERROR'
 
 ; Table matching the return code with message
 
 EDSKTBL		db	0FFh
-	dw	offset DEFF		; 'Sense Op Failed'
+	dw	offset DEFF		; 'SENSE FAILED   '
 	db	0BBh
-	dw	offset DEBB		; 'Undefined Error'
+	dw	offset DEBB		; 'UNDEFINED      '
 	db	080h
-	dw	offset DE80		; 'Failed to Respond'
+	dw	offset DE80		; 'NO RESPONSE      '
 	db	040h
-	dw	offset DE40		; 'Seek Failed'
+	dw	offset DE40		; 'SEEK FAILED'
 	db	020h
-	dw	offset DE20		; 'Controller Failed'
+	dw	offset DE20		; 'CONTROLLER FAILED'
 	db	011h
-	dw	offset DE11		; 'Data Corrected'
+	dw	offset DE11		; 'DATA CORRECTED'
 	db	010h
-	dw	offset DE10		; 'Data Error'
+	dw	offset DE10		; 'DATA ERROR'
 	db	0Bh
-	dw	offset DE0B		; 'Track Flag Error'
+	dw	offset DE0B		; 'TRACK FLAG ERROR'
 	db	09h
-	dw	offset DE09		; 'DMA Address Error'
+	dw	offset DE09		; 'DMA ADDRESS ERROR'
 	db	08h
-	dw	offset DE08		; 'DMA Chip Failure'
+	dw	offset DE08		; 'DMA CHIP FAILURE'
 	db	07h
-	dw	offset DE07		; 'Drive Parameters'
+	dw	offset DE07		; 'DRIVE PARAMETERS'
 	db	05h
-	dw	offset DE05		; 'Reset Failed'
+	dw	offset DE05		; 'RESET FAILED'
 	db	04h
-	dw	offset DE04		; 'Sector Not Found'
+	dw	offset DE04		; 'SECTOR NOT FOUND'
 	db	03h
-	dw	offset DE03		; 'Write-Protected'
+	dw	offset DE03		; 'WRITE PROTECTED'
 	db	02h
-	dw	offset DE02		; 'Addr Mark Missing'
+	dw	offset DE02		; 'ADDR MARK MISSING'
 	db	01h
-	dw	offset DE01		; 'Illegal Command'
+	dw	offset DE01		; 'ILLEGAL COMMAND'
 EDSK_CNT	equ	(offset $ - offset EDSKTBL)/3
-	dw	offset DE00		; 'Unknown Error'
+	dw	offset DE00		; 'UNKNOWN ERROR'
 
-PERR		db	11h,'    Printer Error'
-PERRTO		db	08h,'Time Out'
-PERROP		db	0Ch,'Out of Paper'
-PERRPO		db	09h,'Power Off'
+PERR		db	11h,'E/PRINTER        '
+PERRTO		db	08h,'TIMEOUT '
+PERROP		db	0Ch,'OUT OF PAPER'
+PERRPO		db	09h,'POWER OFF'
 PERRSP		db	01h,' '
 
 ERRQUEST	db	16h,'Retry, Ignore, Accept?'
@@ -4088,15 +4088,15 @@ SIGNFID		db	'         FIDDS (Kb) : ',0
 DEFTOD		db	'08/01/83,00:00:00'
 
 ERRCHKSUM	db	cr,lf
-	db	'Hard Disk Label Checksum Error'
+	db	'E/HDLABEL CHECKSUM            '
 	db	cr,lf,lf,0
 
 ERRHP2BIG	db	cr,lf
-	db	'Hard Disk Partition is Too Big for CP/M-86'
+	db	'E/HDPART TOO BIG                          '
 	db	cr,lf,lf,0
 
 ERRFD2BIG	db	cr,lf
-	db	'FIDDS memory request is too large'
+	db	'E/FIDDS NOMEM                    '
 	db	cr,lf,0
 
 HDDCHK		db	0		; Hard disk drive (to check)
@@ -4357,5 +4357,9 @@ FD160		equ	offset DPBK1
 FD320		equ	offset DPBK2
 	dseg
 	include pcdisks.lib
+FD_EXT		equ	offset $
+	cseg
+	org	FD_EXT
+	include pc816x.lib
 FD_END	equ	offset $
 	end

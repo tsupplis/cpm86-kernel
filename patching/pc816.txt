@@ -51,3 +51,17 @@ SAVE checks compare complete 256/512-byte outputs to the source COM plus
 zero padding, check repeated SAVE, overwrite refusal, the 250-page bound,
 and rejection after native execution and Ctrl-C. Physical disk failures
 are not covered by these live checks.
+
+Loader checks (2026-11-21): BDOS 35 supplies the full 24-bit record count.
+Accept 1-501 records (128-64128 bytes at 0100h); reject an early EOF/read
+error or failed close before installing vectors or entering 8080 mode.
+Replacement still releases the previous retained bank first. Failure closes
+the FCB, releases the new bank and restores kernel DMA before CCP return.
+pc816x.lib follows the existing disk tables; earlier resident addresses stay
+fixed and DPH_PTR reserves the additional code/data. Standard kernels are
+unchanged. EXP diagnostics use E/...; SAVE distinguishes arguments, create,
+write and close failures. BIOS message slots retain their original sizes.
+
+tools/pc816err.py executes built loader/SAVE paths with injected BDOS errors;
+tools/pc816chk.py exercises the real PCE kernel, including a 501-record COM.
+Injected allocation/I/O failures do not constitute a physical-disk test.

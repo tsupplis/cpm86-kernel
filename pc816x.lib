@@ -1,0 +1,114 @@
+;-----------------------------------------------------------------------------
+; PC816X.LIB - EXP PC BIOS loader validation and SAVE error handling
+;
+; Purpose: extend PC816.LIB without moving its existing resident addresses.
+; Image: included by PCBIOEXP.A86 at FD_EXT, after the editor, floppy code
+; and disk tables. FD_END reserves this extension before dynamic allocation.
+; Build: make cpmexp.sys; uses PC816.LIB constants, state and CCP bindings.
+; Contract: DS is the kernel segment. These private entries are called or
+; jumped to by PC816.LIB; they are not independent BIOS service entries.
+; Ownership: PC816.LIB owns the execution bank, FCBs, DMA/vector restoration
+; and CCP return. This module owns the remaining-record count and delegates
+; failure cleanup to FAIL816 or SAVERESET816.
+;-----------------------------------------------------------------------------
+
+;-----------------------------------------------------------------------------
+; Load size, bounded reads and close validation
+;-----------------------------------------------------------------------------
+
+; Called before allocating a replacement bank, with the COM FCB open.
+; Releases the retained bank and accepts 1-501 records. Failure discards
+; this call's return address before entering the shared loader cleanup.
+
+SIZE816:
+	call	RELEASE816
+	mov	dx,offset ccp_file
+	mov	cl,35
+	int	224
+; BDOS 35 supplies a 24-bit record count, not an AL success indication.
+	cmp	byte ptr ccp_file+35,0
+	jne	SIZEBIG816
+	mov	ax,word ptr ccp_file+33
+	cmp	ax,(tpa80top-tpa80)/128
+	ja	SIZEBIG816
+	or	ax,ax
+	jz	SIZEEMPTY816
+	mov	word ptr loadrecs816,ax
+	ret
+SIZEBIG816:
+	mov	dx,offset large816
+	jmps	SIZEFAIL816
+SIZEEMPTY816:
+	mov	dx,offset empty816
+SIZEFAIL816:
+	pop	ax			; Discard SIZE816's return address.
+	jmp	FAIL816
+
+; Entered by JMP with DX = 0100h and DMA segment set to the new bank.
+; Consume the declared count without reading into the compatibility area.
+READX816:
+	push	dx
+	mov	cl,26
+	int	224
+	mov	dx,offset ccp_file
+	mov	cl,20
+	int	224
+	pop	dx
+; EOF before the declared count is a short read, not a runnable program.
+	or	al,al
+	jnz	READFAIL816
+	dec	word ptr loadrecs816
+	jz	READDONE816
+	add	dx,128
+	jmps	READX816
+READFAIL816:
+	jmp	BAD816
+READDONE816:
+	jmp	PREP816
+
+; Called with CL = 16 and DX = the COM FCB. ARGS816 returns to the caller
+; only after a successful close; failure follows the loader cleanup path.
+CLOSEX816:
+	int	224
+	cmp	al,0ffh
+	jne	CLOSEOK816
+	pop	ax			; Discard CLOSEX816's return address.
+	mov	dx,offset closeerr816
+	jmp	FAIL816
+CLOSEOK816:
+	jmp	ARGS816
+
+;-----------------------------------------------------------------------------
+; SAVE failures
+;-----------------------------------------------------------------------------
+
+; Entered by JMP. Create failure has no new file to delete. Write/close
+; failures attempt deletion of the partial file, then restore DMA and report
+; the original error. The retained execution bank remains available to SAVE.
+SAVECREATE816:
+	mov	dx,offset createerr816
+	jmp	SAVERESET816
+SAVEWRX816:
+	mov	dx,offset savefcb816
+	mov	cl,16
+	int	224
+	mov	dx,offset writeerr816
+	jmps	SAVEDELX816
+SAVECLX816:
+	mov	dx,offset closeerr816
+SAVEDELX816:
+	push	dx
+	mov	dx,offset savefcb816
+	mov	cl,19
+	int	224
+	pop	dx
+	jmp	SAVERESET816
+
+;-----------------------------------------------------------------------------
+; Resident state and messages
+;-----------------------------------------------------------------------------
+
+loadrecs816	dw	0
+closeerr816	db	13,10,'E/CLOSE',13,10,'$'
+createerr816	db	13,10,'E/CREATE',13,10,'$'
+writeerr816	db	13,10,'E/WRITE',13,10,'$'
