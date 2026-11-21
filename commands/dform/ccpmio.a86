@@ -49,6 +49,23 @@ ccpm_equipment:
 	jc	ccpm_init_done
 	jmp	bad_drive
 ccpm_init_done:
+; Old XIOS ignores the discovery signature. Require both response words
+; before using the 80-cylinder raw services, and before asking for consent.
+	cmp	sectors,8
+	je	ccpm_geometry_ready
+	xor	cx,cx
+	mov	dx,444bh
+	mov	si,534ch
+	mov	al,14
+	call	ccpm_call
+	cmp	ax,4b44h
+	jne	ccpm_geometry_error
+	cmp	native_version,0102h
+	je	ccpm_geometry_ready
+ccpm_geometry_error:
+	mov	dx,offset msg_legacy_format
+	jmp	ccpm_stop
+ccpm_geometry_ready:
 	ret
 
 ; Lock only after Y confirmation. Recheck the open-file vector while holding
@@ -128,6 +145,7 @@ ccpm_call:
 	mov	es,word ptr uda_segment
 	mov	ds,word ptr system_segment
 	callf	dword ptr .28h
+	mov	cs:native_version,dx
 	pop	es
 	pop	ds
 	pop	bp
@@ -140,8 +158,9 @@ ccpm_call:
 	ret
 
 ; Translate the common formatter operation to native XIOS: 15 format,
-; 11 write, 10 read/verify. Track zero's side byte controls media geometry;
-; no DOS-media or INT 13 emulation function is used.
+; 11 write, 10 read/verify for legacy media. Large media uses 29/36/35,
+; an explicit profile in SECTOR high byte and an extra gap/fill word.
+; Format tracks are logical; raw reads/writes carry physical head/cylinder.
 ccpm_io:
 	push	bx
 	push	cx
@@ -151,13 +170,35 @@ ccpm_io:
 	push	bp
 	push	ds
 	push	es
-	mov	ch,8
+	cmp	sectors,8
+	je	ccpm_iopb
+; Extended format consumes a CHRN table in DMA, not legacy internal IDs.
+	cmp	operation,5
+	jne	ccpm_gap_fill
+	call	make_ids
+ccpm_gap_fill:
+	mov	ax,word ptr disk_params+7
+	push	ax			; gap/fill for variable format
+ccpm_iopb:
+	mov	ch,sectors
 	mov	cl,drive
 	push	cx
 	xor	ch,ch
 	mov	cl,track
+	cmp	sectors,8
+	je	ccpm_track_ready
+	cmp	operation,5
+	je	ccpm_track_ready
+	call	track_chs
+	mov	cl,ch
+	mov	ch,dh
+ccpm_track_ready:
 	push	cx
 	xor	cx,cx
+	cmp	sectors,8
+	je	ccpm_profile_ready
+	mov	ch,sectors
+ccpm_profile_ready:
 	push	cx
 	mov	cx,buffer_segment
 	cmp operation,4
@@ -180,9 +221,22 @@ ccpm_not_format:
 ccpm_read:
 	mov	al,10
 ccpm_issue:
+	cmp	sectors,8
+	je	ccpm_dispatch
+	cmp	al,15
+	jne	ccpm_raw_transfer
+	mov	al,29
+	jmp	ccpm_dispatch
+ccpm_raw_transfer:
+	add	al,25			; read 10 -> 35, write 11 -> 36
+ccpm_dispatch:
 	mov	es,word ptr uda_segment
 	mov	ds,word ptr system_segment
 	callf	dword ptr .28h
+	cmp	cs:sectors,8
+	je	ccpm_pop_iopb
+	add	sp,2
+ccpm_pop_iopb:
 	add	sp,10
 	pop	es
 	pop	ds
@@ -258,6 +312,7 @@ ccpm_finished:
 	ret
 
 	dseg
+native_version	dw	0
 result_es	dw	0
 result_bx	dw	0
 system_segment	dw	0

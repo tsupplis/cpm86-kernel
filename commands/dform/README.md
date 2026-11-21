@@ -27,8 +27,9 @@ cover every sector, including the boot track. Failures use bounded retries
 and report the operation, cylinder and head. A partial-format warning follows
 cancellation or failure after disk access.
 
-CP/M-86 uses ROM BIOS. The legacy CCP/M-86 3.1 XIOS backend supports only
-160K/320K and refuses larger formats before confirmation. CDOS formatting is
+CP/M-86 uses ROM BIOS. CCP/M-86 3.1 uses XIOS: the extended geometry
+interface supports all five formats; older kernels retain 160K/320K and
+refuse larger formats before confirmation. CDOS formatting is
 not supported by this variant. No FAT filesystem is created.
 
 The image uses E5 fill, boot code at offset 0, geometry bytes at 510/511,
@@ -55,3 +56,9 @@ BDOS 108 is called only after recognizing Concurrent DOS 4.1 (full version
 it there. DFORM still rejects CDOS formatting, but returns error status 2 on
 that version. Status definitions are 0 success, 2 error and 3 cancellation;
 older systems retain console diagnostics and their normal termination path.
+
+The backend requires the extended discovery signature and version before
+using variable-format and raw CHS services. Legacy eight-sector calls remain
+unchanged. Extended requests carry the sector profile explicitly; formatting
+uses logical tracks, while reads/writes use physical cylinder/head. The same
+sources, build rules and tests are maintained in CP/M and CCP/M repositories.

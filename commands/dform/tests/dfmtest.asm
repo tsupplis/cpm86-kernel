@@ -8,6 +8,9 @@ cpu 8086
 %ifndef IGNORE_ERRORS
 %define IGNORE_ERRORS 0
 %endif
+%ifndef EXTENDED
+%define EXTENDED 0
+%endif
 org 100h
 start:
     mov ax,cs
@@ -274,9 +277,13 @@ xios:
 %endif
     cmp byte [ss:bp+14],DRIVE
     jne bad
-    cmp byte [ss:bp+15],8
+    cmp byte [ss:bp+15],SECTORS
     jne bad
+%if SECTORS != 8
+    cmp word [ss:bp+10],SECTORS << 8
+%else
     cmp word [ss:bp+10],0
+%endif
     jne bad
     cmp word [ss:bp+6],0
     jne bad
@@ -285,8 +292,38 @@ xios:
     jnz bad
     mov es,bx
     mov bx,[ss:bp+12]
+%if SECTORS == 8
     cmp bx,SIDES*CYLINDERS
     jae bad
+%endif
+%if SECTORS != 8
+%if SECTORS == 15
+    cmp word [ss:bp+16],0e554h
+%elif SECTORS == 9
+    cmp word [ss:bp+16],0e550h
+%else
+    cmp word [ss:bp+16],0e56ch
+%endif
+    jne bad
+    cmp al,29
+    je .format
+    ; Raw I/O carries physical CHS; recover logical track for the assertions.
+    cmp bh,1
+    ja bad
+    cmp bl,CYLINDERS
+    jae bad
+    or bh,bh
+    jz .head_zero
+    mov bh,0
+    neg bx
+    add bx,CYLINDERS*2-1
+.head_zero:
+    cmp al,36
+    je .write
+    cmp al,35
+    je .verify
+    jmp bad
+%endif
     cmp al,15
     je .format
     cmp al,11
@@ -297,6 +334,20 @@ xios:
 .equipment:
     cmp cx,0
     jne bad
+    cmp dx,444bh
+    jne .old_equipment
+    cmp si,534ch
+    jne bad
+%if EXTENDED
+    mov ax,4b44h
+    mov dx,0102h
+%if EXTENDED == 2
+    mov dx,0101h
+%endif
+    pop bp
+    retf
+%endif
+.old_equipment:
     mov ax,300h
     jmp .return
 .select:
@@ -305,6 +356,28 @@ xios:
     mov ax,400h
     jmp .return
 .format:
+%if SECTORS != 8
+    ; Variable formatting consumes the caller's CHRN identifiers, unlike
+    ; legacy XIOS. Validate every sector on both sides before success.
+    mov dx,bx
+    cmp dl,CYLINDERS
+    jb .ids_head_zero
+    neg dl
+    add dl,CYLINDERS*2-1
+    mov dh,1
+.ids_head_zero:
+    xor si,si
+    mov cx,SECTORS
+    mov ax,0201h
+.ids:
+    cmp [es:si],dx
+    jne bad
+    cmp [es:si+2],ax
+    jne bad
+    inc al
+    add si,4
+    loop .ids
+%endif
 %if FAIL_OP == 5
     cmp byte [cs:failed_requests],FAIL_LIMIT
     jb .failed

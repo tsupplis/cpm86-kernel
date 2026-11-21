@@ -87,14 +87,6 @@ concurrent_version:
 	jz	concurrent_ok
 	jmp	wrong_os
 concurrent_ok:
-; This legacy XIOS formatter accepts exactly eight sector IDs. Refuse a
-; larger profile before confirmation rather than partially formatting it.
-	cmp	sectors,8
-	je	concurrent_legacy_ready
-	mov	dx,offset msg_legacy_format
-	call	puts
-	jmp	cleanup
-concurrent_legacy_ready:
 	mov	byte ptr os_mode,1
 	call	ccpm_init
 	jmp	installed_drive

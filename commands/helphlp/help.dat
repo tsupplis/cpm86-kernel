@@ -369,7 +369,8 @@
     display usage and exit. An empty command line also displays usage.
 
     This build supports CP/M-86 1.1 using the IBM PC ROM BIOS and
-    Concurrent CP/M-86 3.1 using native XIOS (160K/320K only).
+    Concurrent CP/M-86 3.1 using native XIOS. Larger formats require the
+    extended XIOS interface; older kernels support 160K/320K only.
     Nine-sector 180K/360K formats are not supported. The formatted disk contains DSKMAINT's boot code
     and the loader for the detected OS; copy CPM.SYS or CCPM.SYS to the
     disk with PIP's [R] option to complete a boot disk.

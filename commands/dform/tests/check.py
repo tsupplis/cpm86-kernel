@@ -13,7 +13,7 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
          drive=0, retry=False, abort_verify=False, native=False,
          console_state=0, open_files=0, queue_fail=0, console_number=0,
          floppy_count=2, full_version=0x1431, initial_keep=0,
-         open_after_lock=0, initial_error_mode=7, ignore_errors=False, corrupt_read=0, corrupt_track=0, sectors=8, cylinders=40):
+         open_after_lock=0, initial_error_mode=7, ignore_errors=False, corrupt_read=0, corrupt_track=0, sectors=8, cylinders=40, extended=0):
     global count
     if native and version == 0x22:
         version = 0x0431
@@ -37,7 +37,7 @@ def case(tail='A:', sides=2, verify=None, answer='Y', abort=-1,
         verifies = 0
     if corrupt_read==2: verifies=corrupt_track
     reset = int(bool(formats or fail))
-    options = dict(SECTORS=sectors, CYLINDERS=cylinders, SIDES=sides, ANSWER=ord(answer), TAIL=f'"{tail}"',
+    options = dict(EXTENDED=extended, SECTORS=sectors, CYLINDERS=cylinders, SIDES=sides, ANSWER=ord(answer), TAIL=f'"{tail}"',
                    ABORT_AT=abort, ABORT_VERIFY=int(abort_verify), FAIL_OP=fail,
                    FAIL_LIMIT=failures, FAIL_STATUS=status,
                    OSVER=version, EQUIPMENT=equipment, DRIVE=drive,
@@ -190,3 +190,19 @@ for size, sides in ((160, 1), (320, 2)):
 for tail in ('A:[160320]', 'A:[160720]', 'A:[3201440]', 'A:[7201440]', 'A:[1601200]', 'A:[12001440]', 'A:[120]', 'A:[1201]', 'A:[16]', 'A:[32]'):
     case(tail=tail, error='Invalid parameter.')
 print(f'PASS: {count} total formatter cases including capacity syntax')
+
+# Extended services require the exact discovery response; legacy kernels refuse.
+for size, sectors in ((720, 9), (1200, 15), (1440, 18)):
+    case(f'A:[{size}]', native=True, sectors=sectors, cylinders=80, extended=1)
+    for capability in (0, 2):
+        case(f'A:[{size}]', native=True, sectors=sectors, cylinders=80,
+             extended=capability, error='supports only 160K/320K')
+    case(f'B:[{size}Q]', native=True, drive=1, sectors=sectors, cylinders=80, extended=1)
+    for op in (5, 3, 4):
+        for retry in (False, True):
+            case(f'A:[{size}]', native=True, sectors=sectors, cylinders=80,
+                 extended=1, fail=op, retry=retry)
+    case(f'A:[{size}]', native=True, sectors=sectors, cylinders=80,
+         extended=1, corrupt_read=2, corrupt_track=159)
+    case(f'A:[{size}]', native=True, sectors=sectors, cylinders=80, extended=1, abort=81)
+print(f'PASS: {count} total formatter cases including extended XIOS')
