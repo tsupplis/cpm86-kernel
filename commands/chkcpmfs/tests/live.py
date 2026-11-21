@@ -1,5 +1,6 @@
 """Exercise the shared CHKCPMFS on disposable disks under the local OS."""
 from pathlib import Path
+import argparse
 import re
 import shutil
 import subprocess
@@ -30,15 +31,60 @@ def run(*args, cwd):
 
 
 def convert(source, target, direction, cwd):
+    if source.stat().st_size != 320 * 1024:
+        target.write_bytes(source.read_bytes())
+        return
     run(sys.executable, str(ROOT / "tools/cpm86twist.py"),
         direction, str(source), str(target), cwd=cwd)
 
 
+def geometry(image):
+    """Directory offset/count and allocation-pointer width for tested formats."""
+    return {
+        320: (4096, 64, 1),
+        720: (9216, 256, 2),
+        1200: (15360, 256, 2),
+        1440: (18432, 256, 2),
+    }[image.stat().st_size // 1024]
+
+
 def directory_entries(image):
     data = image.read_bytes()
+    start, count, _ = geometry(image)
     return [(at, data[at:at + 32])
-            for at in range(DIRECTORY, DIRECTORY + 64 * 32, 32)
+            for at in range(start, start + count * 32, 32)
             if data[at] <= 15]
+
+
+def blocks(record, width):
+    return [int.from_bytes(record[at:at + width], 'little')
+            for at in range(16, 32, width)]
+
+
+def prepare_empty(folder, system, cwd, size=320):
+    """Create local fixtures; CDOS retains its existing boot-image interface."""
+    logical = folder / f'empty-{size}-logical.img'
+    if size != 320:
+        logical.write_bytes(bytes([0xe5]) * (size * 1024))
+        run('mkfs.cpm', '-f', f'cpm86-{size}', str(logical), cwd=cwd)
+        # Native format marker at the end of the first physical sector.
+        marker = size // 10
+        data = bytearray(logical.read_bytes())
+        data[511] = marker
+        logical.write_bytes(data)
+    elif system == 'cdos':
+        convert(MEDIA / 'base.img', logical, 'untwist', cwd)
+        data = bytearray(logical.read_bytes())
+        data[:4096] = (ROOT / 'boot/boottrack.bin').read_bytes()
+        logical.write_bytes(data)
+    else:
+        fmt = 'cpm86-320' if system == 'cpm86' else 'ccpm86-320'
+        run(sys.executable, str(ROOT / 'tools/mk320.py'), str(logical),
+            '--format', fmt, '--boot', str(ROOT / 'commands/dskmaint/bootsect.bin'),
+            '--loader', str(ROOT / 'commands/dskmaint/loader.bin'), cwd=cwd)
+    image = folder / f'empty-{size}.img'
+    convert(logical, image, 'twist', cwd)
+    return image
 
 
 def filename(record):
@@ -52,21 +98,14 @@ def prepare_system(folder, system, disk_format, cwd):
     # Assemble a disposable test disk from this project's own built outputs.
     # No dependency on an already packaged distribution or another project.
     logical=folder/'system-logical.img'
-    if system=='cpm86':
-        run('python3', str(ROOT/'tools/mk320.py'), str(logical), '--format', 'cpm86-320',
-            '--boot', str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
-            str(ROOT/'commands/dskmaint/loader.bin'), cwd=cwd)
-    else:
-        convert(MEDIA/'base.img',logical,'untwist',cwd)
+    base=prepare_empty(folder, system, cwd)
+    convert(base,logical,'untwist',cwd)
     if system=='cpm86':
         sources=[ROOT/'cpm.sys',COMMAND/'chkcpmfs.cmd',ROOT/'commands/stat/stat.cmd']
     else:
-        image=bytearray(logical.read_bytes())
-        image[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
-        logical.write_bytes(image)
         sources=[ROOT/'kernel/sysgen/ccpm.sys',COMMAND/'chkcpmfs.cmd',
                  ROOT/'commands/set/set.cmd',ROOT/'commands/show/show.cmd']
-    run('cpmcp','-f',disk_format,str(logical),*[str(p) for p in sources],'0:',cwd=cwd)
+    run('cpmcp', '-T', 'raw','-f',disk_format,str(logical),*[str(p) for p in sources],'0:',cwd=cwd)
     entries=directory_entries(logical)
     if system!='cpm86':
         system_entries=[record for _,record in entries if filename(record)=='CCPM.SYS']
@@ -79,18 +118,20 @@ def prepare_system(folder, system, disk_format, cwd):
 def prepare_data(folder, empty, disk_format, cwd):
     logical = folder / "data-logical.img"
     convert(empty, logical, "untwist", cwd)
-    if local_system() != 'cpm86':
-        image=bytearray(logical.read_bytes())
-        image[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
-        logical.write_bytes(image)
+    _, _, width = geometry(logical)
+    if width == 2:
+        # Force allocated blocks above 255, exercising both pointer bytes.
+        filler = folder / 'FILLER.DAT'
+        filler.write_bytes(bytes(1040 * 1024 if logical.stat().st_size > 720 * 1024 else 520 * 1024))
+        run('cpmcp', '-T', 'raw', '-f', disk_format, str(logical), str(filler), '0:FILLER.DAT', cwd=cwd)
     for user, name in ((0, "FIRST.DAT"), (1, "SECOND.DAT"), (15, "THIRD.DAT")):
         source = folder / name
         source.write_bytes((name + "\r\n").encode("ascii") * 12)
-        run("cpmcp", "-f", disk_format, str(logical), str(source),
+        run("cpmcp", "-T", "raw", "-f", disk_format, str(logical), str(source),
             f"{user}:{name}", cwd=cwd)
     large = folder / "MULTI.DAT"
     large.write_bytes(bytes(index & 0xff for index in range(40000)))
-    run("cpmcp", "-f", disk_format, str(logical), str(large),
+    run("cpmcp", "-T", "raw", "-f", disk_format, str(logical), str(large),
         "0:MULTI.DAT", cwd=cwd)
 
     entries = directory_entries(logical)
@@ -100,19 +141,21 @@ def prepare_data(folder, empty, disk_format, cwd):
                  if record[0] == 0 and record[1:12] == b"FIRST   DAT")
     second = next((at, record) for at, record in entries
                   if record[0] == 1 and record[1:12] == b"SECOND  DAT")
-    assert first[1][16] and second[1][16]
-    assert first[1][16] != second[1][16]
+    shared = blocks(first[1], width)[0]
+    assert shared and shared != blocks(second[1], width)[0]
+    if width == 2:
+        assert shared > 255
 
     clean = folder / "clean.img"
     convert(logical, clean, "twist", cwd)
     damaged = bytearray(logical.read_bytes())
-    damaged[second[0] + 16] = first[1][16]
+    damaged[second[0] + 16:second[0] + 16 + width] = first[1][16:16 + width]
     logical.write_bytes(damaged)
     bad = folder / "crosslink.img"
     convert(logical, bad, "twist", cwd)
-    references = sum(sum(block != 0 for block in record[16:32])
+    references = sum(sum(block != 0 for block in blocks(record, width))
                      for _, record in entries)
-    return clean, bad, first[1][16], len(entries), references
+    return clean, bad, shared, len(entries), references
 
 
 def prepare_fat(folder, name, *, label=False, sentinel=False):
@@ -214,74 +257,73 @@ def boot(folder, system, system_image, target, drive="B", *, initially_read_only
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--formats', nargs='+', type=int,
+                        choices=(320, 720, 1200, 1440))
+    args = parser.parse_args()
     system = local_system()
+    if args.formats is None:
+        args.formats = [320] if system == "cdos" else [320, 720, 1200, 1440]
+    if system == "cdos" and args.formats != [320]:
+        parser.error("CDOS native large formats are not implemented yet")
     cwd = ROOT if system == "cpm86" else MEDIA
     disk_format = "cpm86-320" if system == "cpm86" else "ccpm86-320"
-    empty = MEDIA / "base.img"
-    with tempfile.TemporaryDirectory(prefix=f"chkcpmfs-{system}-") as directory:
+    private = ROOT / 'private'
+    private.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f"chkcpmfs-{system}-", dir=private) as directory:
         folder = Path(directory)
-        if system == 'cpm86':
-            empty=folder/'empty.img'
-            run('python3', str(ROOT/'tools/mk320.py'), str(empty), '--format', 'cpm86-320',
-                '--boot', str(ROOT/'commands/dskmaint/bootsect.bin'), '--loader',
-                str(ROOT/'commands/dskmaint/loader.bin'), cwd=cwd)
-            run('python3', str(ROOT/'tools/cpm86twist.py'), 'twist', str(empty), str(empty),
-                cwd=cwd)
-        else:
-            blank=folder/'empty-logical.img'
-            convert(empty,blank,'untwist',cwd)
-            data=bytearray(blank.read_bytes())
-            data[:4096]=(ROOT/'boot/boottrack.bin').read_bytes()
-            blank.write_bytes(data)
-            empty=folder/'empty-source.img'
-            convert(blank,empty,'twist',cwd)
+        empty = prepare_empty(folder, system, cwd)
         system_image, system_counts = prepare_system(folder, system, disk_format, cwd)
-        clean, bad, shared, entries, references = prepare_data(folder, empty, disk_format, cwd)
+        for size in args.formats:
+            empty = prepare_empty(folder, system, cwd, size)
+            data_format = disk_format if size == 320 else f'cpm86-{size}'
+            clean, bad, shared, entries, references = prepare_data(folder, empty, data_format, cwd)
 
-        if system == "cdos":
-            screen, status = boot(folder, system, system_image, clean, "A")
-            assert system_counts is not None
-            assert "Drive A  DPB block shift" in screen, screen
-            assert (f"Directory entries scanned: {system_counts[0]}  "
-                    f"block references checked: {system_counts[1]}") in screen, screen
+            if system == "cdos":
+                screen, status = boot(folder, system, system_image, clean, "A")
+                assert system_counts is not None
+                assert "Drive A  DPB block shift" in screen, screen
+                assert (f"Directory entries scanned: {system_counts[0]}  "
+                        f"block references checked: {system_counts[1]}") in screen, screen
+                assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
+                assert "A: RW" in status, status
+
+            screen, status = boot(folder, system, system_image, empty)
+            assert "Drive B  DPB block shift" in screen, screen
+            assert "Directory entries scanned: 0  block references checked: 0" in screen, screen
             assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
-            assert "A: RW" in status, status
+            assert "B: RW" in status, status
 
-        screen, status = boot(folder, system, system_image, empty)
-        assert "Drive B  DPB block shift" in screen, screen
-        assert "Directory entries scanned: 0  block references checked: 0" in screen, screen
-        assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
-        assert "B: RW" in status, status
+            screen, status = boot(folder, system, system_image, clean)
+            assert "Drive B  DPB block shift" in screen, screen
+            assert (f"Directory entries scanned: {entries}  "
+                    f"block references checked: {references}") in screen, screen
+            assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
+            assert "No inconsistencies found in checked entries." in screen, screen
+            assert "B: RW" in status, status
 
-        screen, status = boot(folder, system, system_image, clean)
-        assert "Drive B  DPB block shift" in screen, screen
-        assert (f"Directory entries scanned: {entries}  "
-                f"block references checked: {references}") in screen, screen
-        assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
-        assert "No inconsistencies found in checked entries." in screen, screen
-        assert "B: RW" in status, status
+            screen, status = boot(folder, system, system_image, clean, initially_read_only=True)
+            assert "Drive was already read-only; preserving its RO state." in screen, screen
+            assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
+            assert "B: RO" in status, status
 
-        screen, status = boot(folder, system, system_image, clean, initially_read_only=True)
-        assert "Drive was already read-only; preserving its RO state." in screen, screen
-        assert "Consistency errors: 0" in screen and "ERROR:" not in screen, screen
-        assert "B: RO" in status, status
+            screen, status = boot(folder, system, system_image, bad)
+            assert re.search(r"USER 1 FILE SECOND\s+\.DAT: BLOCK "
+                             + str(shared) + r" IS REFERENCED MORE THAN ONCE", screen), screen
+            assert "Consistency errors: 1" in screen, screen
+            assert "Review the reported directory-entry errors." in screen, screen
+            assert "B: RW" in status, status
 
-        screen, status = boot(folder, system, system_image, bad)
-        assert re.search(r"USER 1 FILE SECOND\s+\.DAT: BLOCK "
-                         + str(shared) + r" IS REFERENCED MORE THAN ONCE", screen), screen
-        assert "Consistency errors: 1" in screen, screen
-        assert "Review the reported directory-entry errors." in screen, screen
-        assert "B: RW" in status, status
-
-        if system == "cdos":
-            fats = (prepare_fat(folder, "fat-empty"),
-                    prepare_fat(folder, "fat-label", label=True),
-                    prepare_fat(folder, "fat-file", sentinel=True))
-            for fat in fats:
-                screen, status = boot(folder, system, system_image, fat)
-                assert "DOS media detected; no CP/M filesystem scan performed." in screen, screen
-                assert "Directory entries scanned:" not in screen, screen
-                assert "B: RW" in status, status
+            if system == "cdos":
+                fats = (prepare_fat(folder, "fat-empty"),
+                        prepare_fat(folder, "fat-label", label=True),
+                        prepare_fat(folder, "fat-file", sentinel=True))
+                for fat in fats:
+                    screen, status = boot(folder, system, system_image, fat)
+                    assert "DOS media detected; no CP/M filesystem scan performed." in screen, screen
+                    assert "Directory entries scanned:" not in screen, screen
+                    assert "B: RW" in status, status
+            print(f"PASS: {system} {size}K: 4 scan cases; images unchanged", flush=True)
     print(f"PASS: live {system} empty/multi-user/multi-extent/cross-linked scans, "
           "RO preservation and restoration"
           + (", FAT refusal" if system == "cdos" else "")
