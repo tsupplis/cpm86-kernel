@@ -110,7 +110,11 @@ across all three OS versions. Repair tests cover cancellation, ambiguous
 metadata, timestamp matching, every selected read/write failure position,
 committed prefixes and retry after interruption.
 
-`make check-live` uses disposable images and the local source-built kernel.
+`make check-live` uses disposable images under `private/` and the local
+source-built kernel. CP/M and CCP/M cover 320K, 720K, 1200K and 1440K;
+CDOS retains its 320K and FAT-refusal cases. Larger fixtures exercise
+two-byte block numbers above 255 and files spanning high extent numbers.
+Both extent bytes are wildcarded so CP/M-86 also scans those later extents.
 It checks ordinary multi-user/multi-extent scans, write-protection restoration,
 FAT refusal on CDOS, and actual metadata repairs/cancellation/refusal with
 whole-image comparisons. No user disks are used. Native repair fixtures put

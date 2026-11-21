@@ -48,11 +48,23 @@ def geometry(image):
     }[image.stat().st_size // 1024]
 
 
+def directory_slots(image):
+    """Physical offsets; large raw images retain the BIOS's reversed side two."""
+    start, count, _ = geometry(image)
+    size = image.stat().st_size // 1024
+    for logical in range(start, start + count * 32, 32):
+        if size == 320:
+            yield logical  # Callers untwist legacy images before inspection.
+        else:
+            track_bytes = {720: 9, 1200: 15, 1440: 18}[size] * 512
+            track, offset = divmod(logical, track_bytes)
+            slot = track * 2 if track < 80 else (159 - track) * 2 + 1
+            yield slot * track_bytes + offset
+
+
 def directory_entries(image):
     data = image.read_bytes()
-    start, count, _ = geometry(image)
-    return [(at, data[at:at + 32])
-            for at in range(start, start + count * 32, 32)
+    return [(at, data[at:at + 32]) for at in directory_slots(image)
             if data[at] <= 15]
 
 
@@ -70,6 +82,7 @@ def prepare_empty(folder, system, cwd, size=320):
         # Native format marker at the end of the first physical sector.
         marker = size // 10
         data = bytearray(logical.read_bytes())
+        data[510] = 1
         data[511] = marker
         logical.write_bytes(data)
     elif system == 'cdos':
@@ -81,7 +94,8 @@ def prepare_empty(folder, system, cwd, size=320):
         fmt = 'cpm86-320' if system == 'cpm86' else 'ccpm86-320'
         run(sys.executable, str(ROOT / 'tools/mk320.py'), str(logical),
             '--format', fmt, '--boot', str(ROOT / 'commands/dskmaint/bootsect.bin'),
-            '--loader', str(ROOT / 'commands/dskmaint/loader.bin'), cwd=cwd)
+            '--loader', str(ROOT / 'commands/dskmaint/loader.bin'),
+            *(['--label', 'CCPM86  31'] if system == 'ccpm86' else []), cwd=cwd)
     image = folder / f'empty-{size}.img'
     convert(logical, image, 'twist', cwd)
     return image
@@ -323,7 +337,8 @@ def main():
                     assert "DOS media detected; no CP/M filesystem scan performed." in screen, screen
                     assert "Directory entries scanned:" not in screen, screen
                     assert "B: RW" in status, status
-            print(f"PASS: {system} {size}K: 4 scan cases; images unchanged", flush=True)
+            cases = 8 if system == "cdos" else 4
+            print(f"PASS: {system} {size}K: {cases} scan cases; images unchanged", flush=True)
     print(f"PASS: live {system} empty/multi-user/multi-extent/cross-linked scans, "
           "RO preservation and restoration"
           + (", FAT refusal" if system == "cdos" else "")

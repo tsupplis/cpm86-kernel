@@ -771,6 +771,8 @@ plmstart: procedure public;
             search$fcb(i) = 0;
         end;
         search$fcb(12) = '?';
+        /* CP/M-86 compares S2 too: include extents above 512K. */
+        search$fcb(14) = '?';
         dcnt = mon2(17,.search$fcb);
         do while dcnt <> 0ffh;
             dir$offset = shl(double(dcnt),5);

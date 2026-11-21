@@ -373,6 +373,8 @@ normal_search:
     jne failed
     cmp byte [si+12],'?'
     jne failed
+    cmp byte [si+14],'?'
+    jne failed
     mov byte [cs:scan_started],1
     mov word [cs:cursor],0
     jmp search_entry
