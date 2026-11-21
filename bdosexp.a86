@@ -61,6 +61,7 @@ VSTDMS	equ	VBIOS+33h	; set DMA segment
 VGTMRT	equ	VBIOS+36h	; get memory region table
 VGTIOB	equ	VBIOS+39h	; get I/O byte
 VSTIOB	equ	VBIOS+3Ch	; Set I/O byte
+VDSRST	equ	VBIOS+3Fh	; EXP private: invalidate floppy cache on reset
 
 	cseg
 	org 053b0h
@@ -213,6 +214,14 @@ MRTVNO:
 MGTSAD:
 	mov	bx,offset DMAADD	; system data area top
 	jmp	WDPRST
+
+; Reset notification before any drive is relogged. BX=0, DS=kernel segment.
+; The EXP BIOS preserves registers and leaves hard-disk cache state intact.
+	org	0AF7h
+DSRST:
+	mov	LGDSKV,bx		; clear login disk vector
+	call	TOP+VDSRST
+	ret
 
 ; BDOS normal top
 
@@ -3670,7 +3679,8 @@ MRSDSY:
 MRSDSS:
 	xor	bx,bx
 	mov	RODSKV,bx		; clear R/O disk vector
-	mov	LGDSKV,bx		; clear login disk vector
+	call	DSRST			; discard stale floppy data before relogin
+	nop				; retain subsequent instruction addresses
 	mov	bl,CURDRV
 	mov	CURDSK,bl		; set current disk
 	jmp	SELDSK			; select disk

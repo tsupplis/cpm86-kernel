@@ -42,3 +42,5 @@ A: while stale buffered data belongs to replaced B:, on standard and EXP.
 The helper deliberately preserves another drive's pending writes. Resolving
 that ambiguity requires a separate review of disk-reset semantics; this
 patch does not change BDOS reset ordering or provide automatic media detection.
+The later EXP-only fix in patching/expreset.txt addresses the two EXP cases;
+the standard kernel retains this limitation.

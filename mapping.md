@@ -38,7 +38,7 @@ distinction is purely an assembler convention for separating code from data.
 | `0B06h` | BDOSEN | `bdosexp.a86` | Interrupt handler / BDOS dispatcher |
 | `2200h` | BDOS data (DSEG) | `bdosexp.a86` | Variables, buffers, system stack |
 | `24F4h` | End of BDOS data | `bdosexp.a86` | Final `db 0`; `24F5h`–`24FFh` unused |
-| `2500h` | BIOS jump vector | `pcbioexp.a86` | 21 × JMP (`2500h`–`253Ch`), `rs 15` reserved, 6 config pointers (`254Eh`–`2559h`), copyright (`255Ah`–`257Dh`) |
+| `2500h` | BIOS jump vector | `pcbioexp.a86` | 21 × JMP (`2500h`–`253Ch`), private reset JMP at `253Fh`, `rs 12` reserved, 6 config pointers (`254Eh`–`2559h`), copyright (`255Ah`–`257Dh`) |
 | `257Eh` | BIOS code body (`WBOOT`) | `pcbioexp.a86` | Char I/O, disk I/O, interrupts |
 | `32C5h` | BIOS data (DSEG) | `pcbioexp.a86` | I/O vectors, drive tables, DPHs, disk parameters, stacks, buffers (`data_offset` / `BIOS_DATA_RSV`) |
 | `3BE2h` | INIT / once-only | `pcbioexp.a86` | Cold-start code (`3BE2h`–`4062h`) overlaid on the disk sector buffer; freed after first boot (`DSKBUF` / `data_offst2`) |
@@ -219,7 +219,7 @@ The BDOS patch area begins at `0A00h` and ends before `IXMAIN` at `0A80h`.
 | `PATCH13` | bdosexp | `0A00h` | `0A1Fh` | `0A20h` | 32 | 32 | 0 | — ⚠ full |
 | `MLOADQ + MLOADK + BDOSBC` | bdosexp | `0A20h` | `0A3Fh` | `0A40h` | 32 | 32 | 0 | — |
 | `PATCH15` | bdosexp | `0A40h` | `0A53h` | `0A80h` | 64 | 20 | 44 | `0A54h`–`0A7Fh` |
-| `IXMAIN`+stubs | bdosexp | `0A80h` | `0AF6h` | `0B00h` | 128 | 119 | 9 | `0AF7h`–`0AFFh` |
+| `IXMAIN`+stubs+`DSRST` | bdosexp | `0A80h` | `0AFEh` | `0B00h` | 128 | 127 | 1 | `0AFFh` |
 
 Notes:
 - **`SUBMITSELDRV`** is a 3-byte helper at `00DAh` that falls through to `SELDRV` at `00DDh`; its two callers resolve to `00DAh`.
@@ -227,6 +227,7 @@ Notes:
 - The upper CCP patch area begins at `09C0h` and currently has 64 bytes free through `09FFh`.
 - **`PATCH13`** and the packed `MLOADQ`/`MLOADK`/`BDOSBC` block are full. `PATCH15` occupies `0A40h`–`0A53h`, leaving 44 bytes free at `0A54h`–`0A7Fh`.
 - **`IXMAIN`** contains 54 DW dispatch entries (`0A80h`–`0AEBh`, 108 bytes) + `MRTVNO` (5 bytes @ `0AECh`) + `MGTSAD` (6 bytes @ `0AF1h`) = 119 bytes used.
+- **`DSRST`** occupies `0AF7h`–`0AFEh` (8 bytes). BDOS 13 calls it in place of its four-byte login-vector clear (CALL + NOP). The private BIOS jump at `253Fh` reaches `FD_DRESET` at `5B4Ah`–`5B68h` (31 bytes); `FD_END` is `5B69h`. Existing entry/data addresses remain unchanged.
 - All free holes verified against both `.lst` files — **no code, data, or references land in any hole.**
 
 ### pcbioexp.a86 — fixed-address buffer gaps

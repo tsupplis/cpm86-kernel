@@ -1,0 +1,46 @@
+EXP: INVALIDATE FLOPPY CACHE BEFORE DISK RESET
+Local patch, 2026-11-21
+Issue: https://github.com/tsupplis/cpm86-kernel/issues/17
+
+Problem
+After replacing B: with pending writes, BDOS 13 first relogs A:. The
+same-drive BIOS protection preserves B:'s dirty cache, which can then be
+written onto the replacement. Ctrl-C reaches the same BDOS reset path.
+Both cases reproduced in PCE before this change.
+
+Change
+BDOSEXP notifies PCBIOEXP before relogin. The BIOS discards the physical
+floppy cache, including pending writes, without disk I/O. Hard-disk cache
+state is preserved. Invalid and memory-disk cache identities are ignored.
+Save and close files on the original disk before removal. Reset is not a
+flush and cannot recover writes abandoned by replacing a disk too early.
+
+Scope
+Only bdosexp.a86 and pcbioexp.a86 change executable behaviour. Standard
+BDOS/BIOS, CCP, MBC, AD8088 and BDOS 48 are unchanged. BDOS 37 keeps its
+existing semantics; this is not automatic media-change detection.
+
+Layout and interface
+DSRST uses eight reserved BDOS bytes at 0AF7h-0AFEh. Its caller replaces
+the four-byte login-vector clear with CALL + NOP. A private near-call
+gateway at 253Fh uses three reserved BIOS bytes; configuration pointers
+still begin at 254Eh. DS must be the kernel segment; registers are
+preserved, flags undefined. BDOSEXP and PCBIOEXP must be built together.
+FD_DRESET adds 31 resident bytes at 5B4Ah-5B68h; FD_END moves to 5B69h.
+All other pre-existing symbols retain their addresses. DPH_PTR reserves
+the new end. cpmexp.sys remains 23552 bytes after record rounding.
+
+Tests
+tools/fdcheck.py executes BDOS 13 through the actual reset gateway and
+observes state before relogin: dirty/clean A: and B:, dirty/clean hard
+disk, memory disk and invalid cache. tools/recover.py uses disposable
+PCE media, host image comparisons, file readback and fsck.cpm.
+
+Validation
+The two failing cross-drive cases pass with the rebuilt EXP kernel.
+PCE disk matrix: 13/13 passed. Native/COM recovery: 22/22 passed.
+Targeted reset cases: 8/8 passed. make check passed, including fixed
+interfaces, module overlaps and both BIOSes' floppy checks. Symbol and
+emitted-byte comparisons confirm the layout described above; cpm.sys is
+byte-identical to the pre-change build. Successful test images are removed.
+This validation does not establish real-hardware behaviour.

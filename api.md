@@ -43,6 +43,7 @@ PC BIOS configuration and clock contracts must not be assumed on those machines.
 | `S+20h` = `K:24C0h` | 17-byte `mm/dd/yy,hh:mm:ss` clock | TOD, shipped ATINIT and PC BIOS timer | Start address, separators and field sizes; do not insert century bytes |
 | `K:24D2h` | 14-byte status message | PC BIOS copies it to the status line; external writer not found | Address and 14-byte allocation |
 | `S+40h` = `K:24E0h` | Console width | CCP reads it directly; DDT86 reads `S+64` decimal; PC BIOS writes it | Address and byte size |
+| `K:253Fh` (EXP only) | Private disk-reset jump | BDOSEXP calls before BDOS 13 relogin, also reached by Ctrl-C | Near call with DS=kernel segment; preserves registers, flags undefined; invalidates floppy cache without I/O and preserves hard-disk cache. Pair BDOSEXP with PCBIOEXP |
 | `K:254Eh` | Pointer to function-key definitions | FUNCTION and HDMAINT access definitions; SETUP copies them | Pointer slot stays here; definitions remain two sets of ten 20-byte entries. Their address is read from the slot |
 | `K:2550h` | Pointer to current/required disk byte (`DISK`) | Slot exported by PC BIOS; no external reader found in the local source scan | Preserve the exported pointer slot and one-byte disk value |
 | `K:2552h` | Pointer to serial settings | CONFIG accesses settings; SETUP copies them | Pointer slot stays here; preserve the two-byte settings layout |

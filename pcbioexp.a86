@@ -181,7 +181,8 @@ CCP:					; label only; no code emitted here
 	jmp	GETIOB			; Return I/O map byte (iobyte)
 	jmp	SETIOB			; Set I/O map byte (iobyte)
 
-	rs	15			; 5 reserved jmp slots (future expansion)
+	jmp	FD_DRESET		; EXP private disk-reset notification (253Fh)
+	rs	12			; 4 reserved jmp slots; config pointers stay fixed
 
 	; Configuration data pointers (read by CP/M at startup)
 	dw	offset PFKTABLE		; -> programmable function key table
@@ -4372,6 +4373,24 @@ FD_FLUSH:
 	jmp	WRSEC
 FD_FLUSH_RET:
 	ret			; Equality above also cleared CF.
+
+; EXP BDOS 13 calls this before relogin, including the Ctrl-C path.
+; Discard floppy data even when the reset selects a different drive.
+; DS is the BIOS segment. Preserve registers; flags are undefined.
+; Hard disks, memory disks and an invalid cache retain their state.
+FD_DRESET:
+	push	bx
+	xor	bx,bx
+	mov	bl,byte ptr DSK_LAST
+	cmp	bl,4			; DRVTYPE has four physical-drive entries
+	jae	FD_DRESET_RET
+	test	byte ptr DRVTYPE[bx],80h
+	jnz	FD_DRESET_RET
+	mov	byte ptr DSK_DIRTY,0
+	mov	byte ptr DSK_LAST,0FFh
+FD_DRESET_RET:
+	pop	bx
+	ret
 
 FD_END	equ	offset $
 	end
