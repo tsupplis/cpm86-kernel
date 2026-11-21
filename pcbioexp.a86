@@ -4361,5 +4361,17 @@ FD_EXT		equ	offset $
 	cseg
 	org	FD_EXT
 	include pc816x.lib
+; Relogin may follow a floppy replacement. Called only with dirty data.
+; Discard data for this floppy; flush another drive through the usual path.
+; DS is the BIOS segment. Return CF clear for discard, WRSEC status otherwise.
+; Kept after existing extensions so their entry and data addresses stay fixed.
+FD_FLUSH:
+	mov	al,byte ptr DISK
+	cmp	al,byte ptr DSK_LAST
+	jz	FD_FLUSH_RET
+	jmp	WRSEC
+FD_FLUSH_RET:
+	ret			; Equality above also cleared CF.
+
 FD_END	equ	offset $
 	end

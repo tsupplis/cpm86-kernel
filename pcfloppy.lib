@@ -10,7 +10,8 @@
 ; reserves the largest floppy CSV/ALV at startup.
 ; Build: make cpm.sys cpmexp.sys
 ; Contract: DS is the kernel segment. FD_CACHE and FD_REGS serve the floppy
-; branches only; FD_RESET flushes the old cache before changing geometry.
+; branches only. FD_RESET discards same-drive data on relogin; another
+; drive's pending writes are flushed before changing geometry.
 ;-----------------------------------------------------------------------------
 
 ;-----------------------------------------------------------------------------
@@ -91,7 +92,8 @@ FD_COUNT_READY:
 	ret
 
 ;-----------------------------------------------------------------------------
-; Login reads the marker with legacy geometry, after flushing the old cache.
+; Login reads the marker with legacy geometry. Discard stale same-drive
+; data; preserve pending writes belonging to another drive.
 ; BX is the caller's DPH. Preserve the caller's track and record on success.
 ;-----------------------------------------------------------------------------
 
@@ -101,7 +103,7 @@ FD_RESET:
 	push	bx
 	test	byte ptr DSK_DIRTY,0FFh
 	jz	FD_PROBE
-	call	WRSEC
+	call	FD_FLUSH
 	jnc	FD_PROBE
 	jmp	ABORT
 FD_PROBE:

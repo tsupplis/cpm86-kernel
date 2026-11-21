@@ -99,6 +99,26 @@ failed:
 '''
             machine.run('CALC_PHYSEC', setup, 'or ax,ax\n jnz failed', bridge=bridge)
             records += tracks * sectors * 4
+        # FD_FLUSH is called only for dirty data during floppy relogin.
+        # Another drive's write result (including failure) must be preserved.
+        for cached, hard, error, writes in [(0, 0, 0, 0), (1, 0, 0, 1),
+                                             (1, 128, 0, 1), (1, 128, 1, 1)]:
+            setup = f'''mov byte [{at('DISK')}],0
+ mov byte [{at('DSK_LAST')}],{cached}
+ mov byte [{at('DRVTYPE')+1}],{hard}
+ mov word [7000h],0
+'''
+            checks = f'''pushf
+ pop ax
+ and ax,1
+ cmp ax,{error}
+ jne failed
+ cmp word [7000h],{writes}
+ jne failed
+'''
+            machine.run('FD_FLUSH', setup, checks,
+                        patches={'WRSEC': 'inc word [7000h]\n'+('stc' if error else 'clc')+'\nret'})
+        print(f'PASS: {variant}: 4 relogin cache cases (same drive, other floppy, hard disk, flush error)')
         print(f'PASS: {variant}: {records} record/cache/CHS mappings across five formats')
     print('PASS: 10 format checks, 0 failures')
 

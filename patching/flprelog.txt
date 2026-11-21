@@ -1,0 +1,44 @@
+PC BIOS: SAME-DRIVE FLOPPY CACHE INVALIDATION
+Local patch, 2026-11-21
+Issue: https://github.com/tsupplis/cpm86-kernel/issues/17
+
+Problem
+Floppy relogin flushed pending data before reading the inserted disk's
+format marker. Replacing a disk with a dirty cache could therefore write
+old data onto the replacement. The Ctrl-C case also reproduces with the
+frozen cpmorg.sys reference; this is not new to the maintained BIOSes.
+
+Change
+FD_RESET in pcfloppy.lib calls FD_FLUSH instead of WRSEC. Each PC BIOS
+provides the same helper: if DISK equals DSK_LAST, return without writing;
+otherwise use WRSEC, preserving its error status. FD_RESET then clears
+the dirty flag, invalidates the cache and probes the inserted media.
+This preserves pending writes belonging to another floppy or hard disk.
+CCP, BDOS, frozen sources, MBC and AD8088 BIOSes are unchanged.
+
+Layout
+The call replacement occupies the original three bytes. FD_FLUSH adds
+13 resident bytes after existing extensions in each PC BIOS. All existing
+symbol addresses except FD_END remain unchanged:
+  pcbios:   FD_END 4DB9h -> 4DC6h
+  pcbioexp: FD_END 5B3Dh -> 5B4Ah
+DPH_PTR reserves the extension before dynamic disk allocation. Generated
+cpm.sys and cpmexp.sys file sizes are unchanged after record rounding.
+
+Validation
+PCE disk matrix: 22/26 passed. Individual-drive reset on B: and Ctrl-C/full
+reset on replacement A: failed before and pass after, on both BIOSes.
+Other-drive flushing, clean same/different-format swaps, directory-change
+R/O protection, removal/retry and write-protection/retry passed.
+Host image comparisons, file readback and fsck.cpm checked persisted data.
+Recovery: 13/13 standard and 22/22 EXP cases passed. make check passed,
+including eight cache-helper cases and fixed-address/overlap checks.
+Tests: tools/recover.py, tools/recprobe.asm, tools/recstate.asm and
+tools/fdcheck.py. This validation does not establish real-hardware behaviour.
+
+Remaining limitation
+Four cross-drive cases still fail: Ctrl-C or full disk reset first selects
+A: while stale buffered data belongs to replaced B:, on standard and EXP.
+The helper deliberately preserves another drive's pending writes. Resolving
+that ambiguity requires a separate review of disk-reset semantics; this
+patch does not change BDOS reset ordering or provide automatic media detection.
