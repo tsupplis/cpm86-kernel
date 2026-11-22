@@ -98,6 +98,8 @@ le_keyup:
 	mov	al,017h
 	ret
 le_keydel:
+	cmp	ah,50h			; Ignore Down during editing.
+	je	le_key
 	cmp	ah,53h
 	jne	le_keydone
 	mov	al,7

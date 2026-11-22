@@ -23,8 +23,11 @@ def check(send, screen):
                 return
         raise AssertionError((expected, last))
 
+    key('Down')
+    current('')
     text(';ac')
     key('Left')
+    key('Down')
     text('b')
     current(';abc')
     key('Home')
